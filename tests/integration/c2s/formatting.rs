@@ -90,6 +90,58 @@ async fn test_a_local_quote_carries_the_fallback_link() {
     assert_eq!(fetched["content"].as_str().unwrap(), shown);
 }
 
+/// A local post quoting a remote one links its `RE:` fallback to the remote
+/// post's `url` only when that is `http` or `https`
+/// (`TagManager#url_for`'s `unsupported_uri_scheme?`), and otherwise to its
+/// `uri`.
+#[tokio::test]
+async fn test_a_quote_fallback_skips_a_url_of_another_scheme() {
+    let ctx = TestContext::new("fmt-quote-fallback-scheme").await;
+    let carol = insert_remote_account(&ctx, "", json!([])).await;
+    let remote_id = eunha::snowflake::next_id();
+    let uri = "https://remote.example/users/carol/statuses/1";
+    sqlx::query(
+        r#"INSERT INTO statuses (id, account_id, uri, url, text, visibility, local,
+                                created_at, updated_at)
+           VALUES ($1, $2, $3, 'gopher://remote.example/1', '<p>hi</p>', 0, false,
+                   now(), now())"#,
+    )
+    .bind(remote_id)
+    .bind(carol)
+    .bind(uri)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "so true", "public")
+        .await;
+    let post_id: i64 = post["id"].as_str().unwrap().parse().unwrap();
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    sqlx::query(
+        r#"INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id,
+                              state, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 1, now(), now())"#,
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(post_id)
+    .bind(remote_id)
+    .bind(alice)
+    .bind(carol)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+
+    let fetched = get_json(&ctx, &format!("/api/v1/statuses/{post_id}")).await;
+    assert_eq!(
+        fetched["content"].as_str().unwrap(),
+        format!(
+            r#"<p class="quote-inline">RE: {}</p><p>so true</p>"#,
+            eunha::formatter::text::shortened_link(uri, false)
+        )
+    );
+}
+
 /// A remote account's bio and fields are sanitized, and a verified field is
 /// shown as a link to the URL it was verified for.
 #[tokio::test]

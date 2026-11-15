@@ -324,7 +324,11 @@ pub async fn quote_fallback_urls(state: &AppState, status_ids: &[i64]) -> HashMa
                 row.get::<i64, _>("quoted_id")
             )
         } else {
+            // `TagManager#url_for`: a remote post's `url`, unless its scheme
+            // is not `http` or `https` (`unsupported_uri_scheme?`), then
+            // `uri_for`.
             row.get::<Option<String>, _>("url")
+                .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
                 .or_else(|| row.get::<Option<String>, _>("uri"))
                 .unwrap_or_default()
         };
