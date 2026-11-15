@@ -533,3 +533,33 @@ test('signed out, Quote is there but disabled, as Boost is', async ({ page }) =>
   // The disabled state's reasons are a member's; a visitor is not told them.
   await expect(item).not.toContainText('You are not allowed')
 })
+
+test('in a timeline, a quoted post with a content warning shows only the warning', async ({ page }) => {
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', carol, { spoiler_text: 'Plot', content: '<p>The butler</p>',
+      quote: { state: 'accepted', quoted_status_id: '30' } }) } })])
+  await page.route('**/api/v1/statuses/30', (r) => r.fulfill({ json: status('30', alice) }))
+  const quote = page.getByTestId('quoted-post')
+  await expect(quote.getByText('Content: Plot')).toBeVisible()
+  await expect(quote.getByRole('button', { name: 'Show more' })).toHaveCount(0)
+  await expect(quote.getByText('The butler')).toHaveCount(0)
+  await expect(quote.getByText(/Post from/)).toHaveCount(0)
+})
+
+test('in a timeline, a quoted post’s poll is only named, and its own quote linked', async ({ page }) => {
+  await page.route('**/api/v1/statuses/30', (r) => r.fulfill({ json: status('30', alice) }))
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', carol, { poll, quote: { state: 'accepted', quoted_status_id: '30' } }) } })])
+  const quote = page.getByTestId('quoted-post')
+  await expect(quote.getByText('Poll • Closed')).toBeVisible()
+  await expect(quote.getByText('Tea')).toHaveCount(0)
+  const nested = quote.getByRole('link', { name: /Post from alice/ })
+  await expect(nested).toHaveAttribute('href', '/@alice/30')
+})
+
+test('in a timeline, a quoted post’s link card is its address', async ({ page }) => {
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status: status('20', carol, { card }) } })])
+  const quote = page.getByTestId('quoted-post')
+  await expect(quote.getByRole('link', { name: 'https://news.example/story' })).toBeVisible()
+  await expect(quote.getByTestId('preview-card')).toHaveCount(0)
+})

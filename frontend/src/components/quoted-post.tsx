@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
+import { cn } from '@/lib/utils.ts'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { Poll } from '@/components/poll.tsx'
@@ -225,6 +226,7 @@ export function QuotedStatus({
     <QuotedPost
       status={quoted}
       token={token}
+      variant={detailed ? 'full' : 'compact'}
       filteredBy={detailed && filters.action === 'warn' ? filters.warnedBy : []}
       mediaFilteredBy={filters.blurredBy}
     />
@@ -246,25 +248,141 @@ function NestedQuote({ quote, token }: { quote: Quote; token?: string }) {
   )
 }
 
+// The compact quote's own quote: Mastodon's `QuotedStatusLink`, "Post from
+// {author}", linking to it, and nothing at all while it is not there to name.
+function NestedQuoteLink({ quote, token, linked }: { quote: Quote; token?: string; linked: boolean }) {
+  const quoted = useQuotedStatus(quote, token)
+  if (quote.state !== 'accepted' || !quoted) return null
+  const label = (
+    <>
+      <strong className="font-semibold">
+        Post from <DisplayName account={quoted.account} />
+      </strong>
+      {' • '}
+      <RelativeTime value={quoted.createdAt} />
+    </>
+  )
+  return (
+    <p className="text-muted-foreground mt-1 truncate text-xs">
+      {linked ? (
+        <Link to={`/@${quoted.account.acct}/${quoted.id}`} className="text-muted-foreground no-underline hover:underline">
+          {label}
+        </Link>
+      ) : (
+        label
+      )}
+    </p>
+  )
+}
+
+// The compact quote's link card, which it names by its address rather than
+// drawing: an address on this server is followed in the app.
+function CardLink({ card, linked }: { card: mastodon.v1.PreviewCard; linked: boolean }) {
+  let local = false
+  try {
+    local = new URL(card.url).host === window.location.host
+  } catch {
+    // Not an address to follow in the app, then.
+  }
+  const className = 'text-muted-foreground mt-1 block truncate text-xs underline'
+  if (!linked) return <p className={className}>{card.url}</p>
+  if (local) {
+    const url = new URL(card.url)
+    return <Link to={url.pathname + url.search + url.hash} className={className}>{card.url}</Link>
+  }
+  return (
+    <a href={card.url} target="_blank" rel="noopener" className={className}>
+      {card.url}
+    </a>
+  )
+}
+
+// Mastodon's `QuotedStatusBody` and the `QuotedStatusLink` under it.
+function CompactBody({
+  status,
+  token,
+  linked,
+  mediaFilteredBy,
+}: {
+  status: mastodon.v1.Status
+  token?: string
+  linked: boolean
+  mediaFilteredBy: string[]
+}) {
+  if (status.spoilerText) {
+    return (
+      <AnimateEmoji className="text-muted-foreground mt-1 text-sm">
+        Content:{'\u00a0'}
+        <EmojiText text={status.spoilerText} emojis={status.emojis} />
+      </AnimateEmoji>
+    )
+  }
+  const html = status.quote ? stripQuoteFallback(status.content) : status.content
+  return (
+    <>
+      {status.inReplyToAccountId === status.account.id && (
+        <p className="text-muted-foreground mt-1 text-xs">Continued thread</p>
+      )}
+      {html.trim() && (
+        <EmojiHtml
+          // Clamped in the composer, as Mastodon's preview is; whole elsewhere.
+          className={cn('text-foreground/90 mt-1 text-sm [&_a]:underline', !linked && 'line-clamp-6')}
+          html={html}
+          emojis={status.emojis}
+        />
+      )}
+      {status.poll && (
+        <p className="text-muted-foreground mt-1 text-sm">
+          Poll • {status.poll.expired ? 'Closed' : 'Accepting responses'}
+        </p>
+      )}
+      {status.mediaAttachments.length > 0 && (
+        <MediaAttachments
+          attachments={status.mediaAttachments}
+          sensitive={status.sensitive}
+          filteredBy={mediaFilteredBy}
+        />
+      )}
+      {status.card ? (
+        <CardLink card={status.card} linked={linked} />
+      ) : (
+        status.quote && <NestedQuoteLink quote={status.quote} token={token} linked={linked} />
+      )}
+    </>
+  )
+}
+
 // Clicks on these inside a quote are theirs, not a click on the quote.
 const INTERACTIVE = 'a, button, input, label, video, audio, iframe'
 
-// A compact, read-only rendering of a post embedded inside another: the target
-// of a quote, both when displayed on a status card and when previewed in the
-// composer. It is what Mastodon's `QuotedStatus` draws through `Status` with
-// `isQuotedPost`: the header, the content warning, the content and its poll,
-// then the media or, failing media and a quote of its own, the link card — but
-// no action bar. `linked` makes a click on it open the thread (off in the
-// composer, where navigating away would discard the draft).
+// A read-only rendering of a post embedded inside another: the target of a
+// quote, both when displayed on a status card and when previewed in the
+// composer. It has no action bar, and comes in Mastodon's two forms:
+//
+//  -  `full`, on a thread's focused post, is what Mastodon's legacy
+//     `QuotedStatus` draws through `Status` with `isQuotedPost`: the header,
+//     the content warning, the content and its poll, then the media or,
+//     failing media and a quote of its own, the link card, and its own quote
+//     named.
+//  -  `compact`, everywhere else and in the composer, is its redesigned
+//     `QuotedStatus`: a content warning stands in for everything under it
+//     ("Content: …", not to be opened here), a poll is only said to be one,
+//     and the link card and its own quote are each a link, the card's
+//     winning, and neither under a content warning.
+//
+// `linked` makes a click on it open the thread (off in the composer, where
+// navigating away would discard the draft).
 export function QuotedPost({
   status,
   linked = true,
+  variant = 'compact',
   token,
   filteredBy = [],
   mediaFilteredBy = [],
 }: {
   status: mastodon.v1.Status
   linked?: boolean
+  variant?: 'full' | 'compact'
   // Votes in the quoted post's poll; without one the poll shows its results.
   token?: string
   // Warning filters it matches, which fold it behind Mastodon's
@@ -339,7 +457,10 @@ export function QuotedPost({
           </button>
         </div>
       )}
-      {!filtered && status.spoilerText && (
+      {variant === 'compact' && (
+        <CompactBody status={status} token={token} linked={linked} mediaFilteredBy={mediaFilteredBy} />
+      )}
+      {variant === 'full' && !filtered && status.spoilerText && (
         <AnimateEmoji className="mt-1 text-sm">
           <span>
             <EmojiText text={status.spoilerText} emojis={status.emojis} />
@@ -353,10 +474,10 @@ export function QuotedPost({
           </button>
         </AnimateEmoji>
       )}
-      {expanded && (
+      {variant === 'full' && expanded && (
         <>
           <EmojiHtml
-            className="text-foreground/90 mt-1 line-clamp-6 text-sm [&_a]:underline"
+            className="text-foreground/90 mt-1 text-sm [&_a]:underline"
             html={status.quote ? stripQuoteFallback(status.content) : status.content}
             emojis={status.emojis}
           />

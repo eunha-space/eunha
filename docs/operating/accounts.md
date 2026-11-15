@@ -692,12 +692,17 @@ follows them, as Mastodon's web client does:
     (`web-hidden-card-image-not-loaded`). A video card loads its player only
     when Play is clicked, in an `iframe` given the sandbox Mastodon's oEmbed
     sanitizer gives it; only the player's address is taken from the card's HTML.
- -  A quoted post is drawn as Mastodon's `QuotedStatus` draws it: its content
-    warning, content and poll, then its media under the same rules as a
-    post's own, or, with no media and no quote of its own, its link card. A
-    quote the quoted post makes is not drawn again, only named (“Quoted a
-    post by @…”), as Mastodon stops at one level of nesting. A click on the
-    quote, other than on its media, poll or links, opens its thread.
+ -  A quoted post is drawn in full only on a thread's focused post, as
+    Mastodon's legacy `QuotedStatus` draws it: its content warning, content
+    and poll, then its media under the same rules as a post's own, or, with
+    no media and no quote of its own, its link card. A quote the quoted post
+    makes is not drawn again, only named (“Quoted a post by @…”), as Mastodon
+    stops at one level of nesting. Everywhere else, and in the composer, it
+    is drawn compact, as Mastodon's redesigned `QuotedStatus` draws it: a
+    content warning stands alone in its place (“Content: …”), a poll is only
+    said to be one (“Poll • Closed”), and its link card and its own quote
+    are each a link (“Post from …”) unless it has a content warning. A click
+    on the quote, other than on its media, poll or links, opens its thread.
     Filters act on a quoted post in the quoting post's context: one that
     hides it leaves “Hidden due to your filter “…”” in its place (“Hidden
     due to one of your filters” on a thread's focused post), one that warns
