@@ -104,13 +104,15 @@ refreshes it in local timelines, without notifications, and sends it as an
 Retries and forwarding
 ----------------------
 
-A stamp that cannot be fetched for now (no answer, or a status that may
-change) leaves the quote pending and is tried again as
-`RefetchAndVerifyQuoteWorker` tries it: between 30 seconds and ten minutes
-later, then up to five more times on Sidekiq's exponential backoff, the
-quoting post refreshed in local timelines if the quote's state moves. The
-retries wait in the [job queue](../operating/jobs.md), so a restart does not
-lose them.
+A stamp that cannot be fetched for now (no answer, or a status that may change)
+leaves the quote pending and is tried again as `RefetchAndVerifyQuoteWorker`
+tries it: between 30 seconds and ten minutes later, then up to five more times
+on Sidekiq's exponential backoff, the quoting post refreshed in local timelines
+if the quote's last change moved its state (`state_previously_changed?`), as an
+update that is not an edit is too: a stamp that changed sends an accepted quote
+back to pending, and if it is then accepted again, that is a move all the same.
+The retries wait in the [job queue](../operating/jobs.md), so a restart does
+not lose them.
 
 Mastodon 4.7.1 also has a `QuoteRefreshWorker`, to verify a stamp again a
 week after it was last checked, but nothing schedules it

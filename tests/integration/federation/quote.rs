@@ -1574,3 +1574,55 @@ async fn test_an_edit_that_only_changes_its_quote_is_not_broadcast() {
             .unwrap();
     assert_eq!(updates, 0);
 }
+
+/// An implicit update is broadcast when the quote's last save moved its
+/// state (`state_previously_changed?`), not when its state differs from
+/// before: a changed stamp sends a self-quote back to pending, and
+/// `fast_track_approval!` accepts it again, which is broadcast.
+#[tokio::test]
+async fn test_an_implicit_update_that_reaccepts_a_quote_is_broadcast() {
+    let r = Requested::new("quote-implicit-reaccepted").await;
+    let carol_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
+        .bind(&r.carol_uri)
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    let own = format!("{}/statuses/100", r.carol_uri);
+    seed_remote_status(&r.ctx.db, carol_id, &own).await;
+    let mut create = r.create(1);
+    create["object"]["quote"] = json!(own);
+    r.send(&create).await;
+    let quoting = r.status(1).await;
+    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
+    sqlx::query("UPDATE quotes SET approval_uri = $2 WHERE status_id = $1")
+        .bind(quoting)
+        .bind(format!("{}/stamps/1", r.carol_uri))
+        .execute(&r.ctx.db)
+        .await
+        .unwrap();
+    let resp = r
+        .ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{quoting}/reblog"),
+            Some(&r.ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+
+    let mut update = r.update(
+        1,
+        "",
+        json!({"quote": own, "quoteAuthorization": format!("{}/stamps/2", r.carol_uri)}),
+    );
+    update["object"].as_object_mut().unwrap().remove("updated");
+    r.send(&update).await;
+    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
+    let updates: i64 =
+        sqlx::query_scalar(r#"SELECT count(*) FROM notifications WHERE "type" = 'update'"#)
+            .fetch_one(&r.ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(updates, 1);
+}

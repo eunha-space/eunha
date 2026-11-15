@@ -155,6 +155,7 @@ pub(super) async fn process_quote(
         fields.uri,
         embedded,
         depth,
+        &mut Saved::default(),
     )
     .await?
     {
@@ -165,9 +166,10 @@ pub(super) async fn process_quote(
 
 /// `ActivityPub::ProcessStatusUpdateService`'s quote handling, for the remote
 /// status `status_id` just updated from `object`: `update_quote!` for an
-/// edit (`explicit`), `update_quote_approval!` otherwise. Says whether the
-/// quote changed state or was replaced, which is when an implicit update is
-/// broadcast.
+/// edit (`explicit`), `update_quote_approval!` otherwise. Says whether an
+/// implicit update is broadcast: whether the quote's last save moved its
+/// state (`@status.quote&.state_previously_changed?`). For an edit, whether
+/// the quote was replaced or moved state.
 pub(super) async fn update_quote(
     state: &AppState,
     status_id: i64,
@@ -202,14 +204,26 @@ pub(super) async fn update_quote(
                 return Ok(false);
             }
         }
+        let mut saved = Saved::default();
         let quote =
-            reset_if_stamp_changed(state, quote, fields.approval_uri, fields.legacy).await?;
+            reset_if_stamp_changed(state, quote, fields.approval_uri, fields.legacy, &mut saved)
+                .await?;
         let embedded = fields.embedded(&account_uri, context);
         let quote_id = quote.id;
-        if verify(state, quote, fields.approval_uri, Some(uri), embedded, 0).await? {
+        if verify(
+            state,
+            quote,
+            fields.approval_uri,
+            Some(uri),
+            embedded,
+            0,
+            &mut saved,
+        )
+        .await?
+        {
             refetch_and_verify_later(state, quote_id, Some(uri), fields.approval_uri).await;
         }
-        return state_moved(state, status_id, before).await;
+        return Ok(saved.state_changed);
     }
 
     // `update_quote!`
@@ -232,9 +246,16 @@ pub(super) async fn update_quote(
             crate::quotes::destroy(&state.db, &quote).await?;
             insert_pending(state, status_id, account_id, &fields, fields.deleted).await?
         }
-        Some(quote) => {
-            Some(reset_if_stamp_changed(state, quote, fields.approval_uri, fields.legacy).await?)
-        }
+        Some(quote) => Some(
+            reset_if_stamp_changed(
+                state,
+                quote,
+                fields.approval_uri,
+                fields.legacy,
+                &mut Saved::default(),
+            )
+            .await?,
+        ),
         // `Quote.create(status:, approval_uri: nil, legacy:)`, with no state:
         // pending, even of a `Tombstone`.
         None => insert_pending(state, status_id, account_id, &fields, false).await?,
@@ -242,7 +263,17 @@ pub(super) async fn update_quote(
     if let Some(quote) = quote {
         let embedded = fields.embedded(&account_uri, context);
         let quote_id = quote.id;
-        if verify(state, quote, fields.approval_uri, fields.uri, embedded, 0).await? {
+        if verify(
+            state,
+            quote,
+            fields.approval_uri,
+            fields.uri,
+            embedded,
+            0,
+            &mut Saved::default(),
+        )
+        .await?
+        {
             refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri).await;
         }
     }
@@ -289,6 +320,7 @@ async fn reset_if_stamp_changed(
     quote: Quote,
     approval_uri: Option<&str>,
     legacy: bool,
+    saved: &mut Saved,
 ) -> AppResult<Quote> {
     let Some(stored) = quote.approval_uri.as_deref() else {
         return Ok(quote);
@@ -304,6 +336,7 @@ async fn reset_if_stamp_changed(
     )
     .execute(&state.db)
     .await?;
+    saved.state_changed = quote.state != quote_state::PENDING;
     crate::quotes::state_changed(
         &state.db,
         quote.quoted_status_id,
@@ -315,6 +348,14 @@ async fn reset_if_stamp_changed(
     Ok(crate::quotes::find(&state.db, quote.id)
         .await?
         .unwrap_or(quote))
+}
+
+/// `Quote#state_previously_changed?`: whether the last save of the quote
+/// moved its state. A save that changes nothing else, or the state to what
+/// it was, clears it; no save leaves it as it was.
+#[derive(Default)]
+pub(super) struct Saved {
+    state_changed: bool,
 }
 
 /// Whether the quote of `status_id` is another than `before`, or in another
@@ -356,6 +397,7 @@ async fn verify(
     quoted_uri: Option<&str>,
     embedded_quote: Option<Value>,
     depth: u8,
+    saved: &mut Saved,
 ) -> AppResult<bool> {
     let approval_uri = approval_uri
         .map(str::to_owned)
@@ -373,7 +415,7 @@ async fn verify(
                 Err(error) => return Err(error),
             };
             if let Some(found) = found {
-                quote = set_quoted_status(state, quote, found).await?;
+                quote = set_quoted_status(state, quote, found, saved).await?;
             }
         }
     }
@@ -382,7 +424,7 @@ async fn verify(
     }
     // `fast_track_approval!`: always allow someone to quote themselves. (It
     // returns false whatever it does, so verifying goes on.)
-    fast_track(state, &quote).await?;
+    fast_track(state, &mut quote, saved).await?;
     let Some(approval_uri) = approval_uri.filter(|u| !u.is_empty()) else {
         return Ok(false);
     };
@@ -390,7 +432,7 @@ async fn verify(
     let json = match crate::federation::fetch::signed_get_json(state, &approval_uri).await {
         Ok(json) if json.get("id").and_then(Value::as_str) == Some(approval_uri.as_str()) => json,
         Ok(_) => {
-            crate::quotes::reject(&state.db, &quote).await?;
+            reject(state, &mut quote, saved).await?;
             return Ok(false);
         }
         Err(error) if temporary(&error) => {
@@ -399,7 +441,7 @@ async fn verify(
         }
         Err(_) => {
             // `return quote.reject! if @json.nil?`
-            crate::quotes::reject(&state.db, &quote).await?;
+            reject(state, &mut quote, saved).await?;
             return Ok(false);
         }
     };
@@ -441,8 +483,8 @@ async fn verify(
                 let mut target = target.clone();
                 target["@context"] = json.get("@context").cloned().unwrap_or(Value::Null);
                 if let Some(found) = fetch_remote_status_prefetched(state, uri, target).await? {
-                    quote = set_quoted_status(state, quote, found).await?;
-                    fast_track(state, &quote).await?;
+                    quote = set_quoted_status(state, quote, found, saved).await?;
+                    fast_track(state, &mut quote, saved).await?;
                 }
             }
         }
@@ -461,7 +503,7 @@ async fn verify(
     if quoted_status_uri.as_deref() != target || quoted_account_uri.as_deref() != attributed_to {
         return Ok(false);
     }
-    crate::quotes::accept(&state.db, &quote, Some(&approval_uri)).await?;
+    saved.state_changed = crate::quotes::accept(&state.db, &quote, Some(&approval_uri)).await?;
     Ok(false)
 }
 
@@ -517,8 +559,8 @@ impl crate::jobs::Job for RefetchAndVerifyQuoteWorker {
         let Some(quote) = crate::quotes::find(&state.db, self.quote_id).await? else {
             return Ok(());
         };
-        let before = quote.state;
         let status_id = quote.status_id;
+        let mut saved = Saved::default();
         let retry = verify(
             state,
             quote,
@@ -526,13 +568,12 @@ impl crate::jobs::Job for RefetchAndVerifyQuoteWorker {
             self.quoted_uri.as_deref(),
             None,
             0,
+            &mut saved,
         )
         .await
         .map_err(|error| anyhow::anyhow!("{error:?}"))?;
-        let after = crate::quotes::find(&state.db, self.quote_id)
-            .await?
-            .map(|q| q.state);
-        if after.is_some_and(|after| after != before) {
+        // `if quote.state_previously_changed?`
+        if saved.state_changed {
             crate::quotes::distribute_update(state, status_id, false).await;
         }
         anyhow::ensure!(!retry, "the quote's stamp could not be fetched for now");
@@ -553,10 +594,26 @@ fn temporary(error: &anyhow::Error) -> bool {
     }
 }
 
-async fn fast_track(state: &AppState, quote: &Quote) -> AppResult<()> {
+async fn fast_track(state: &AppState, quote: &mut Quote, saved: &mut Saved) -> AppResult<()> {
     if quote.quoted_status_id.is_some() && Some(quote.account_id) == quote.quoted_account_id {
-        crate::quotes::accept(&state.db, quote, None).await?;
+        saved.state_changed = crate::quotes::accept(&state.db, quote, None).await?;
+        quote.state = quote_state::ACCEPTED;
     }
+    Ok(())
+}
+
+/// `Quote#reject!`, which saves nothing of a revoked quote.
+async fn reject(state: &AppState, quote: &mut Quote, saved: &mut Saved) -> AppResult<()> {
+    if quote.state == quote_state::REVOKED {
+        return Ok(());
+    }
+    saved.state_changed = crate::quotes::reject(&state.db, quote).await?;
+    quote.state = if quote.accepted() {
+        quote_state::REVOKED
+    } else {
+        quote_state::REJECTED
+    };
+    quote.approval_uri = None;
     Ok(())
 }
 
@@ -593,7 +650,12 @@ async fn find_or_fetch_status(
 /// `@quote.update(quoted_status: status) if status.present? &&
 /// !status.reblog?`, which `Quote#validate_visibility` refuses for someone
 /// else's post that is not public or unlisted.
-async fn set_quoted_status(state: &AppState, quote: Quote, status_id: i64) -> AppResult<Quote> {
+async fn set_quoted_status(
+    state: &AppState,
+    quote: Quote,
+    status_id: i64,
+    saved: &mut Saved,
+) -> AppResult<Quote> {
     let Some(quoted) = sqlx::query!(
         "SELECT id, account_id, visibility, reblog_of_id FROM statuses WHERE id = $1",
         status_id,
@@ -618,6 +680,7 @@ async fn set_quoted_status(state: &AppState, quote: Quote, status_id: i64) -> Ap
     )
     .execute(&state.db)
     .await?;
+    saved.state_changed = false;
     Ok(crate::quotes::find(&state.db, quote.id)
         .await?
         .unwrap_or(quote))
