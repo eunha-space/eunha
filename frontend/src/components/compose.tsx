@@ -30,7 +30,20 @@ import { useReadingPreferences } from '../reading-preferences.ts'
 import { EmojiPicker, type PickedEmoji } from '@/components/emoji-picker.tsx'
 import type { AnyEmoji } from '@/lib/emoji-search.ts'
 import { DisplayName } from '@/components/emoji.tsx'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { Checkbox } from '@/components/ui/checkbox.tsx'
+import { Label } from '@/components/ui/label.tsx'
+import { dismiss, isDismissed } from '@/lib/dismissed.ts'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
@@ -45,6 +58,9 @@ import { ComposePoll, type PollDraft } from '@/components/compose-poll.tsx'
 import { countGraphemes, countPostCharacters, guessPostLanguage, postLanguageName } from '@/lib/post-language.ts'
 
 const MAX_ATTACHMENTS = 4
+
+// Mastodon's `PRIVATE_QUOTE_MODAL_ID`.
+const PRIVATE_QUOTE_NOTIFY = 'quote/private_notify'
 
 // A suggested account's avatar: still until hovered, unless GIFs auto-play.
 function SuggestionAvatar({ account }: { account: mastodon.v1.Account }) {
@@ -172,6 +188,8 @@ export function Compose({
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmingPrivateQuote, setConfirmingPrivateQuote] = useState(false)
+  const [privateQuoteDismissed, setPrivateQuoteDismissed] = useState(false)
   const [warningOverride, setWarningOverride] = useState<boolean>()
   const [defaultWarning, setDefaultWarning] = useState(false)
   const [warning, setWarning] = useState('')
@@ -345,8 +363,21 @@ export function Compose({
     ((warningOpen ? warning : '') + text).trim().length > 0 || attachments.length > 0
   const submittable = canPost && !uploading
 
-  const submit = async () => {
+  // Mastodon's `CONFIRM_PRIVATE_QUOTE_NOTIFY`: a followers-only post that
+  // quotes someone else is shown to them, and to whoever it mentions, so it
+  // asks first, unless told not to again.
+  const asksBeforePrivateQuote =
+    !!quoteOf &&
+    visibility === 'private' &&
+    quoteOf.account.id !== getMeId() &&
+    !isDismissed(PRIVATE_QUOTE_NOTIFY)
+
+  const submit = async (confirmed = false) => {
     if (!submittable || busy) return
+    if (asksBeforePrivateQuote && !confirmed) {
+      setConfirmingPrivateQuote(true)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -724,13 +755,43 @@ export function Compose({
             <Button
               size="sm"
               disabled={busy || !submittable}
-              onClick={submit}
+              onClick={() => void submit()}
               title={`${label} (⌘/Ctrl + Enter)`}
             >
               {label}
             </Button>
           </div>
         </div>
+        <AlertDialog open={confirmingPrivateQuote} onOpenChange={setConfirmingPrivateQuote}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Share with followers and mentioned users?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The person you are quoting and other mentions will be notified and will be able
+                to view your post, even if they're not following you.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <Label className="text-sm font-normal">
+              <Checkbox
+                checked={privateQuoteDismissed}
+                onCheckedChange={setPrivateQuoteDismissed}
+              />
+              Don't show me this message again
+            </Label>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Back to editing</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  setConfirmingPrivateQuote(false)
+                  if (privateQuoteDismissed) dismiss(PRIVATE_QUOTE_NOTIFY)
+                  void submit(true)
+                }}
+              >
+                Publish post
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </CardContent>
   )
 

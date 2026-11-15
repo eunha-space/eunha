@@ -1,46 +1,19 @@
 import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 
-import { getMeId } from '../me.ts'
+import { dismiss, isDismissed, subscribeDismissed } from '@/lib/dismissed.ts'
 import { Button } from '@/components/ui/button.tsx'
 
 // Mastodon's `RemoveQuoteHint`: on a notification of someone quoting you, it
 // says once where the quote can be taken off your post, then never again.
-// Mastodon keeps the dismissal among the account's web settings
-// (`dismissed_banners`); eunha keeps it in the browser, per account.
-const KEY = 'eunha:dismissed:notifications/remove_quote_hint'
+const HINT_ID = 'notifications/remove_quote_hint'
 
-function storageKey(): string {
-  return `${KEY}:${getMeId() ?? ''}`
-}
-
-function wasDismissed(): boolean {
-  try {
-    return localStorage.getItem(storageKey()) === '1'
-  } catch {
-    return false
-  }
-}
-
-const listeners = new Set<() => void>()
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
+const wasDismissed = () => isDismissed(HINT_ID)
 
 // Opening a post's menu dismisses the hint too, as Mastodon's
 // `StatusActionMenu` does: whoever opens one has found it.
 export function dismissRemoveQuoteHint() {
-  if (wasDismissed()) return
-  try {
-    localStorage.setItem(storageKey(), '1')
-  } catch {
-    // The hint comes back next time; nothing else depends on it.
-  }
-  for (const listener of listeners) listener()
+  dismiss(HINT_ID)
 }
 
 // Only the first hint drawn is shown, so a page of quote notifications
@@ -48,7 +21,7 @@ export function dismissRemoveQuoteHint() {
 let firstHintId: string | null = null
 
 export function RemoveQuoteHint({ canShow }: { canShow: boolean }) {
-  const dismissed = useSyncExternalStore(subscribe, wasDismissed)
+  const dismissed = useSyncExternalStore(subscribeDismissed, wasDismissed)
   const id = useId()
   const [isOnlyHint, setIsOnlyHint] = useState(false)
   const shouldShow = canShow && !dismissed

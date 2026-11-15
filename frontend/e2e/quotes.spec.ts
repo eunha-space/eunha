@@ -403,3 +403,29 @@ test('a quote carries the quoted post’s content warning over', async ({ page }
   await expect(page.getByRole('textbox', { name: 'Content warning' })).toHaveValue('Spoilers ahead')
   await expect(page.getByRole('button', { name: 'Quote', exact: true })).toBeEnabled()
 })
+
+test('a followers-only quote of someone else asks first', async ({ page }) => {
+  await signedIn(page)
+  let posts = 0
+  await page.route('**/api/v1/statuses', async (r) => {
+    posts += 1
+    await r.fulfill({ json: status('11', alice, { visibility: 'private' }) })
+  })
+  await openPost(page, status('10', bob, { quote_approval: approval('automatic') }))
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await page.getByRole('button', { name: 'Who can see this' }).click()
+  await page.getByLabel('Visibility').getByRole('menuitemradio', { name: 'Followers' }).click()
+  await page.keyboard.press('Escape')
+  await page.getByPlaceholder('What would you like to say?').fill('for my followers')
+  await page.getByRole('button', { name: 'Quote', exact: true }).click()
+  await expect(page.getByText('Share with followers and mentioned users?')).toBeVisible()
+  await page.getByRole('button', { name: 'Back to editing' }).click()
+  expect(posts).toBe(0)
+
+  await page.getByRole('button', { name: 'Quote', exact: true }).click()
+  await page.getByRole('checkbox').click()
+  await page.getByRole('button', { name: 'Publish post' }).click()
+  await expect.poll(() => posts).toBe(1)
+  const dismissed = await page.evaluate(() => localStorage.getItem('eunha:dismissed:quote/private_notify:1'))
+  expect(dismissed).toBe('1')
+})
