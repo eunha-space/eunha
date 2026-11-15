@@ -16,7 +16,11 @@ Quoting
 A local quote of a local post is accepted at once when `StatusPolicy#quote?`
 lets the quoter quote it; a quote that may not be made, of a post that is not
 there, or of a direct one, is the same 404 Mastodon gives
-(`quoted_status_not_found`). A quote of a boost quotes the boosted post. The
+(`quoted_status_not_found`). Someone else's post that is not public or
+unlisted, which `StatusPolicy#quote?` may allow, still cannot be quoted
+(`Quote#validate_visibility`): nothing is posted, and the answer is a 422,
+where Mastodon's unsaved status fails with a 500. A quote of a boost quotes
+the boosted post. The
 quoted author is mentioned silently in the quote (`ensure_quoted_access`), a
 mention an edit leaves alone, and is notified with a `quote` notification
 about the `Quote`, as `LocalNotificationWorker` writes it.

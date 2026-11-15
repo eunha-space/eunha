@@ -2163,3 +2163,25 @@ follows bring in, keep the feed for discovery."""
 evidence = "tests/integration/c2s/feed_access.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "quote-of-a-post-not-for-everyone-rejected"
+kind = "behaviour"
+summary = "Refuses to quote someone else's private post with a 422, rather than failing"
+mastodon = """
+`PostStatusService#attach_quote!` creates the quote with `Quote.create`, which \
+`Quote#validate_visibility` refuses for someone else's post that is not \
+public or unlisted, so neither the quote nor the status it would have saved \
+is saved. `ensure_quoted_access` then creates a mention on the unsaved status, \
+which raises `ActiveRecord::RecordNotSaved`; nothing rescues it, and \
+`POST /api/v1/statuses` answers 500 with nothing posted."""
+eunha = """
+Answers 422 (`Validation failed: Quoted status is not visible to everyone`), \
+with nothing posted."""
+why = """
+The quote is refused by a validation, and a 422 is what a validation failure \
+gives everywhere else in the API; a 500 tells the client the server broke \
+and that it may retry. Nothing is written either way."""
+evidence = "tests/integration/c2s/statuses.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

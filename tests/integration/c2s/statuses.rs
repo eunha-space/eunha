@@ -7084,6 +7084,86 @@ async fn test_quote_of_private_forces_private_visibility() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+/// A remote account's post that `alice` may see, `visibility` as stored,
+/// open to quotes by anyone (`quote_approval_policy` public): its id.
+async fn remote_quotable_post(ctx: &TestContext, visibility: i32) -> i64 {
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let remy = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO accounts (id, username, domain, display_name, note, uri, url, inbox_url,
+                                 protocol, created_at, updated_at)
+           VALUES ($1, 'remy', 'remote.invalid', 'remy', '', 'https://remote.invalid/users/remy',
+                   'https://remote.invalid/@remy', 'https://remote.invalid/users/remy/inbox', 1, now(), now())"#,
+    )
+    .bind(remy)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let status_id = eunha::snowflake::next_id();
+    sqlx::query(
+        r#"INSERT INTO statuses (id, account_id, text, uri, visibility, quote_approval_policy,
+                                 local, created_at, updated_at)
+           VALUES ($1, $2, 'for some', 'https://remote.invalid/users/remy/statuses/1', $3,
+                   131072, false, now(), now())"#,
+    )
+    .bind(status_id)
+    .bind(remy)
+    .bind(visibility)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    // Alice follows remy, and is mentioned: she may see the post.
+    sqlx::query(
+        "INSERT INTO follows (id, account_id, target_account_id, created_at, updated_at)
+         VALUES ($1, $2, $3, now(), now())",
+    )
+    .bind(eunha::snowflake::next_id())
+    .bind(alice)
+    .bind(remy)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO mentions (status_id, account_id, created_at, updated_at)
+         VALUES ($1, $2, now(), now())",
+    )
+    .bind(status_id)
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    status_id
+}
+
+/// `Quote#validate_visibility`: someone else's post that is not public or
+/// unlisted cannot be quoted, even where `StatusPolicy#quote?` allows it.
+/// Nothing is posted, and nobody is asked.
+#[tokio::test]
+async fn test_someone_elses_followers_only_post_cannot_be_quoted() {
+    let ctx = TestContext::new("quote-remote-private").await;
+    let quoted = remote_quotable_post(&ctx, 2).await;
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "quoting", "quoted_status_id": quoted.to_string(), "visibility": "private"}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let posted: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE account_id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(posted, 0);
+    let quotes: i64 = sqlx::query_scalar("SELECT count(*) FROM quotes")
+        .fetch_one(&ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(quotes, 0);
+}
+
 /// Quoting increments quotes_count on the original status.
 #[tokio::test]
 async fn test_quote_post_increments_quotes_count() {

@@ -448,6 +448,24 @@ pub(crate) async fn process_status(
         }
     }
 
+    // `attach_quote!`'s `Quote.create`, which `Quote#validate_visibility`
+    // refuses for someone else's post that is not public or unlisted. The
+    // quote is not saved, so neither is the status it would have saved
+    // first, and `ensure_quoted_access` raises `RecordNotSaved` creating a
+    // mention on it: a 500 upstream, a 422 here.
+    if quoted.as_ref().is_some_and(|q| {
+        q.account_id != account.id
+            && !matches!(
+                q.visibility,
+                crate::db::models::vis::PUBLIC | crate::db::models::vis::UNLISTED
+            )
+    }) {
+        return Err(AppError::Unprocessable(
+            "Validation failed: Quoted status is not visible to everyone".into(),
+        )
+        .into());
+    }
+
     // `@status.save!`: `Status`'s validations, the poll's with them.
     let errors = status_errors(
         &state,
