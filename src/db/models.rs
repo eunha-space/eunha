@@ -620,43 +620,44 @@ pub mod quote_policy {
         else {
             return 0;
         };
+        // `quote_subpolicy`: what is left of `as_array(subpolicy).uniq` once
+        // the audiences it knows are taken out is unsupported, whatever it is
+        // (an object or a number as much as an actor's id).
         let sub = |value: Option<&serde_json::Value>| -> i32 {
-            let mut actors: Vec<String> = match value {
-                Some(serde_json::Value::String(s)) => vec![s.clone()],
-                Some(serde_json::Value::Array(a)) => a
-                    .iter()
-                    .filter_map(|v| match v {
-                        serde_json::Value::String(s) => Some(s.clone()),
-                        serde_json::Value::Object(o) => {
-                            o.get("id").and_then(|i| i.as_str()).map(str::to_owned)
-                        }
-                        _ => None,
-                    })
-                    .collect(),
-                _ => vec![],
+            let mut actors: Vec<&serde_json::Value> = Vec::new();
+            let listed: Vec<&serde_json::Value> = match value {
+                None | Some(serde_json::Value::Null) => vec![],
+                Some(serde_json::Value::Array(a)) => a.iter().collect(),
+                Some(v) => vec![v],
             };
-            actors.sort();
-            actors.dedup();
-            let mut take = |candidates: &[&str]| {
+            for actor in listed {
+                if !actors.contains(&actor) {
+                    actors.push(actor);
+                }
+            }
+            // `Array#delete`, which answers what it took out (an empty
+            // string is as true as any other), or `nil`.
+            let mut delete = |uri: &str| {
                 let before = actors.len();
-                actors.retain(|a| !candidates.contains(&a.as_str()) || a.is_empty());
+                actors.retain(|a| a.as_str() != Some(uri));
                 actors.len() != before
             };
             let mut flags = 0;
-            if take(&[
-                "as:Public",
-                "Public",
-                "https://www.w3.org/ns/activitystreams#Public",
-            ]) {
+            // `delete('as:Public') || delete('Public') || delete(…#Public)`
+            // takes out the first of them it finds, and leaves the others.
+            if delete("as:Public")
+                || delete("Public")
+                || delete("https://www.w3.org/ns/activitystreams#Public")
+            {
                 flags |= PUBLIC;
             }
-            if !followers.is_empty() && take(&[followers]) {
+            if delete(followers) {
                 flags |= FOLLOWERS;
             }
-            if !following.is_empty() && take(&[following]) {
+            if delete(following) {
                 flags |= FOLLOWING;
             }
-            take(&[actor]);
+            delete(actor);
             if !actors.is_empty() {
                 flags |= UNSUPPORTED_POLICY;
             }
@@ -687,6 +688,41 @@ pub mod quote_policy {
             let only_author = serde_json::json!({"interactionPolicy": {"canQuote": {
                 "automaticApproval": ["https://x.test/users/a"]}}});
             assert_eq!(parse(&only_author, "", "", "https://x.test/users/a"), 0);
+        }
+
+        /// What `quote_subpolicy` does with what is not an actor's id.
+        #[test]
+        fn parses_can_quote_as_mastodon_does() {
+            let auto = |value: serde_json::Value, followers: &str, following: &str| {
+                let object = serde_json::json!({"interactionPolicy": {"canQuote": {
+                    "automaticApproval": value}}});
+                parse(&object, followers, following, "https://x.test/users/a") >> 16
+            };
+            let public = "https://www.w3.org/ns/activitystreams#Public";
+            // Kept as they are, so not understood.
+            assert_eq!(auto(serde_json::json!([123]), "f", "g"), UNSUPPORTED_POLICY);
+            assert_eq!(
+                auto(serde_json::json!([{"id": public}]), "f", "g"),
+                UNSUPPORTED_POLICY
+            );
+            assert_eq!(
+                auto(serde_json::json!({"id": public}), "f", "g"),
+                UNSUPPORTED_POLICY
+            );
+            assert_eq!(
+                auto(serde_json::json!([null]), "f", "g"),
+                UNSUPPORTED_POLICY
+            );
+            // Only the first alias of the public is taken out.
+            assert_eq!(
+                auto(serde_json::json!(["as:Public", public]), "f", "g"),
+                PUBLIC | UNSUPPORTED_POLICY
+            );
+            assert_eq!(auto(serde_json::json!([public, public]), "f", "g"), PUBLIC);
+            // An account with no followers collection has `""` for one.
+            assert_eq!(auto(serde_json::json!([""]), "", "g"), FOLLOWERS);
+            assert_eq!(auto(serde_json::json!([""]), "f", ""), FOLLOWING);
+            assert_eq!(auto(serde_json::json!([""]), "f", "g"), UNSUPPORTED_POLICY);
         }
 
         #[test]
