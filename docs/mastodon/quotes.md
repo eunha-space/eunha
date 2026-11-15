@@ -26,7 +26,9 @@ quoter (`/quote_requests/{uuid}`), goes to the quoted author's own inbox.
 Their `Accept` is taken when its `result` is on their host and the quote is
 still pending; the quote is accepted with that stamp, and the quoting post is
 sent again as an `Update`. A `Reject` revokes an accepted quote and rejects
-any other.
+any other. The answer is found by the request it names, whatever its own id:
+hackers.pub names its `Accept` after the request (`{request}#accept`), on our
+host, and it is taken like any other, as Mastodon takes it.
 
 A remote post's quote is recorded pending, or `deleted` when the post quotes
 a `Tombstone`, and verified as `ActivityPub::VerifyQuoteService` verifies it:

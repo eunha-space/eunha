@@ -1005,7 +1005,31 @@ async fn test_remote_quotes_wait_for_their_stamp() {
     // A stamp on another host than dave's is not his to give.
     answer("Accept", Some("https://elsewhere.invalid/stamps/1".into())).await;
     assert_eq!(quote_state(&ctx, ours).await, 0);
-    answer("Accept", Some(format!("{dave_uri}/quote_authorizations/1"))).await;
+    // hackers.pub names its Accept after the request, so the Accept's id is
+    // on our server, and embeds the request. Mastodon processes it.
+    let accept = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{request_id}#accept"),
+        "type": "Accept",
+        "actor": dave_uri,
+        "object": {
+            "id": request_id,
+            "type": "QuoteRequest",
+            "actor": alice_uri,
+            "object": format!("{dave_uri}/statuses/7"),
+        },
+        "result": format!("{dave_uri}/quote_authorizations/1"),
+    });
+    let resp = ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &accept,
+            &format!("{dave_uri}#main-key"),
+            &dave_key,
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
     assert_eq!(quote_state(&ctx, ours).await, 1);
     assert_eq!(quotes_count(&ctx, dave_post).await, 1);
 
