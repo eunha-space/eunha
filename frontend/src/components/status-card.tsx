@@ -376,12 +376,15 @@ export function StatusCard({
     }
   }
 
-  // A post from a public or hashtag stream has no quote policy for the
-  // reader; opening the menu fetches it, as Mastodon's menu does
-  // (`needsStatusRefresh`), so its Quote item can say what it should.
   const onMenuOpenChange = (open: boolean) => {
     setMenuOpen(open)
     if (open && token) dismissRemoveQuoteHint()
+  }
+
+  // A post from a public or hashtag stream has no quote policy for the
+  // reader; opening the boost menu fetches it, as Mastodon's
+  // `BoostOrQuoteMenu` does, so its Quote item can say what it should.
+  const onBoostMenuOpenChange = (open: boolean) => {
     if (open && token && !status.quoteApproval) {
       getStatus(status.id, token).then(setStatus).catch(() => {})
     }
@@ -736,7 +739,7 @@ export function StatusCard({
           ) : (
             // Boosting asks first, and offers quoting beside it, as
             // Mastodon's `BoostButton` does, with its labels.
-            <DropdownMenu>
+            <DropdownMenu onOpenChange={onBoostMenuOpenChange}>
               <DropdownMenuTrigger
                 disabled={busy || boostMenuDisabled}
                 render={
