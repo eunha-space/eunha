@@ -745,20 +745,37 @@ export function Compose({
                 <DropdownMenuCheckboxItem checked={sensitive ?? defaultSensitive} onCheckedChange={setSensitive}>
                   Mark media as sensitive
                 </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={visibility === 'private' || visibility === 'direct' ? 'nobody' : quotePolicy}
-                  onValueChange={(value) => setQuotePolicy(value as QuotePolicy)}
-                >
-                  <DropdownMenuLabel>Who can quote</DropdownMenuLabel>
-                  <DropdownMenuRadioItem value="public" disabled={visibility === 'private' || visibility === 'direct'}>
-                    Anyone
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="followers" disabled={visibility === 'private' || visibility === 'direct'}>
-                    Followers
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="nobody">Only me</DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
+                {/* As in Mastodon's compose settings, a message has no
+                    quote policy to choose; a followers-only post's is
+                    "Just me", and says so. */}
+                {visibility !== 'direct' && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuRadioGroup
+                      value={visibility === 'private' ? 'nobody' : quotePolicy}
+                      onValueChange={(value) => setQuotePolicy(value as QuotePolicy)}
+                    >
+                      <DropdownMenuLabel>Who can quote</DropdownMenuLabel>
+                      <DropdownMenuRadioItem value="public" disabled={visibility === 'private'}>
+                        Anyone
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="followers" disabled={visibility === 'private'}>
+                        Followers
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="nobody">
+                        <span className="flex flex-col">
+                          Just me
+                          {visibility === 'private' && (
+                            <span className="text-muted-foreground max-w-60 text-xs">
+                              When your post's visibility is set to Followers, it can only be
+                              quoted by you.
+                            </span>
+                          )}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             {uploading && (

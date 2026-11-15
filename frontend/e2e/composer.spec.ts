@@ -116,7 +116,22 @@ test('choosing Followers disables discoverability and quoting', async ({ page })
   await page.getByRole('button', { name: 'Post settings' }).click()
   const quotes = page.getByLabel('Who can quote')
   await expect(quotes.getByRole('menuitemradio', { name: 'Anyone' })).toBeDisabled()
-  await expect(quotes.getByRole('menuitemradio', { name: 'Only me' })).toHaveAttribute('aria-checked', 'true')
+  const justMe = quotes.getByRole('menuitemradio', { name: /Just me/ })
+  await expect(justMe).toHaveAttribute('aria-checked', 'true')
+  await expect(justMe).toContainText("When your post's visibility is set to Followers, it can only be quoted by you.")
+})
+
+// A message cannot be quoted by anyone but its author, so Mastodon offers
+// no choice there at all.
+test('a message has no quote policy to choose', async ({ page }) => {
+  await signedIn(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await audience(page).click()
+  await page.getByRole('menuitem', { name: 'Compose a message instead' }).click()
+  await page.getByRole('button', { name: 'Post settings' }).click()
+  await expect(page.getByRole('menuitemcheckbox', { name: 'Content warning' })).toBeVisible()
+  await expect(page.getByText('Who can quote')).toHaveCount(0)
 })
 
 // Post → message is immediate; message → post asks first, because that is the
