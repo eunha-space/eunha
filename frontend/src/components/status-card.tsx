@@ -75,7 +75,7 @@ import { PreviewCard } from '@/components/preview-card.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
-import { RemoveQuoteHint } from '@/components/remove-quote-hint.tsx'
+import { dismissRemoveQuoteHint, RemoveQuoteHint } from '@/components/remove-quote-hint.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { quoteItemState } from '@/lib/statuses.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
@@ -374,6 +374,7 @@ export function StatusCard({
   // (`needsStatusRefresh`), so its Quote item can say what it should.
   const onMenuOpenChange = (open: boolean) => {
     setMenuOpen(open)
+    if (open && token) dismissRemoveQuoteHint()
     if (open && token && !status.quoteApproval) {
       getStatus(status.id, token).then(setStatus).catch(() => {})
     }

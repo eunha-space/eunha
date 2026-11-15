@@ -181,6 +181,19 @@ test('quoting a post opens the composer with the post in it', async ({ page }) =
   await expect(page.getByText('Quoting this post')).toBeVisible()
 })
 
+test('opening a post’s menu dismisses the remove-quote hint', async ({ page }) => {
+  await signedIn(page)
+  const quoting = status('10', bob, { quote: { state: 'accepted', quoted_status: status('20', alice) } })
+  await page.route('**/api/v1/notifications**', (r) => r.fulfill({ json: [
+    { id: '1', type: 'quote', created_at: '2026-01-01T00:00:00Z', account: bob, status: quoting },
+  ] }))
+  await page.route('**/api/v1/notifications/unread_count**', (r) => r.fulfill({ json: { count: 0 } }))
+  await page.goto('/notifications')
+  await expect(page.getByText('Want to remove your quoted post?')).toBeVisible()
+  await page.getByRole('button', { name: 'More', exact: true }).first().click()
+  await expect(page.getByText('Want to remove your quoted post?')).toHaveCount(0)
+})
+
 const approval = (current_user: string, automatic = ['public'], manual: string[] = []) =>
   ({ automatic, manual, current_user })
 

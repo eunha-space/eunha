@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { MoreHorizontal } from 'lucide-react'
 
 import { getMeId } from '../me.ts'
@@ -22,12 +22,33 @@ function wasDismissed(): boolean {
   }
 }
 
+const listeners = new Set<() => void>()
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+// Opening a post's menu dismisses the hint too, as Mastodon's
+// `StatusActionMenu` does: whoever opens one has found it.
+export function dismissRemoveQuoteHint() {
+  if (wasDismissed()) return
+  try {
+    localStorage.setItem(storageKey(), '1')
+  } catch {
+    // The hint comes back next time; nothing else depends on it.
+  }
+  for (const listener of listeners) listener()
+}
+
 // Only the first hint drawn is shown, so a page of quote notifications
 // carries one rather than one each.
 let firstHintId: string | null = null
 
 export function RemoveQuoteHint({ canShow }: { canShow: boolean }) {
-  const [dismissed, setDismissed] = useState(wasDismissed)
+  const dismissed = useSyncExternalStore(subscribe, wasDismissed)
   const id = useId()
   const [isOnlyHint, setIsOnlyHint] = useState(false)
   const shouldShow = canShow && !dismissed
@@ -48,15 +69,6 @@ export function RemoveQuoteHint({ canShow }: { canShow: boolean }) {
 
   if (!shouldShow || !isOnlyHint) return null
 
-  const dismiss = () => {
-    try {
-      localStorage.setItem(storageKey(), '1')
-    } catch {
-      // The hint comes back next time; nothing else depends on it.
-    }
-    setDismissed(true)
-  }
-
   return (
     <div role="note" className="bg-muted/50 space-y-1 rounded-md border p-2.5 text-sm">
       <p className="font-medium">Want to remove your quoted post?</p>
@@ -65,7 +77,7 @@ export function RemoveQuoteHint({ canShow }: { canShow: boolean }) {
         <MoreHorizontal aria-label="More" className="inline size-4 align-text-bottom" />{' '}
         options menu.
       </p>
-      <Button variant="ghost" size="sm" onClick={dismiss}>
+      <Button variant="ghost" size="sm" onClick={dismissRemoveQuoteHint}>
         Got it
       </Button>
     </div>
