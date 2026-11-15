@@ -110,6 +110,25 @@ test('signed out, the federated row follows remote_live_feed_access', async ({ p
   await expect(rail.getByRole('link', { name: 'Federated' })).toHaveCount(0)
 })
 
+// A visitor who opens `/public` anyway lands on the front page, and asks for
+// nothing beyond the local timeline on the way.
+test('signed out, /public goes to / unless remote_live_feed_access is public', async ({ page }) => {
+  const asked: string[] = []
+  await page.route('**/api/v1/timelines/**', (r) => {
+    asked.push(r.request().url())
+    return r.fulfill({ json: [] })
+  })
+  await liveFeedAccess(page, 'authenticated')
+  await page.goto('/public')
+  await expect(page).toHaveURL(/\/$/)
+  expect(asked.every((url) => url.includes('local=true'))).toBe(true)
+
+  await liveFeedAccess(page, 'public')
+  await page.goto('/public')
+  await expect(page.locator('.column-frame').getByRole('button', { name: 'Federated' })).toBeVisible()
+  await expect(page).toHaveURL(/\/public$/)
+})
+
 // And `local_live_feed_access` does the same for the local row.
 test('signed out, the local row follows local_live_feed_access', async ({ page }) => {
   await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
