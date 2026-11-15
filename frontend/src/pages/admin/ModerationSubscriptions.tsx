@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { DetailSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
 
 const TABS = [
   { to: '/admin/moderation_subscriptions', label: 'Subscriptions' },
@@ -252,6 +253,7 @@ export function ModerationSubscriptions() {
           }}
         />
       )}
+      {subscriptions === null && !error && <RowsSkeleton action />}
       {subscriptions?.length === 0 && (
         <p className="text-muted-foreground text-sm">
           No moderation list has been subscribed to yet.
@@ -312,6 +314,7 @@ export function ModerationSubscriptionDetail() {
       sub={TABS}
     >
       <AdminError error={error} />
+      {!data && !error && <DetailSkeleton />}
       {subscription && data && (
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm break-all">{subscription.url}</p>
@@ -397,6 +400,7 @@ export function ModerationSubscriptionLogs() {
   return (
     <AdminLayout title="Moderation subscriptions logs" permission="manage_federation" sub={TABS}>
       <AdminError error={error} />
+      {logs === null && !error && <RowsSkeleton count={6} />}
       {logs?.length === 0 && <p className="text-muted-foreground text-sm">No logs found.</p>}
       <div className="divide-y rounded-lg border">
         {logs?.map((log) => <ActionLogEntry key={log.id} log={log} />)}
@@ -556,6 +560,7 @@ export function ModerationSuggestions() {
       <p className="text-muted-foreground text-sm">
         Below are suggestions from your moderation subscriptions, ordered by priority.
       </p>
+      {targets === null && !error && <RowsSkeleton action />}
       {targets?.length === 0 && (
         <p className="text-muted-foreground text-sm">
           There is no moderation suggestion at this time.

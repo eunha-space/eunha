@@ -41,6 +41,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { CATEGORY_LABELS } from './Reports.tsx'
+import { DetailSkeleton } from '@/components/skeletons.tsx'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -208,7 +209,7 @@ export default function ReportDetail() {
       }
     >
       <AdminError error={error} />
-      {!report && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {!report && !error && <DetailSkeleton />}
       {report && token && (
         <div className="space-y-5">
           <section className="space-y-3 rounded-lg border p-3">

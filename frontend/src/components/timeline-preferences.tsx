@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 // `simple_form.labels.defaults.setting_display_media_*`.
 const DISPLAY_MEDIA: [Preferences['display_media'], string][] = [
@@ -29,6 +30,7 @@ const DISPLAY_MEDIA: [Preferences['display_media'], string][] = [
  */
 export function TimelinePreferences({ token }: { token: string }) {
   const [prefs, setPrefs] = useState<Preferences | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     getPreferences(token)
@@ -36,10 +38,10 @@ export function TimelinePreferences({ token }: { token: string }) {
         setPrefs(loaded)
         applyPreferences(loaded)
       })
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
 
-  if (!prefs) return null
+  if (!prefs) return failed ? null : <SectionSkeleton rows={3} />
 
   const save = async (changes: Parameters<typeof updatePreferences>[1]) => {
     try {

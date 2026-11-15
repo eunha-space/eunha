@@ -16,6 +16,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { cn } from '@/lib/utils.ts'
+import { GridSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
 
 // What masto.js leaves out of an account: the profile's display preferences,
 // which choose its tabs.
@@ -207,7 +208,7 @@ export function MediaGrid({ account, token }: { account: mastodon.v1.Account; to
 
   return (
     <div className="space-y-2">
-      {feed.items === null && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {feed.items === null && <GridSkeleton count={9} className="grid-cols-3 gap-1" />}
       {tiles.length > 0 && (
         <ul className="grid grid-cols-3 gap-1" aria-label="Media">
           {tiles.map(({ status, media }) => (
@@ -302,7 +303,7 @@ export function FeaturedPane({
   }, [account.id, token])
 
   if (profiles === null || collections === null) {
-    return <p className="text-muted-foreground text-sm">Loading…</p>
+    return <RowsSkeleton count={2} />
   }
 
   const listed = collections.filter((c) => c.discoverable)

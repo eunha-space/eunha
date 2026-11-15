@@ -10,6 +10,7 @@ import { RelativeTime } from '@/components/relative-time.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 function Version({
   edit,
@@ -120,7 +121,7 @@ export default function StatusHistory() {
 
       {error && <p className="text-destructive text-sm">{error}</p>}
       {edits === null && !error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <FeedSkeleton count={2} />
       )}
       {newestFirst && (
         <ol className="space-y-2">

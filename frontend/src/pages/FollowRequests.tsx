@@ -9,6 +9,7 @@ import { AccountRow } from '@/components/account-row.tsx'
 import { FollowRequestActions } from '@/components/follow-request-actions.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 async function* emptyPages<T>(): AsyncIterable<T[]> {}
 
@@ -44,7 +45,7 @@ export default function FollowRequests() {
         <div className="space-y-1">
           {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
           {accounts === null && !feed.error && (
-            <p className="text-muted-foreground text-sm">Loading…</p>
+            <AccountListSkeleton />
           )}
           {accounts?.map((a) => (
             <AccountRow

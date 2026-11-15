@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { errorMessage } from '@/lib/utils.ts'
+import { AccountListSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
 
 type Collection = AccountCollection & {
   account_id: string
@@ -93,7 +94,7 @@ function CollectionIndex({ token, accountId }: { token: string; accountId: strin
       <h1 className="text-xl font-bold">Collections</h1>
       <CollectionEditor token={token} onSaved={(id) => navigate(`/collections/${id}`)} />
       {error && <p role="alert">Could not load collections.</p>}
-      {!items && !error && <p>Loading…</p>}
+      {!items && !error && <RowsSkeleton count={3} />}
       {items?.map((collection) => (
         <Link key={collection.id} to={`/collections/${collection.id}`} className="block rounded-md border p-3">
           {collection.name}
@@ -134,7 +135,7 @@ function CollectionDetail({ id, token, accountId }: { id: string; token: string 
     }
   }
 
-  if (!detail) return <p role={error ? 'alert' : undefined}>{error ? 'Could not load this collection.' : 'Loading…'}</p>
+  if (!detail) return error ? <p role="alert">Could not load this collection.</p> : <AccountListSkeleton />
   const { collection, accounts } = detail
   const owner = token && collection.local && accountId === collection.account_id
   return (

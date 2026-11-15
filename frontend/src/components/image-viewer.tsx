@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ChevronLeft, ChevronRight, ExternalLink, Minimize, X, ZoomIn } from 'lucide-react'
 
 import { Button } from '@/components/ui/button.tsx'
+import { Skeleton } from '@/components/ui/skeleton.tsx'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.tsx'
 
 export interface ViewerImage {
@@ -15,7 +16,9 @@ function ImageSlide({ image, original }: { image: ViewerImage; original: boolean
   const [failed, setFailed] = useState(false)
   return (
     <>
-      {!loaded && !failed && <p role="status" className="absolute text-sm text-muted-foreground">Loading image…</p>}
+      {!loaded && !failed && (
+        <Skeleton role="status" aria-label="Loading image" className="pointer-events-none absolute aspect-[4/3] w-[min(80vw,40rem)] max-h-[70vh]" />
+      )}
       {failed ? <p role="alert" className="p-6 text-center text-sm">Could not load this image. You can try opening the original.</p> : (
         <img src={image.url} alt={image.description || 'Image attachment'}
           draggable={false} onLoad={() => setLoaded(true)} onError={() => setFailed(true)}

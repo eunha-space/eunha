@@ -16,6 +16,7 @@ import {
   ChoiceSelect,
 } from '@/components/admin/admin-common.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 type Relationship = NonNullable<RelationshipFilters['relationship']>
 type Location = NonNullable<RelationshipFilters['location']> | 'all'
@@ -89,7 +90,7 @@ export default function Relationships() {
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <AccountListSkeleton />
       )}
       <div className={feed.items?.length ? 'divide-y rounded-lg border' : ''}>
         {feed.items?.map((a) => (

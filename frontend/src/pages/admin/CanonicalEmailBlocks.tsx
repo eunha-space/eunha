@@ -17,6 +17,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { BLOCK_TABS } from './IpBlocks.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const MODES = { email: 'By email address', hash: 'By canonical hash' }
 
@@ -112,7 +113,7 @@ export default function CanonicalEmailBlocks() {
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton action />
       )}
       <div className={feed.items?.length ? 'divide-y rounded-lg border' : ''}>
         {feed.items?.map((b) => (

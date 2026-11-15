@@ -14,6 +14,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 const ORIGINS = { all: 'Anywhere', local: 'Local', remote: 'Remote' }
 const STATUSES = {
@@ -156,7 +157,7 @@ export default function Accounts() {
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <AccountListSkeleton />
       )}
       <div className="space-y-2">
         {feed.items?.map((a) => <AccountRowItem key={a.id} account={a} />)}

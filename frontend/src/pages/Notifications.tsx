@@ -27,6 +27,7 @@ import { Card, CardContent } from '@/components/ui/card.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { DisplayName } from '@/components/emoji.tsx'
+import { NotificationsSkeleton } from '@/components/skeletons.tsx'
 
 function describe(type: string): { icon: ReactNode; verb: string } {
   switch (type) {
@@ -308,7 +309,7 @@ export function NotificationsFeed() {
     <>
           {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
           {items === null && !feed.error && (
-            <p className="text-muted-foreground text-sm">Loading…</p>
+            <NotificationsSkeleton />
           )}
           {!!items?.length && (
             <TimelineStack>

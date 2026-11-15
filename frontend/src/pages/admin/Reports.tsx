@@ -10,6 +10,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { cn } from '@/lib/utils.ts'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 export const CATEGORY_LABELS: Record<AdminReport['category'], string> = {
   spam: 'Spam',
@@ -126,7 +127,7 @@ export default function Reports() {
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton action />
       )}
       <div className="space-y-2">
         {feed.items?.map((r) => <ReportRow key={r.id} report={r} />)}

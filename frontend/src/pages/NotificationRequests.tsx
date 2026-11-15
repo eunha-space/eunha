@@ -11,6 +11,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx'
 import { errorMessage } from '@/lib/utils.ts'
+import { AccountListSkeleton, LinesSkeleton } from '@/components/skeletons.tsx'
 
 const choices = { accept: 'Accept', filter: 'Send to requests', drop: 'Ignore' }
 const rules = {
@@ -53,7 +54,7 @@ function NotificationPolicy({ token }: { token: string }) {
     <section className="space-y-2 rounded-md border p-3">
       <h2 className="font-semibold">Notification policy</h2>
       {error && <p role="alert">Could not load your notification policy.</p>}
-      {!policy && !error && <p>Loading…</p>}
+      {!policy && !error && <LinesSkeleton count={4} />}
       {policy && (Object.keys(rules) as Rule[]).map((rule) => (
         <div key={rule} className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <span>{rules[rule]}</span>
@@ -97,7 +98,7 @@ function RequestList({ token }: { token: string }) {
     <section className="space-y-2">
       <h2 className="font-semibold">Pending requests</h2>
       {feed.error && <p role="alert">{feed.error}</p>}
-      {!feed.items && !feed.error && <p>Loading…</p>}
+      {!feed.items && !feed.error && <AccountListSkeleton count={3} />}
       {feed.items?.length === 0 && <p>No pending requests.</p>}
       {feed.items?.map((request) => (
         <div key={request.id} className="space-y-2 rounded-md border p-3">

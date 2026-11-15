@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 const STATUSES = { active: 'Active', suppressed: 'Suppressed' }
 const REASONS: Record<string, string> = {
@@ -96,7 +97,7 @@ export default function FollowRecommendations() {
         </div>
       </div>
       <AdminError error={error} />
-      {items === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {items === null && !error && <AccountListSkeleton />}
       {items?.length === 0 && (
         <p className="text-muted-foreground text-sm">
           {status === 'suppressed' ? 'No accounts are suppressed.' : 'Nothing is recommended yet.'}

@@ -12,6 +12,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { DetailSkeleton } from '@/components/skeletons.tsx'
 
 /** `Appeal::TEXT_LENGTH_LIMIT`. */
 const TEXT_LENGTH_LIMIT = 2000
@@ -90,7 +91,7 @@ export default function StrikeDetail() {
       <TopBar />
       {!token && <Button onClick={() => void beginLogin()}>Sign in</Button>}
       {error && <p className="text-destructive text-sm">{error}</p>}
-      {token && !s && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {token && !s && !error && <DetailSkeleton />}
       {s && (
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">

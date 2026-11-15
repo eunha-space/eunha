@@ -11,6 +11,7 @@ import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 const ROOT_REASONS = {
   no_recorded_inviter: 'No inviter recorded',
@@ -298,7 +299,7 @@ export default function InviteTree() {
       <Button variant="outline" size="sm" render={<Link to="/invites" />} className="mb-4">Your invites</Button>
       {!token ? <div className="space-y-2"><p className="text-sm">Sign in to view the invite tree.</p><Button onClick={() => beginLogin()}>Sign in</Button></div> : <>
         {error && <div role="alert" className="text-destructive mb-3 text-sm">{error} <Button size="sm" variant="outline" onClick={() => setReload(n => n + 1)}>Try again</Button></div>}
-        {!tree && !error && <p role="status" className="text-muted-foreground text-sm">Loading…</p>}
+        {!tree && !error && <AccountListSkeleton count={6} />}
         {tree && <>
           <p className="text-muted-foreground mb-3 text-sm">{tree.total} {tree.total === 1 ? 'member' : 'members'} in the instance</p>
           <div className="mb-3 flex flex-wrap gap-2">

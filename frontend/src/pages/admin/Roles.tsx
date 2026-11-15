@@ -22,6 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /** `UserRole::Flags::CATEGORIES`, each privilege with its label and hint. */
 const CATEGORIES: { title: string; privileges: [Permission, string, string][] }[] = [
@@ -285,7 +286,7 @@ export default function Roles() {
         </div>
       )}
       <AdminError error={error} />
-      {roles === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {roles === null && !error && <RowsSkeleton action />}
       <div className="space-y-2">
         {all.map((role) =>
           editing === role.id ? (

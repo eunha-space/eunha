@@ -5,6 +5,7 @@ import { listSoftwareUpdates, type SoftwareUpdate } from '../../admin-server-api
 import { getToken } from '../../auth.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const TYPES: Record<SoftwareUpdate['type'], string> = {
   patch: 'Patch release',
@@ -38,6 +39,7 @@ export default function SoftwareUpdates() {
   return (
     <AdminLayout title="Software updates" permission="view_devops">
       <AdminError error={error} />
+      {!data && !disabled && !error && <RowsSkeleton count={2} />}
       {disabled && (
         <p className="text-muted-foreground text-sm">
           The update check is turned off: this instance's configuration names no

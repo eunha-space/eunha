@@ -8,6 +8,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 export default function Bookmarks() {
   const token = getToken()
@@ -44,7 +45,7 @@ export default function Bookmarks() {
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       <div className="space-y-2">
         {statuses === null && !feed.error && (
-          <p className="text-muted-foreground text-sm">Loading…</p>
+          <FeedSkeleton />
         )}
         {!!statuses?.length && (
           <TimelineStack>

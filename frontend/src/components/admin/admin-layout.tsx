@@ -10,6 +10,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn } from '@/lib/utils.ts'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * The signed-in account's role permissions, or `null` until they are known.
@@ -127,7 +128,7 @@ export function AdminLayout({
       </Card>
     )
   } else if (permissions === null) {
-    body = <p className="text-muted-foreground text-sm">Loading…</p>
+    body = <RowsSkeleton />
   } else if (!can(permissions, permission)) {
     body = (
       <p className="text-muted-foreground text-sm">

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const MODERATION = { all: 'All', limited: 'Limited' }
 const AVAILABILITY = { all: 'All', failing: 'Failing', unavailable: 'Unavailable' }
@@ -202,7 +203,7 @@ export default function Instances() {
         </div>
       </div>
       <AdminError error={error} />
-      {items === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {items === null && !error && <RowsSkeleton count={6} />}
       {items?.length === 0 && <p className="text-muted-foreground text-sm">No servers found.</p>}
       <div className="divide-y rounded-lg border">
         {items?.map((i) => (

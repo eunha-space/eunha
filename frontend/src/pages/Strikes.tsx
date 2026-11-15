@@ -6,6 +6,7 @@ import { errorMessage } from '@/lib/utils.ts'
 import { StrikeCard } from '@/components/admin/strike-card.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * The strikes against the signed-in account: Mastodon's
@@ -37,7 +38,7 @@ export default function Strikes() {
       )}
       {error && <p className="text-destructive text-sm">{error}</p>}
       {token && strikes === null && !error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton count={2} />
       )}
       {strikes?.length === 0 && (
         <p className="text-muted-foreground text-sm">Your account is in good standing.</p>

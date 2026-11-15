@@ -5,6 +5,7 @@ import { getAccountStatus, type AdminStatusDetail } from '../../admin-api.ts'
 import { getToken } from '../../auth.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
 import { AdminStatus, formatDate } from '@/components/admin/admin-common.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * One post as a moderator sees it, with every version it has had: Mastodon's
@@ -29,7 +30,7 @@ export default function AccountStatusDetail() {
         <Link to={`/admin/accounts/${id}/statuses`}>Back to the account's posts</Link>
       </p>
       <AdminError error={error} />
-      {!status && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {!status && !error && <FeedSkeleton count={1} />}
       {status && (
         <div className="space-y-4">
           <AdminStatus status={status} />

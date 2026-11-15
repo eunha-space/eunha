@@ -13,6 +13,7 @@ import { errorMessage } from '@/lib/utils.ts'
 import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
 import { formatDate } from '@/components/admin/admin-common.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /** `admin.server_checks.categories`, in the order the page lists them. */
 const CATEGORIES: [ServerCheckCategory, string][] = [
@@ -55,6 +56,7 @@ export default function ServerChecks() {
       <p className="text-muted-foreground text-sm">
         Recommendations to keep your server safe, welcoming and efficient.
       </p>
+      {checks === null && !error && <RowsSkeleton action />}
       {checks &&
         CATEGORIES.map(([category, label]) => {
           const inCategory = checks.filter((check) => check.category === category)

@@ -10,6 +10,7 @@ import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Pencil } from 'lucide-react'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 export default function StatusThread() {
   const { id = '' } = useParams()
@@ -59,6 +60,7 @@ export default function StatusThread() {
           <TimelineStack>{context.ancestors.map((s) => render(s))}</TimelineStack>
         )}
 
+        {!status && !error && <FeedSkeleton count={2} />}
         {status && (
           <div className="ring-primary/40 overflow-hidden rounded-md border ring-2">
             {render(status, true)}

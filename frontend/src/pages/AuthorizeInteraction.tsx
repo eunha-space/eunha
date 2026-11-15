@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { search } from '../api.ts'
 import { beginLogin, getToken } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 // Where another server sends someone who wants to follow an account or answer
 // a post from their account here. Mastodon's `AuthorizeInteractionsController`,
@@ -46,9 +47,11 @@ export default function AuthorizeInteraction() {
     <>
       <TopBar />
       <div className="page-frame">
-        <p className={failed ? 'text-destructive text-sm' : 'text-muted-foreground text-sm'}>
-          {failed ? 'Nothing was found at that address.' : 'Looking that up…'}
-        </p>
+        {failed ? (
+          <p className="text-destructive text-sm">Nothing was found at that address.</p>
+        ) : (
+          <FeedSkeleton count={1} />
+        )}
       </div>
     </>
   )

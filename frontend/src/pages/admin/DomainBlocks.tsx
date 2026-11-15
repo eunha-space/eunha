@@ -31,6 +31,7 @@ import {
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 export const FEDERATION_TABS = [
   { to: '/admin/domain_blocks', label: 'Domain blocks' },
@@ -276,7 +277,7 @@ export default function DomainBlocks() {
     >
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton action />
       )}
       <div className="space-y-2">
         {feed.items?.map((b) => (

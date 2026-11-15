@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx'
 import { errorMessage } from '@/lib/utils.ts'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const contexts = { home: 'Home and lists', notifications: 'Notifications', public: 'Public timelines', thread: 'Threads', account: 'Profiles' }
 const actions = { warn: 'Show a warning', hide: 'Hide completely', blur: 'Blur media' }
@@ -147,7 +148,7 @@ function ManageFilters({ token }: { token: string }) {
     <>
       <Button variant="outline" onClick={() => setEditing('new')}>New filter</Button>
       {feed.error && <p role="alert">{feed.error}</p>}
-      {!feed.items && !feed.error && <p>Loading…</p>}
+      {!feed.items && !feed.error && <RowsSkeleton count={3} />}
       {feed.items?.length === 0 && <p>No filters yet.</p>}
       {feed.items?.map((filter) => (
         <div key={filter.id} className="space-y-2 rounded-md border p-3">

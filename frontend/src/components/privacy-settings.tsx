@@ -6,6 +6,7 @@ import { restClient } from '../masto.ts'
 import { getPreferences, updatePreferences, type Preferences } from '../security-api.ts'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 interface AccountPrivacy {
   discoverable: boolean
@@ -44,6 +45,7 @@ function Toggle({
 export function PrivacySettings({ token }: { token: string }) {
   const [account, setAccount] = useState<AccountPrivacy | null>(null)
   const [prefs, setPrefs] = useState<Preferences | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     getCurrentAccount(token)
@@ -57,13 +59,13 @@ export function PrivacySettings({ token }: { token: string }) {
           hideCollections: extra.hideCollections ?? false,
         })
       })
-      .catch(() => {})
+      .catch(() => setFailed(true))
     getPreferences(token)
       .then(setPrefs)
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
 
-  if (!account || !prefs) return null
+  if (!account || !prefs) return failed ? null : <SectionSkeleton rows={4} />
 
   const saveAccount = async (changes: Partial<AccountPrivacy>) => {
     const previous = account

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `CustomEmoji::SHORTCODE_RE_FRAGMENT`, anchored.
 const SHORTCODE = /^[a-zA-Z0-9_]{2,}$/
@@ -198,7 +199,7 @@ export default function CustomEmojis() {
         onChange={(e) => setFilter(e.target.value)}
       />
       <AdminError error={error} />
-      {emojis === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {emojis === null && !error && <RowsSkeleton action />}
       <div className={shown?.length ? 'divide-y rounded-lg border' : ''}>
         {token &&
           shown?.map((e) => (

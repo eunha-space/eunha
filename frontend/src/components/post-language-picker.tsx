@@ -6,6 +6,7 @@ import { getPostLanguages, postLanguageName, type PostLanguage } from '@/lib/pos
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
+import { LinesSkeleton } from '@/components/skeletons.tsx'
 
 function readFrequency(key: string): Record<string, number> {
   try {
@@ -84,7 +85,7 @@ export function PostLanguagePicker({
           </Button>
         )}
         {error && <p role="alert">Could not load languages. Reopen the picker to retry.</p>}
-        {!matches && !error && <p className="text-muted-foreground">Loading…</p>}
+        {!matches && !error && <LinesSkeleton count={5} />}
         {matches?.length === 0 && <p className="text-muted-foreground">No languages found.</p>}
         <div className="max-h-64 overflow-y-auto">
           {matches?.map(([code, name, nativeName]) => (

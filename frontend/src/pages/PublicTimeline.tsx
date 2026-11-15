@@ -6,6 +6,7 @@ import { getToken } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { ColumnHeader } from '@/components/column-header.tsx'
 import { StatusFeed } from '@/components/status-feed.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * `remote_live_feed_access` from the instance, or `undefined` until it has
@@ -53,7 +54,9 @@ export default function PublicTimeline({ local }: { local?: boolean } = {}) {
       <div className="column-frame">
         <ColumnHeader title={isLocal ? 'Local' : 'Federated'} />
         <div className="space-y-2 p-3">
-          {!(visitorOnFederated && remoteAccess === undefined) && (
+          {visitorOnFederated && remoteAccess === undefined ? (
+            <FeedSkeleton />
+          ) : (
             <StatusFeed kind={isLocal ? 'local' : 'public'} token={token} />
           )}
         </div>

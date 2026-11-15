@@ -47,6 +47,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `deletes.warning.*`, shown before the challenge.
 const WARNINGS = [
@@ -221,17 +222,18 @@ function EmailSubscriptions({ token }: { token: string }) {
 
 function PostingLanguageSettings({ token }: { token: string }) {
   const [language, setLanguage] = useState<string>()
+  const [failed, setFailed] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let active = true
     getCurrentAccount(token).then((account) => {
       if (active) setLanguage(account.source.language ?? '')
-    }).catch(() => {})
+    }).catch(() => setFailed(true))
     return () => { active = false }
   }, [token])
 
-  if (language === undefined) return null
+  if (language === undefined) return failed ? null : <SectionSkeleton rows={1} />
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
@@ -268,17 +270,18 @@ const QUOTE_POLICIES: [QuotePolicy, string][] = [
  */
 function QuotePolicySettings({ token }: { token: string }) {
   const [account, setAccount] = useState<{ policy: QuotePolicy; privacy: string }>()
+  const [failed, setFailed] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     let active = true
     getCurrentAccount(token).then((me) => {
       if (active) setAccount({ policy: quotePolicyOf(me), privacy: me.source.privacy ?? 'public' })
-    }).catch(() => {})
+    }).catch(() => setFailed(true))
     return () => { active = false }
   }, [token])
 
-  if (!account) return null
+  if (!account) return failed ? null : <SectionSkeleton rows={1} />
 
   const hint = account.privacy === 'private'
     ? "Followers-only posts authored on Mastodon can't be quoted by others."

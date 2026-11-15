@@ -23,6 +23,7 @@ import { AdminStatus } from '@/components/admin/admin-common.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { TagsSkeleton } from '@/components/skeletons.tsx'
 
 export const TREND_TABS = [
   { to: '/admin/trends/links', label: 'Links', end: true },
@@ -173,7 +174,7 @@ export default function Trends() {
     <AdminLayout title={config.title} permission="manage_taxonomies" sub={TREND_TABS}>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <TagsSkeleton />
       )}
       <div className="space-y-2">
         {token &&

@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { policyText } from './Instances.tsx'
+import { CardsSkeleton } from '@/components/skeletons.tsx'
 
 const MEASURES: { key: string; label: string }[] = [
   { key: 'instance_accounts', label: 'Accounts' },
@@ -111,7 +112,7 @@ export default function InstanceDetail() {
   return (
     <AdminLayout title={domain} permission="manage_federation">
       <AdminError error={error} />
-      {instance === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {instance === null && !error && <CardsSkeleton count={6} className="sm:grid-cols-3" />}
       {instance && (
         <div className="space-y-6">
           {measures.length > 0 && (

@@ -11,6 +11,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { TagsSkeleton } from '@/components/skeletons.tsx'
 
 type Flag = 'usable' | 'trendable' | 'listable'
 
@@ -85,7 +86,7 @@ export default function Tags() {
     <AdminLayout title="Hashtags" permission="manage_taxonomies">
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <TagsSkeleton />
       )}
       <div className="space-y-2">
         {token &&

@@ -18,6 +18,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * An account's public and unlisted posts as a moderator sees them: Mastodon's
@@ -92,7 +93,7 @@ export default function AccountStatuses() {
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <FeedSkeleton />
       )}
       <div className="space-y-2">
         {feed.items?.map((s) => (

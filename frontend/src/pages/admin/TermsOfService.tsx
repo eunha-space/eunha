@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Separator } from '@/components/ui/separator.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { FormSkeleton, RowsSkeleton, TextSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's admin pages for terms of service, at its own paths, on the REST
 // endpoints eunha serves for its forms. All of them are `manage_settings`'.
@@ -93,7 +94,7 @@ export function AdminTermsOfServiceIndex() {
       }
     >
       <AdminError error={error} />
-      {terms === undefined && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {terms === undefined && !error && <TextSkeleton />}
       {terms === null && (
         <div className="space-y-3">
           <p className="text-sm">
@@ -190,7 +191,7 @@ export function AdminTermsOfServiceDraft() {
   return (
     <Layout title="Terms of Service">
       <AdminError error={error} />
-      {draft === undefined && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {draft === undefined && !error && <FormSkeleton fields={3} />}
       {draft && (
         <form
           className="space-y-4"
@@ -266,7 +267,7 @@ export function AdminTermsOfServiceHistory() {
   return (
     <Layout title="Terms of Service">
       <AdminError error={error} />
-      {history === undefined && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {history === undefined && !error && <RowsSkeleton />}
       {history?.length === 0 && (
         <p className="text-muted-foreground text-sm">
           There are no recorded changes of the terms of service yet.
@@ -430,7 +431,7 @@ export function AdminTermsOfServicePreview() {
   return (
     <Layout title="Preview terms of service notification">
       <AdminError error={error} />
-      {preview === undefined && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {preview === undefined && !error && <TextSkeleton />}
       {preview && terms && (
         <div className="space-y-4">
           <p className="text-sm">

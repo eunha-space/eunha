@@ -9,6 +9,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { AccountRow } from '@/components/account-row.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { cn } from '@/lib/utils.ts'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -62,7 +63,7 @@ export default function AccountList() {
       {error && <p className="text-destructive text-sm">{error}</p>}
       <div className="space-y-1">
         {accounts === null && !error && (
-          <p className="text-muted-foreground text-sm">Loading…</p>
+          <AccountListSkeleton />
         )}
         {accounts?.map((a) => (
           <AccountRow key={a.id} account={a} />

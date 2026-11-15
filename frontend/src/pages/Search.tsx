@@ -13,6 +13,7 @@ import { AccountRow } from '@/components/account-row.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 type StepState = 'running' | 'done' | 'failed'
 
@@ -209,6 +210,11 @@ export default function Search() {
       )}
 
       <div className="space-y-4">
+        {steps.length > 0 &&
+          !finished &&
+          results.accounts.length === 0 &&
+          results.hashtags.length === 0 &&
+          results.statuses.length === 0 && <AccountListSkeleton count={3} />}
         {results.accounts.length > 0 && (
           <section>
             <h2 className="text-muted-foreground mb-2 text-sm font-semibold">People</h2>

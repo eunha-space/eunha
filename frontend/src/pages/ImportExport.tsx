@@ -39,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `imports.types.*`.
 const TYPES: Record<ImportType, string> = {
@@ -127,12 +128,16 @@ function preamble(pending: BulkImport): string {
 
 function Exports({ token }: { token: string }) {
   const [summary, setSummary] = useState<ExportSummary | null>(null)
+  const [failed, setFailed] = useState(false)
   const [requesting, setRequesting] = useState(false)
 
   const load = useCallback(() => {
     getExportSummary(token)
       .then(setSummary)
-      .catch(() => toast.error('Could not load your export'))
+      .catch(() => {
+        setFailed(true)
+        toast.error('Could not load your export')
+      })
   }, [token])
   useEffect(load, [load])
 
@@ -164,7 +169,7 @@ function Exports({ token }: { token: string }) {
     }
   }
 
-  if (!summary) return null
+  if (!summary) return failed ? null : <SectionSkeleton rows={4} />
 
   return (
     <section className="space-y-4 rounded-lg border p-4">

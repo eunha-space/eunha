@@ -27,6 +27,7 @@ import { AccountActionDialog } from '@/components/admin/account-action-dialog.ts
 import { ModerationNotes } from '@/components/admin/moderation-notes.tsx'
 import { UserManagement } from '@/components/admin/user-management.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { DetailSkeleton } from '@/components/skeletons.tsx'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -107,7 +108,7 @@ export default function AccountDetail() {
   return (
     <AdminLayout title={pub ? `@${pub.acct}` : 'Account'} permission="manage_users">
       <AdminError error={error} />
-      {!a && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {!a && !error && <DetailSkeleton />}
       {a && pub && token && (
         <div className="space-y-5">
           <section className="flex items-start gap-3">

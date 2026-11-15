@@ -81,6 +81,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { useAnimatedHeader, useAnimatedImage } from '@/hooks/use-animated-image.ts'
+import { FeedSkeleton, LinesSkeleton, ProfileSkeleton } from '@/components/skeletons.tsx'
 
 // Limits mirror Mastodon's server-side validations (app/models/account.rb,
 // app/models/featured_tag.rb): display name ≤ 40, note ≤ 500, at most 4 custom
@@ -308,7 +309,7 @@ function ProfileEditModal({
           <div className="grid gap-2 border-t pt-4 text-sm">
             <span className="text-muted-foreground">Featured hashtags</span>
             {featured === null ? (
-              <p className="text-muted-foreground text-xs">Loading…</p>
+              <LinesSkeleton count={1} className="w-48" />
             ) : (
               <>
                 {featured.length > 0 && (
@@ -1021,6 +1022,7 @@ export default function Profile() {
       {/* A suspended (or deleted) account is still served, with every profile
           field blanked and `suspended: true` — show that rather than the empty
           shell of a profile it would otherwise render. */}
+      {!account && !error && <ProfileSkeleton />}
       {account?.suspended && (
         <div className="rounded-lg border p-6 text-center">
           <h1 className="font-semibold">Account suspended</h1>
@@ -1315,7 +1317,7 @@ export default function Profile() {
               </section>
             )}
             {statuses === null && !error && (
-              <p className="text-muted-foreground text-sm">Loading…</p>
+              <FeedSkeleton />
             )}
             {!!statuses?.length && (
               <TimelineStack>

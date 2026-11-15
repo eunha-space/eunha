@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dialog.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 export const BLOCK_TABS = [
   { to: '/admin/ip_blocks', label: 'IP rules' },
@@ -195,7 +196,7 @@ export default function IpBlocks() {
     >
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton action />
       )}
       <div className={feed.items?.length ? 'divide-y rounded-lg border' : ''}>
         {feed.items?.map((b) => (

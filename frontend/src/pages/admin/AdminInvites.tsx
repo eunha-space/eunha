@@ -21,6 +21,7 @@ import {
 } from '@/components/admin/admin-common.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const FILTERS = { all: 'All', available: 'Available', expired: 'Expired' }
 
@@ -87,7 +88,7 @@ export default function AdminInvites() {
         <Button variant="outline" render={<Link to="/invite-tree" />}>Invite tree</Button>
       </div>
       <AdminError error={error} />
-      {invites === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {invites === null && !error && <RowsSkeleton action />}
       {invites?.length === 0 && <p className="text-muted-foreground text-sm">No invites.</p>}
       <div className="space-y-2">
         {invites?.map((invite) => (

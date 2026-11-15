@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const TITLE = 'Fediverse Auxiliary Service Providers'
 
@@ -70,7 +71,7 @@ export function FaspProviders() {
         it, and only after comparing its name and key fingerprint with what the provider shows.
       </p>
       <AdminError error={error} />
-      {providers === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {providers === null && !error && <RowsSkeleton action />}
       {providers?.length === 0 && (
         <p className="text-muted-foreground text-sm">No provider has registered yet.</p>
       )}
@@ -301,7 +302,7 @@ export function FaspDebugCallbacks() {
   return (
     <AdminLayout title="Debug callbacks" permission="manage_federation" sub={SUB}>
       <AdminError error={error} />
-      {callbacks === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {callbacks === null && !error && <RowsSkeleton action />}
       {callbacks?.length === 0 && (
         <p className="text-muted-foreground text-sm">No provider has called back yet.</p>
       )}

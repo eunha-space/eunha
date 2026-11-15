@@ -7,6 +7,7 @@ import { errorMessage } from '@/lib/utils.ts'
 import { AdminAccountLink, ConfirmButton, formatDate } from '@/components/admin/admin-common.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { LinesSkeleton } from '@/components/skeletons.tsx'
 
 /** `ReportNote::CONTENT_SIZE_LIMIT` and `AccountModerationNote::CONTENT_SIZE_LIMIT`. */
 const CONTENT_SIZE_LIMIT = 2000
@@ -79,6 +80,7 @@ export function ModerationNotes({
     <section className="space-y-2">
       <h2 className="text-sm font-semibold">Moderation notes</h2>
       {error && <p className="text-destructive text-sm">{error}</p>}
+      {notes === null && !error && <LinesSkeleton count={2} />}
       {notes?.length === 0 && (
         <p className="text-muted-foreground text-sm">No notes yet.</p>
       )}

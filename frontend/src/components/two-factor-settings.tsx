@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 const message = (e: unknown, fallback: string) =>
   e instanceof SecurityError ? e.message : fallback
@@ -48,6 +49,7 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
  */
 export function TwoFactorSettings({ token }: { token: string }) {
   const [status, setStatus] = useState<TwoFactorStatus | null>(null)
+  const [failed, setFailed] = useState(false)
   const [password, setPassword] = useState('')
   const [setup, setSetup] = useState<OtpSetup | null>(null)
   const [code, setCode] = useState('')
@@ -58,12 +60,12 @@ export function TwoFactorSettings({ token }: { token: string }) {
   const reload = useCallback(() => {
     getTwoFactor(token)
       .then(setStatus)
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
 
   useEffect(reload, [reload])
 
-  if (!status) return null
+  if (!status) return failed ? null : <SectionSkeleton rows={2} />
 
   const run = async (work: () => Promise<void>, fallback: string) => {
     setBusy(true)

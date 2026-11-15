@@ -8,6 +8,7 @@ import { beginLogin, getActiveAccountId, getToken } from '../auth.ts'
 import { useInfinitePaginator } from '../hooks/use-infinite-paginator.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { TagsSkeleton } from '@/components/skeletons.tsx'
 
 function FollowedTagRow({
   name,
@@ -64,7 +65,7 @@ function FollowedTagList({ token }: { token: string }) {
           </Button>
         </div>
       )}
-      {items === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {items === null && !error && <TagsSkeleton />}
       {items?.length === 0 && done && (
         <p className="text-muted-foreground text-sm">
           You aren’t following any hashtags. Follow one from a post or a hashtag timeline.

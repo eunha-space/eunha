@@ -12,6 +12,7 @@ import { errorMessage } from '@/lib/utils.ts'
 import { ConfirmButton } from '@/components/admin/admin-common.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * Every staff handout, newest first: who gave it, to whom, and what became of
@@ -58,7 +59,7 @@ export function InviteGrantHistory({ refresh = 0 }: { refresh?: number }) {
           <Button size="xs" variant="outline" onClick={() => setReload((n) => n + 1)}>Try again</Button>
         </p>
       )}
-      {grants === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {grants === null && !error && <RowsSkeleton count={2} />}
       {grants?.length === 0 && <p className="text-muted-foreground text-sm">No invites handed out yet.</p>}
       {grants?.map((grant) => (
         <div key={grant.id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3 text-sm">

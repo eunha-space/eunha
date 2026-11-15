@@ -12,6 +12,7 @@ import {
   type Session,
 } from '../security-api.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 const date = (value: string | null) => (value ? new Date(value).toLocaleString() : '')
 
@@ -26,14 +27,15 @@ const METHODS: Record<string, string> = {
 /** Mastodon's sessions list: the browsers signed in to the account pages. */
 function Sessions({ token }: { token: string }) {
   const [sessions, setSessions] = useState<Session[] | null>(null)
+  const [failed, setFailed] = useState(false)
   const reload = useCallback(() => {
     getSessions(token)
       .then(setSessions)
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
   useEffect(reload, [reload])
 
-  if (!sessions) return null
+  if (!sessions) return failed ? null : <SectionSkeleton rows={3} />
   return (
     <section className="space-y-2 rounded-lg border p-4">
       <h2 className="font-semibold">Sessions</h2>
@@ -82,14 +84,15 @@ function Sessions({ token }: { token: string }) {
 /** `OAuth::AuthorizedApplicationsController#index`. */
 function AuthorizedApplications({ token }: { token: string }) {
   const [apps, setApps] = useState<AuthorizedApplication[] | null>(null)
+  const [failed, setFailed] = useState(false)
   const reload = useCallback(() => {
     getAuthorizedApplications(token)
       .then(setApps)
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
   useEffect(reload, [reload])
 
-  if (!apps) return null
+  if (!apps) return failed ? null : <SectionSkeleton rows={3} />
   return (
     <section className="space-y-2 rounded-lg border p-4">
       <h2 className="font-semibold">Authorized apps</h2>

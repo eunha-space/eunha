@@ -22,6 +22,7 @@ import { useReadingPreferences } from '../reading-preferences.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
+import { GridSkeleton } from '@/components/skeletons.tsx'
 
 /** What was picked: a custom emoji's shortcode, or a Unicode emoji's text. */
 export type PickedEmoji = { type: 'custom'; shortcode: string } | { type: 'unicode'; native: string }
@@ -261,7 +262,7 @@ export function EmojiPicker({
             <p className="text-muted-foreground text-sm">No matching emojis found</p>
           )}
           {!searching && !unicode && (
-            <p className="text-muted-foreground text-sm">Loading…</p>
+            <GridSkeleton count={32} />
           )}
         </div>
       </PopoverContent>

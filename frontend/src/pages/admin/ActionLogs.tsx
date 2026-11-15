@@ -13,6 +13,7 @@ import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
 import { ActionLogEntry } from '@/components/admin/action-log-entry.tsx'
 import { ChoiceSelect } from '@/components/admin/admin-common.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const ALL = 'all'
 
@@ -90,7 +91,7 @@ export default function ActionLogs() {
       )}
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton count={6} />
       )}
       <div className={feed.items?.length ? 'divide-y rounded-lg border' : ''}>
         {feed.items?.map((log) => <ActionLogEntry key={log.id} log={log} />)}

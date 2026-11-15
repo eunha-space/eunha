@@ -6,6 +6,7 @@ import type { mastodon } from '../masto.ts'
 import { AccountRow } from '@/components/account-row.tsx'
 import { StatusCard } from '@/components/status-card.tsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.tsx'
+import { DetailSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's shared Wrapstodon page (`WrapstodonController#show`), at its
 // `/@:account_username/wrapstodon/:year/:share_key`. The server puts the report
@@ -150,7 +151,11 @@ export default function Wrapstodon() {
 
   switch (loaded.kind) {
     case 'loading':
-      return <Notice>Loading…</Notice>
+      return (
+        <main className="page-frame">
+          <DetailSkeleton />
+        </main>
+      )
     case 'missing':
       return <Notice>This Wrapstodon could not be found.</Notice>
     case 'sign-in':

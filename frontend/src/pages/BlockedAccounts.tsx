@@ -12,6 +12,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn, errorMessage } from '@/lib/utils.ts'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -78,7 +79,7 @@ export default function BlockedAccounts() {
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       <div className="space-y-1">
         {accounts === null && !feed.error && (
-          <p className="text-muted-foreground text-sm">Loading…</p>
+          <AccountListSkeleton />
         )}
         {accounts?.map((a) => (
           <AccountRow

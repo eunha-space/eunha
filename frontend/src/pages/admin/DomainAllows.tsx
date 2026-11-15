@@ -16,6 +16,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { FEDERATION_TABS } from './DomainBlocks.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * Domains allowed to federate. These only matter in Mastodon's limited
@@ -66,7 +67,7 @@ export default function DomainAllows() {
       </form>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton action />
       )}
       <div className={feed.items?.length ? 'divide-y rounded-lg border' : ''}>
         {feed.items?.map((a) => (

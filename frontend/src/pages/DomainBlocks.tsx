@@ -12,6 +12,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 function ManageDomainBlocks({ token }: { token: string }) {
   const [domain, setDomain] = useState('')
@@ -50,7 +51,7 @@ function ManageDomainBlocks({ token }: { token: string }) {
         <Button type="submit" disabled={busy || !domain.trim()}>Block domain</Button>
       </form>
       {feed.error && <p role="alert" className="text-destructive">{feed.error}</p>}
-      {!feed.items && !feed.error && <p>Loading…</p>}
+      {!feed.items && !feed.error && <RowsSkeleton action />}
       {feed.items?.length === 0 && <p>No blocked domains.</p>}
       {feed.items?.map((item) => (
         <div key={item} className="flex items-center justify-between gap-2 rounded-md border p-3">

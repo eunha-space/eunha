@@ -21,6 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 function WebhookForm({
   initial,
@@ -160,7 +161,7 @@ export default function Webhooks() {
         <WebhookForm initial={null} onSaved={load} />
       </div>
       <AdminError error={error} />
-      {hooks === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {hooks === null && !error && <RowsSkeleton action />}
       {hooks?.length === 0 && (
         <p className="text-muted-foreground text-sm">No webhook endpoints configured yet.</p>
       )}

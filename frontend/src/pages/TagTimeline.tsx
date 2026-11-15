@@ -13,6 +13,7 @@ import { TimelineStack } from '@/components/timeline-stack.tsx'
 
 import { Button } from '@/components/ui/button.tsx'
 import { useTagFollow } from '../hooks/use-tag-follow.ts'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 function TagFollowButton({ name, token }: { name: string; token: string }) {
   const { following, disabled, toggle } = useTagFollow(name, token)
@@ -56,7 +57,7 @@ export default function TagTimeline() {
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       <div className="space-y-2">
         {statuses === null && !feed.error && (
-          <p className="text-muted-foreground text-sm">Loading…</p>
+          <FeedSkeleton />
         )}
         {!!statuses?.length && (
           <TimelineStack>

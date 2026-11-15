@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /** An ISO time as a `datetime-local` value, in the browser's zone. */
 function toLocalInput(value: string | null): string {
@@ -213,7 +214,7 @@ export default function Announcements() {
         <AnnouncementForm initial={null} onSaved={load} />
       </div>
       <AdminError error={error} />
-      {items === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {items === null && !error && <RowsSkeleton action />}
       {items?.length === 0 && (
         <p className="text-muted-foreground text-sm">No announcements found.</p>
       )}

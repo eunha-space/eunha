@@ -8,6 +8,7 @@ import { withoutMessages } from '../lib/statuses.ts'
 import { StatusCard } from '@/components/status-card.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
+import { FeedSkeleton } from '@/components/skeletons.tsx'
 
 export type TimelineKind = 'home' | 'local' | 'public'
 
@@ -70,7 +71,7 @@ export function StatusFeed({
     <>
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       {statuses === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <FeedSkeleton />
       )}
       {!!statuses?.length && (
         <TimelineStack>

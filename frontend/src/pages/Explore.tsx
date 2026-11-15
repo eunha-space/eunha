@@ -10,6 +10,7 @@ import { StatusCard } from '@/components/status-card.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { cn } from '@/lib/utils.ts'
+import { FeedSkeleton, RowsSkeleton, TagsSkeleton } from '@/components/skeletons.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -23,20 +24,20 @@ function Pane<T>({
   open,
   deps,
   empty,
+  skeleton,
   children,
 }: {
   open: () => AsyncIterable<T[]>
   deps: unknown[]
   empty: string
+  skeleton: ReactNode
   children: (items: T[]) => ReactNode
 }) {
   const feed = useInfinitePaginator<T>(open, deps)
   return (
     <div className="space-y-2">
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
-      {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
-      )}
+      {feed.items === null && !feed.error && skeleton}
       {!!feed.items?.length && children(feed.items)}
       {feed.items?.length === 0 && (
         <p className="text-muted-foreground text-sm">{empty}</p>
@@ -161,6 +162,7 @@ export default function Explore() {
           open={() => getTrendingTags(token ?? undefined)}
           deps={[token, pane]}
           empty="No hashtags are trending yet."
+          skeleton={<TagsSkeleton />}
         >
           {(items) => (
             <div className="space-y-1">
@@ -176,6 +178,7 @@ export default function Explore() {
           open={() => getTrendingLinks(token ?? undefined)}
           deps={[token, pane]}
           empty="No links are trending yet."
+          skeleton={<RowsSkeleton />}
         >
           {(items) => (
             <div className="space-y-2">
@@ -194,6 +197,7 @@ export default function Explore() {
           open={() => getTrendingStatuses(token ?? undefined)}
           deps={[token, pane]}
           empty="No posts are trending yet."
+          skeleton={<FeedSkeleton />}
         >
           {(items) => (
             <TimelineStack>

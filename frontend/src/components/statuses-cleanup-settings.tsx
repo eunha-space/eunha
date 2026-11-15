@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 // `statuses_cleanup.min_age`, by `ALLOWED_MIN_STATUS_AGE`.
 const AGES = [
@@ -55,6 +56,7 @@ const EXCEPTIONS: [KeepField, string][] = [
  */
 export function StatusesCleanupSettings({ token }: { token: string }) {
   const [policy, setPolicy] = useState<StatusesCleanupPolicy | null>(null)
+  const [failed, setFailed] = useState(false)
   const [minFavs, setMinFavs] = useState('')
   const [minReblogs, setMinReblogs] = useState('')
   const [busy, setBusy] = useState(false)
@@ -68,10 +70,10 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
   useEffect(() => {
     getStatusesCleanup(token)
       .then(load)
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
 
-  if (!policy) return null
+  if (!policy) return failed ? null : <SectionSkeleton rows={4} />
 
   const change = (changes: Partial<StatusesCleanupPolicy>) =>
     setPolicy({ ...policy, ...changes })

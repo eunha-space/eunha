@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const STATES: Record<AdminRelay['state'], string> = {
   idle: 'Disabled',
@@ -95,7 +96,7 @@ export default function Relays() {
         </Button>
       </form>
       <AdminError error={error} />
-      {relays === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {relays === null && !error && <RowsSkeleton action />}
       {relays?.length === 0 && (
         <p className="text-muted-foreground text-sm">No relays have been set up yet.</p>
       )}

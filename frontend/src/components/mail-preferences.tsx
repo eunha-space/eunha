@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 // `simple_form.labels.notification_emails.*`, in the order Mastodon's
 // notifications page lists them.
@@ -38,17 +39,18 @@ const NOTIFICATION_EMAILS: [string, string][] = [
 export function MailPreferences({ token }: { token: string }) {
   const [prefs, setPrefs] = useState<Preferences | null>(null)
   const [zones, setZones] = useState<TimeZoneChoice[]>([])
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     getPreferences(token)
       .then(setPrefs)
-      .catch(() => {})
+      .catch(() => setFailed(true))
     getTimeZones(token)
       .then(setZones)
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
 
-  if (!prefs || zones.length === 0) return null
+  if (!prefs || zones.length === 0) return failed ? null : <SectionSkeleton rows={3} />
 
   const save = async (changes: Parameters<typeof updatePreferences>[1]) => {
     try {

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 
+import { LinesSkeleton } from '@/components/skeletons.tsx'
+
 // A sentinel that calls `onLoadMore` when scrolled near the viewport.
 export function InfiniteScroll({
   onLoadMore,
@@ -31,7 +33,7 @@ export function InfiniteScroll({
 
   return (
     <div ref={ref} className="text-muted-foreground py-4 text-center text-sm">
-      {loading ? 'Loading…' : done && hasItems ? 'End' : ''}
+      {loading ? <LinesSkeleton count={2} className="px-3 sm:px-4" /> : done && hasItems ? 'End' : ''}
     </div>
   )
 }

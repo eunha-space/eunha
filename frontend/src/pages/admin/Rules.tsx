@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 type TranslationDraft = RuleParams['translations_attributes'][number]
 
@@ -202,7 +203,7 @@ export default function Rules() {
         />
       </div>
       <AdminError error={error} />
-      {rules === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {rules === null && !error && <RowsSkeleton action />}
       {rules?.length === 0 && (
         <p className="text-muted-foreground text-sm">You have not defined any server rules yet.</p>
       )}

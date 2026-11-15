@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx'
 import { errorMessage } from '@/lib/utils.ts'
+import { FeedSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
 
 const replies = { list: 'List members', followed: 'Anyone I follow', none: 'No replies' }
 
@@ -46,7 +47,7 @@ function ListIndex({ token }: { token: string }) {
         <Button type="submit" disabled={busy || !title.trim()}>Create list</Button>
       </form>
       {feed.error && <p role="alert">{feed.error}</p>}
-      {!feed.items && !feed.error && <p>Loading…</p>}
+      {!feed.items && !feed.error && <RowsSkeleton count={3} />}
       {feed.items?.length === 0 && <p>You haven’t created any lists.</p>}
       {feed.items?.map((list) => (
         <Link key={list.id} to={`/lists/${list.id}`} className="block rounded-md border p-3">{list.title}</Link>
@@ -90,7 +91,7 @@ function ListDetail({ id, token }: { id: string; token: string }) {
     setRevision((value) => value + 1)
   })
 
-  if (!list) return <p role={error ? 'alert' : undefined}>{error ? 'Could not load this list.' : 'Loading…'}</p>
+  if (!list) return error ? <p role="alert">Could not load this list.</p> : <FeedSkeleton />
   return (
     <>
       <div className="flex items-center justify-between gap-2">
@@ -154,7 +155,7 @@ function ListDetail({ id, token }: { id: string; token: string }) {
       ) : (
         <>
           {posts.error && <p role="alert">{posts.error}</p>}
-          {!posts.items && !posts.error && <p>Loading…</p>}
+          {!posts.items && !posts.error && <FeedSkeleton />}
           {posts.items?.length === 0 && <p>No posts in this list yet.</p>}
           {posts.items?.map((post) => (
             <StatusCard key={post.id} status={post.reblog ?? post} token={token}

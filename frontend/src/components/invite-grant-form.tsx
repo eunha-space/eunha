@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { ChoiceSelect } from '@/components/admin/admin-common.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 const EXPIRIES = { '604800': '7 days', '86400': '1 day', '0': 'Never' }
 
@@ -179,9 +180,7 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
       ) : (
         <>
           {!members && !error && (
-            <p role="status" className="text-sm">
-              Loading members…
-            </p>
+            <AccountListSkeleton count={3} />
           )}
           <div className="space-y-1">
             <Label htmlFor="grant-search">Search members</Label>

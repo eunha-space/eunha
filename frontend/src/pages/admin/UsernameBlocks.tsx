@@ -19,6 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { BLOCK_TABS } from './IpBlocks.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `simple_form` labels for `UsernameBlock#comparison`.
 const COMPARISONS: Record<UsernameComparison, string> = {
@@ -114,7 +115,7 @@ export default function UsernameBlocks() {
         </Label>
       </form>
       <AdminError error={error} />
-      {blocks === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {blocks === null && !error && <RowsSkeleton action />}
       <div className={blocks?.length ? 'divide-y rounded-lg border' : ''}>
         {blocks?.map((b) => (
           <div key={b.id} className="flex flex-wrap items-center gap-2 p-2.5">

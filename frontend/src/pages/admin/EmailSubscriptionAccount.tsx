@@ -22,6 +22,7 @@ import {
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { EmailSubscriptionStatusBadge } from './EmailSubscriptions.tsx'
+import { AccountListSkeleton, SectionSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * One account's mailing list: Mastodon's
@@ -69,6 +70,7 @@ export default function EmailSubscriptionAccount() {
         <Link to="/admin/email_subscriptions">← Email newsletters</Link>
       </p>
       <AdminError error={error ?? feed.error} />
+      {!entry && !error && <SectionSkeleton />}
       {entry && token && (
         <div className="mb-4 space-y-3 rounded-lg border p-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -148,6 +150,7 @@ export default function EmailSubscriptionAccount() {
           </div>
         ))}
       </div>
+      {feed.items === null && !feed.error && <AccountListSkeleton count={3} />}
       {feed.items?.length === 0 && (
         <p className="text-muted-foreground text-sm">Nobody has subscribed to this account yet.</p>
       )}

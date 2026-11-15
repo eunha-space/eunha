@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { CardsSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `email_subscriptions.*` badge labels.
 const STATUS_LABEL: Record<EmailSubscriptionStatus, string> = {
@@ -305,7 +306,7 @@ export default function EmailSubscriptions() {
         Allow visitors to receive posts via email from dedicated accounts on this server.
       </p>
       <AdminError error={error} />
-      {!overview && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {!overview && !error && <CardsSkeleton />}
       {body}
     </AdminLayout>
   )

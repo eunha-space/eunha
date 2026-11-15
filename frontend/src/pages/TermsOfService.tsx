@@ -6,6 +6,7 @@ import { getToken } from '../auth.ts'
 import { PolicyText } from '@/components/policy-text.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import { formatPolicyDate } from '@/lib/policy-date.ts'
+import { TextSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `/terms-of-service` and `/terms-of-service/:date`: the current
 // terms, or the version effective on a date, with a link forward when a later
@@ -31,7 +32,7 @@ export default function TermsOfServicePage() {
   return (
     <div className="page-frame">
       <TopBar title="Terms of service" />
-      {terms === undefined && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {terms === undefined && <TextSkeleton />}
       {terms === null && (
         <p className="text-muted-foreground text-sm">
           {date

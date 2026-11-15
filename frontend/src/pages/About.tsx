@@ -7,6 +7,7 @@ import { getToken } from '../auth.ts'
 import type { mastodon } from '../masto.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { AccountRow } from '@/components/account-row.tsx'
+import { TextSkeleton } from '@/components/skeletons.tsx'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -34,7 +35,7 @@ export default function About() {
     return (
       <div className="page-frame">
         <TopBar />
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <TextSkeleton />
       </div>
     )
   }

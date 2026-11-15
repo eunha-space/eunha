@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn, errorMessage } from '@/lib/utils.ts'
 import { AnimateEmoji, EmojiText } from '@/components/emoji.tsx'
+import { AccountListSkeleton } from '@/components/skeletons.tsx'
 
 // The plain text of a status, for a one-line preview. The API sends HTML and a
 // conversation row is not the place to render it.
@@ -191,7 +192,7 @@ export function MessagesFeed() {
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       <div className="space-y-1">
         {conversations === null && !feed.error && (
-          <p className="text-muted-foreground text-sm">Loading…</p>
+          <AccountListSkeleton />
         )}
         {conversations?.map((c) => (
           <ConversationRow

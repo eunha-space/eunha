@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { FormSkeleton } from '@/components/skeletons.tsx'
 
 type Key = Exclude<keyof AdminSettings, 'overridden'>
 
@@ -270,7 +271,7 @@ export default function Settings() {
   return (
     <AdminLayout title={`Server settings · ${def.title}`} permission="manage_settings" sub={SUB}>
       <AdminError error={error} />
-      {settings === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {settings === null && !error && <FormSkeleton fields={5} />}
       {settings && (
         <form onSubmit={save} className="max-w-2xl space-y-5">
           <p className="text-muted-foreground text-sm">{def.preamble}</p>

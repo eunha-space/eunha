@@ -11,6 +11,7 @@ import { STRIKE_TITLES } from '@/components/admin/strike-card.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 const STATES: Record<Appeal['state'], string> = {
   pending: 'Pending',
@@ -55,7 +56,7 @@ export default function Appeals() {
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
-        <p className="text-muted-foreground text-sm">Loading…</p>
+        <RowsSkeleton action />
       )}
       <div className="space-y-2">
         {feed.items?.map((a) => (

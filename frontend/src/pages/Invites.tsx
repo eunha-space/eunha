@@ -31,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 const MAX_USES = {
   '0': 'Unlimited uses',
@@ -353,9 +354,7 @@ export default function Invites() {
             </p>
           )}
           {invites === null && !error && (
-            <p role="status" className="text-muted-foreground text-sm">
-              Loading invites…
-            </p>
+            <SectionSkeleton rows={3} />
           )}
           {invites !== null && (
             <section

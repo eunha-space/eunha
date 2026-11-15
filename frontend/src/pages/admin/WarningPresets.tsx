@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
+import { RowsSkeleton } from '@/components/skeletons.tsx'
 
 /** `admin.warning_presets.dropdown`. */
 const CATEGORIES: Record<WarningPresetCategory, string> = {
@@ -141,7 +142,7 @@ export default function WarningPresets() {
         />
       </div>
       <AdminError error={error} />
-      {presets === null && !error && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {presets === null && !error && <RowsSkeleton action />}
       {presets?.length === 0 && (
         <p className="text-muted-foreground text-sm">No warning presets have been defined yet.</p>
       )}

@@ -4,6 +4,7 @@ import { getPrivacyPolicy, type PrivacyPolicy } from '../api.ts'
 import { PolicyText } from '@/components/policy-text.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import { formatPolicyDate } from '@/lib/policy-date.ts'
+import { TextSkeleton } from '@/components/skeletons.tsx'
 
 // Mastodon's `/privacy-policy`, which `urls.privacy_policy` points at. There is
 // always one: the server falls back to the policy Mastodon ships.
@@ -19,7 +20,7 @@ export default function PrivacyPolicyPage() {
   return (
     <div className="page-frame">
       <TopBar title="Privacy policy" />
-      {policy === undefined && <p className="text-muted-foreground text-sm">Loading…</p>}
+      {policy === undefined && <TextSkeleton />}
       {policy === null && (
         <p className="text-muted-foreground text-sm">The privacy policy could not be loaded.</p>
       )}

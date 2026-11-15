@@ -15,6 +15,8 @@ import { getDashboard, type SystemCheck } from '../../admin-server-api.ts'
 import { getToken } from '../../auth.ts'
 import { AdminError, AdminLayout, useHosted, useRolePermissions } from '@/components/admin/admin-layout.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
+import { Skeleton } from '@/components/ui/skeleton.tsx'
+import { LinesSkeleton } from '@/components/skeletons.tsx'
 import {
   Table,
   TableBody,
@@ -95,7 +97,17 @@ function Sparkline({ data, label }: { data: Measure['data']; label: string }) {
   )
 }
 
-function MeasureTile({ measure, label, href }: { measure?: Measure; label: string; href?: string }) {
+function MeasureTile({
+  measure,
+  label,
+  href,
+  loading,
+}: {
+  measure?: Measure
+  label: string
+  href?: string
+  loading: boolean
+}) {
   const total = measure ? Number(measure.total) : null
   const previous = measure?.previous_total !== undefined ? Number(measure.previous_total) : null
   const change =
@@ -107,9 +119,13 @@ function MeasureTile({ measure, label, href }: { measure?: Measure; label: strin
       <CardContent className="space-y-1 px-3">
         <div className="text-muted-foreground text-xs font-medium">{label}</div>
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tabular-nums">
-            {measure ? (measure.human_value ?? measure.total) : '—'}
-          </span>
+          {loading ? (
+            <Skeleton className="h-8 w-16" />
+          ) : (
+            <span className="text-2xl font-semibold tabular-nums">
+              {measure ? (measure.human_value ?? measure.total) : '—'}
+            </span>
+          )}
           {change !== null && (
             <span className="text-muted-foreground text-xs tabular-nums">
               {change > 0 ? '+' : ''}
@@ -117,7 +133,7 @@ function MeasureTile({ measure, label, href }: { measure?: Measure; label: strin
             </span>
           )}
         </div>
-        {measure && <Sparkline data={measure.data} label={label} />}
+        {loading ? <Skeleton className="h-8 w-full" /> : measure && <Sparkline data={measure.data} label={label} />}
       </CardContent>
     </Card>
   )
@@ -131,14 +147,23 @@ function MeasureTile({ measure, label, href }: { measure?: Measure; label: strin
 }
 
 /** A dimension as a ranked list, each row's bar its share of the largest. */
-function DimensionCard({ dimension, label }: { dimension?: Dimension; label: string }) {
+function DimensionCard({
+  dimension,
+  label,
+  loading,
+}: {
+  dimension?: Dimension
+  label: string
+  loading: boolean
+}) {
   const rows = dimension?.data ?? []
   const max = Math.max(1, ...rows.map((r) => Number(r.value) || 0))
   return (
     <Card className="py-3">
       <CardContent className="space-y-2 px-3">
         <h2 className="text-sm font-semibold">{label}</h2>
-        {rows.length === 0 && <p className="text-muted-foreground text-xs">No data</p>}
+        {loading && <LinesSkeleton count={4} />}
+        {!loading && rows.length === 0 && <p className="text-muted-foreground text-xs">No data</p>}
         <ul className="space-y-1.5">
           {rows.map((r) => (
             <li key={r.key} className="space-y-0.5" title={`${r.human_key}: ${r.human_value ?? r.value}`}>
@@ -235,6 +260,8 @@ export default function Dashboard() {
   const [pending, setPending] = useState<{ label: string; count: string; href: string }[]>([])
   const [checks, setChecks] = useState<SystemCheck[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [loadingMeasures, setLoadingMeasures] = useState(true)
+  const [loadingDimensions, setLoadingDimensions] = useState(true)
 
   useEffect(() => {
     if (!token) return
@@ -243,9 +270,11 @@ export default function Dashboard() {
     getMeasures(token, MEASURES.map((m) => m.key), isoDate(start), isoDate(end))
       .then(setMeasures)
       .catch((e) => setError(String(e)))
+      .finally(() => setLoadingMeasures(false))
     getDimensions(token, DIMENSIONS.map((d) => d.key), isoDate(start), isoDate(end))
       .then(setDimensions)
       .catch(() => {})
+      .finally(() => setLoadingDimensions(false))
     const retentionStart = new Date(end.getFullYear(), end.getMonth() - 5, 1)
     getRetention(token, isoDate(retentionStart), isoDate(end), 'month')
       .then(setCohorts)
@@ -336,12 +365,23 @@ export default function Dashboard() {
         <p className="text-muted-foreground text-xs">Last 30 days, against the 30 before.</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {MEASURES.map((m) => (
-            <MeasureTile key={m.key} measure={byKey(measures, m.key)} label={m.label} href={m.href} />
+            <MeasureTile
+              key={m.key}
+              measure={byKey(measures, m.key)}
+              label={m.label}
+              href={m.href}
+              loading={loadingMeasures}
+            />
           ))}
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
           {DIMENSIONS.filter((d) => !(d.server && hosted)).map((d) => (
-            <DimensionCard key={d.key} dimension={byKey(dimensions, d.key)} label={d.label} />
+            <DimensionCard
+              key={d.key}
+              dimension={byKey(dimensions, d.key)}
+              label={d.label}
+              loading={loadingDimensions}
+            />
           ))}
         </div>
         <RetentionTable cohorts={cohorts} />

@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { SectionSkeleton } from '@/components/skeletons.tsx'
 
 /**
  * The email half of Mastodon's account settings form: a new address, with the
@@ -17,6 +18,7 @@ import { Label } from '@/components/ui/label.tsx'
  */
 export function EmailSettings({ token }: { token: string }) {
   const [current, setCurrent] = useState<AccountEmail | null>(null)
+  const [failed, setFailed] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [saving, setSaving] = useState(false)
@@ -27,10 +29,10 @@ export function EmailSettings({ token }: { token: string }) {
         setCurrent(e)
         setEmail(e.email)
       })
-      .catch(() => {})
+      .catch(() => setFailed(true))
   }, [token])
 
-  if (!current) return null
+  if (!current) return failed ? null : <SectionSkeleton rows={2} />
 
   const save = async () => {
     setSaving(true)
