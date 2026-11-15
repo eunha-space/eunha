@@ -42,6 +42,7 @@ export default function TagTimeline() {
     token: token ?? undefined,
     subscribe: subscribeTag,
     feed,
+    bogusQuotePolicy: true,
   })
   const statuses = feed.items
 

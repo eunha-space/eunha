@@ -17,6 +17,7 @@ import { getActiveAccountId, getToken } from '../auth.ts'
 import { Compose } from '@/components/compose.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { cn } from '@/lib/utils.ts'
+import { mayQuote } from '@/lib/statuses.ts'
 
 type ComposeOptions = {
   replyTo?: mastodon.v1.Status | null
@@ -81,6 +82,10 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
   }, [finishClose])
 
   const openCompose = useCallback((options?: ComposeOptions) => {
+    if (options?.quoteOf && !mayQuote(options.quoteOf)) {
+      toast.error('You are not authorized to quote this post.')
+      return
+    }
     window.clearTimeout(closeTimer.current)
     setClosing(false)
     setMinimized(false)

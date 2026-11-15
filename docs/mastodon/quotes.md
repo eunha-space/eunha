@@ -21,6 +21,14 @@ quoted author is mentioned silently in the quote (`ensure_quoted_access`), a
 mention an edit leaves alone, and is notified with a `quote` notification
 about the `Quote`, as `LocalNotificationWorker` writes it.
 
+The web client's Quote item, in a post's menu, can be chosen only when the
+post's `quote_approval.current_user` is `automatic` or `manual` and the post
+is public or unlisted; otherwise it is disabled and says why (“Private posts
+cannot be quoted”, “Only followers can quote this post”, or “You are not
+allowed to quote this post”), as Mastodon's boost menu does. Posts from the
+public and hashtag streams carry a policy written for no one, which the web
+client drops, as Mastodon's does, and fetches afresh when the menu opens.
+
 A quote of a remote post stays pending, and a `QuoteRequest`, named under the
 quoter (`/quote_requests/{uuid}`), goes to the quoted author's own inbox.
 Their `Accept` is taken when its `result` is on their host and the quote is

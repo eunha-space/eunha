@@ -25,6 +25,7 @@ import type { mastodon } from '../masto.ts'
 import {
   deleteStatus,
   getRelationship,
+  getStatus,
   getStatusSource,
   setFollow,
   getTranslationLanguages,
@@ -76,6 +77,7 @@ import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { RemoveQuoteHint } from '@/components/remove-quote-hint.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
+import { quoteItemState } from '@/lib/statuses.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
 
 import { useTagFollow } from '../hooks/use-tag-follow.ts'
@@ -254,17 +256,10 @@ export function StatusCard({
   const { openCompose } = useComposeModal()
 
   const isOwn = !!token && getMeId() === status.account.id
-  // Whether the viewer may quote this post. "manual" still allows quoting (the
-  // quote starts pending the author's approval); "unknown" means the server
-  // didn't compute a viewer policy for this response (e.g. search-by-URL
-  // results), so allow it optimistically — the server validates on create.
-  // Only an explicit "denied", or a private/direct post, hides the option.
-  const currentUserPolicy = status.quoteApproval?.currentUser
-  const canQuote =
-    !!token &&
-    currentUserPolicy !== 'denied' &&
-    status.visibility !== 'private' &&
-    status.visibility !== 'direct'
+  // The Quote item is always there for a member, disabled with the reason
+  // when the post may not be quoted, as in Mastodon's boost menu.
+  const quoteItem = quoteItemState(status, token ? getMeId() : null)
+  const canQuote = !!token
   // A post that came from another instance: `acct` carries the domain only for
   // remote accounts. `url` is then the post's page on that instance, which is
   // where its full context lives — offer it the way Mastodon's web client does.
@@ -371,6 +366,16 @@ export function StatusCard({
       setDeleted(true)
     } catch {
       // ignore
+    }
+  }
+
+  // A post from a public or hashtag stream has no quote policy for the
+  // reader; opening the menu fetches it, as Mastodon's menu does
+  // (`needsStatusRefresh`), so its Quote item can say what it should.
+  const onMenuOpenChange = (open: boolean) => {
+    setMenuOpen(open)
+    if (open && token && !status.quoteApproval) {
+      getStatus(status.id, token).then(setStatus).catch(() => {})
     }
   }
 
@@ -502,7 +507,7 @@ export function StatusCard({
               </Link>
             )}
             {hasMenu && (
-              <DropdownMenu onOpenChange={setMenuOpen}>
+              <DropdownMenu onOpenChange={onMenuOpenChange}>
                 <DropdownMenuTrigger
                   aria-label="More"
                   className="hover:text-foreground ml-1"
@@ -740,8 +745,19 @@ export function StatusCard({
                   <Repeat2 /> {status.reblogged ? 'Unboost' : 'Boost'}
                 </DropdownMenuItem>
                 {canQuote && (
-                  <DropdownMenuItem onClick={() => openCompose({ quoteOf: status })}>
-                    <Quote /> {currentUserPolicy === 'manual' ? 'Request to quote' : 'Quote'}
+                  <DropdownMenuItem
+                    disabled={quoteItem.disabled}
+                    onClick={() => openCompose({ quoteOf: status })}
+                  >
+                    <Quote />
+                    <span className="flex flex-col">
+                      {status.quoteApproval?.currentUser === 'manual' && !quoteItem.disabled
+                        ? 'Request to quote'
+                        : quoteItem.title}
+                      {quoteItem.meta && (
+                        <span className="text-muted-foreground text-xs">{quoteItem.meta}</span>
+                      )}
+                    </span>
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>

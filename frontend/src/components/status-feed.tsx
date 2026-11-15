@@ -59,6 +59,7 @@ export function StatusFeed({
     token: token ?? undefined,
     subscribe,
     feed,
+    bogusQuotePolicy: kind !== 'home',
   })
 
   // Messages are kept out of the home timeline; the public ones never carry

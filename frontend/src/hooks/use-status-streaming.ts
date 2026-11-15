@@ -12,9 +12,26 @@ function hasStatusId(status: mastodon.v1.Status, id: string) {
 }
 
 function mergeStatus(status: mastodon.v1.Status, updated: mastodon.v1.Status) {
-  if (status.reblog?.id === updated.id) return { ...status, reblog: updated }
-  if (status.id === updated.id) return updated
+  if (status.reblog?.id === updated.id) {
+    return { ...status, reblog: keepQuoteApproval(updated, status.reblog) }
+  }
+  if (status.id === updated.id) return keepQuoteApproval(updated, status)
   return status
+}
+
+// A status that arrives without a quote policy keeps the one it had.
+function keepQuoteApproval(updated: mastodon.v1.Status, old: mastodon.v1.Status) {
+  return updated.quoteApproval ? updated : { ...updated, quoteApproval: old.quoteApproval }
+}
+
+// Mastodon's `bogusQuotePolicy`: the public and hashtag streams send one
+// payload to everyone, written for no one, so its `quote_approval` says
+// `denied` to every reader. Like Mastodon's web client, drop it rather than
+// believe it, down to a boost's post.
+function withoutQuoteApproval(status: mastodon.v1.Status): mastodon.v1.Status {
+  const bare = { ...status, quoteApproval: null } as unknown as mastodon.v1.Status
+  if (status.reblog) bare.reblog = withoutQuoteApproval(status.reblog)
+  return bare
 }
 
 export function useStatusStreaming({
@@ -22,15 +39,24 @@ export function useStatusStreaming({
   token,
   subscribe,
   feed,
+  bogusQuotePolicy = false,
 }: {
   enabled?: boolean
   token?: string
+  // The stream is a public or hashtag one; see `withoutQuoteApproval`.
+  bogusQuotePolicy?: boolean
   subscribe: (client: mastodon.streaming.Client) => mastodon.streaming.Subscription
   feed: StatusFeed
 }) {
   const { mutate } = feed
   const onEvent = useCallback(
     (event: mastodon.streaming.Event) => {
+      if (
+        bogusQuotePolicy &&
+        (event.event === 'update' || event.event === 'status.update')
+      ) {
+        event = { ...event, payload: withoutQuoteApproval(event.payload) }
+      }
       if (event.event === 'update') {
         // A message arriving live would otherwise appear at the top of the
         // home timeline, which is the one place Messages exists to keep it
@@ -60,7 +86,7 @@ export function useStatusStreaming({
         )
       }
     },
-    [mutate],
+    [mutate, bogusQuotePolicy],
   )
 
   useStreamingSubscription({ enabled, token, subscribe, onEvent })

@@ -180,3 +180,49 @@ test('quoting a post opens the composer with the post in it', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await expect(page.getByText('Quoting this post')).toBeVisible()
 })
+
+const approval = (current_user: string, automatic = ['public'], manual: string[] = []) =>
+  ({ automatic, manual, current_user })
+
+async function openPost(page: Page, post: Record<string, unknown>) {
+  await page.route(`**/api/v1/statuses/${post.id}`, (r) => r.fulfill({ json: post }))
+  await page.route(`**/api/v1/statuses/${post.id}/context`, (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto(`/@${(post.account as { acct: string }).acct}/${post.id}`)
+  await page.getByRole('button', { name: 'More' }).click()
+}
+
+test('a post the reader may not quote says why, and cannot be chosen', async ({ page }) => {
+  await signedIn(page)
+  await openPost(page, status('10', bob, { quote_approval: approval('denied', []) }))
+  const item = page.getByRole('menuitem', { name: /Quote/ })
+  await expect(item).toContainText('You are not allowed to quote this post')
+  await expect(item).toHaveAttribute('aria-disabled', 'true')
+})
+
+test('a post only followers may quote says so', async ({ page }) => {
+  await signedIn(page)
+  await openPost(page, status('10', bob, { quote_approval: approval('denied', ['followers']) }))
+  await expect(page.getByRole('menuitem', { name: /Quote/ })).toContainText('Only followers can quote this post')
+})
+
+test('someone else’s followers-only post cannot be quoted', async ({ page }) => {
+  await signedIn(page)
+  await openPost(page, status('10', bob, { visibility: 'private', quote_approval: approval('denied', []) }))
+  const item = page.getByRole('menuitem', { name: /Quote/ })
+  await expect(item).toContainText('Private posts cannot be quoted')
+  await expect(item).toHaveAttribute('aria-disabled', 'true')
+})
+
+test('a post without a quote policy for the reader fetches one when the menu opens', async ({ page }) => {
+  await signedIn(page)
+  let fetches = 0
+  await page.route('**/api/v1/statuses/10', (r) => {
+    fetches += 1
+    return r.fulfill({ json: status('10', bob, fetches === 1 ? { quote_approval: null } : { quote_approval: approval('automatic') }) })
+  })
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto('/@bob/10')
+  await page.getByRole('button', { name: 'More' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Quote' })).not.toHaveAttribute('aria-disabled', 'true')
+  expect(fetches).toBe(2)
+})
