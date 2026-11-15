@@ -332,3 +332,36 @@ test('on a thread, a quoted post a filter warns of is folded behind its name', a
   await quote.getByRole('button', { name: 'Show anyway' }).click()
   await expect(quote.getByText('Spoilers')).toBeVisible()
 })
+
+for (const [state, message] of [
+  ['blocked_account', "This post is hidden because you've blocked @carol@remote.example."],
+  ['blocked_domain', "This post is hidden because you've blocked remote.example."],
+  ['muted_account', "This post is hidden because you've muted @carol@remote.example."],
+]) {
+  test(`a ${state} quote names whom, and can be shown anyway`, async ({ page }) => {
+    const remote = account('3', 'carol@remote.example')
+    await homeWith(page, [status('10', bob, { quote: { state, quoted_status:
+      status('20', remote, { content: '<p>Muted words</p>' }) } })])
+    await expect(page.getByText(message)).toBeVisible()
+    await expect(page.getByText('Muted words')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Show anyway' }).click()
+    await expect(page.getByText('Muted words')).toBeVisible()
+  })
+}
+
+test('a quote of an account the moderators limited is hidden until shown anyway', async ({ page }) => {
+  await page.route('**/api/v1/accounts/relationships**', (r) => r.fulfill({ json: [{ id: '3', following: false, requested: false }] }))
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', { ...carol, limited: true }, { content: '<p>Limited words</p>' }) } })])
+  await expect(page.getByText(/This account has been hidden by the moderators of /)).toBeVisible()
+  await expect(page.getByText('Limited words')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Show anyway' }).click()
+  await expect(page.getByText('Limited words')).toBeVisible()
+})
+
+test('a quote of a limited account the reader follows is shown', async ({ page }) => {
+  await page.route('**/api/v1/accounts/relationships**', (r) => r.fulfill({ json: [{ id: '3', following: true, requested: false }] }))
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', { ...carol, limited: true }, { content: '<p>Limited words</p>' }) } })])
+  await expect(page.getByText('Limited words')).toBeVisible()
+})

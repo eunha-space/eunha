@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import type { mastodon } from '../masto.ts'
-import { getStatus } from '../api.ts'
+import { getCachedInstance, getRelationship, getStatus } from '../api.ts'
 import { getMeId } from '../me.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
@@ -16,18 +16,44 @@ import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { useReadingPreferences } from '../reading-preferences.ts'
 
 // A quote that isn't accepted shows a status message in place of the embedded
-// post. Copy mirrors Mastodon's web client (status_quoted.tsx): pending quotes
-// stay hidden until the original author's server approves them, so the quoted
+// post. Copy mirrors Mastodon's web client (quote.tsx): pending quotes stay
+// hidden until the original author's server approves them, so the quoted
 // content is never revealed early.
 const QUOTE_PLACEHOLDER: Record<string, string> = {
   pending: 'Post pending',
   revoked: 'Post removed by author',
-  rejected: 'Post unavailable',
-  deleted: 'Post unavailable',
-  unauthorized: 'Post unavailable',
-  blocked_account: "This post is hidden because you've blocked this account.",
-  blocked_domain: "This post is hidden because you've blocked this domain.",
-  muted_account: "This post is hidden because you've muted this account.",
+}
+
+// A quote of someone the reader blocked or muted names them, and can be shown
+// anyway: the server sends the quoted post with these states.
+function hiddenByReader(quote: Quote, account: mastodon.v1.Account): string | null {
+  switch (quote.state) {
+    case 'blocked_account':
+      return `This post is hidden because you've blocked @${account.acct}.`
+    case 'blocked_domain':
+      return `This post is hidden because you've blocked ${account.acct.split('@')[1]}.`
+    case 'muted_account':
+      return `This post is hidden because you've muted @${account.acct}.`
+    default:
+      return null
+  }
+}
+
+// Mastodon's `getAccountHidden`: an account this server's moderators limited
+// is hidden from whoever neither follows it nor has asked to.
+function useAccountHidden(account: mastodon.v1.Account | null, token?: string): boolean {
+  const limited = !!account?.limited && account.id !== getMeId()
+  const id = account?.id
+  const [following, setFollowing] = useState<{ id: string; following: boolean }>()
+  useEffect(() => {
+    if (!limited || !id || !token) return
+    let active = true
+    getRelationship(id, token)
+      .then((r) => { if (active) setFollowing({ id, following: !!(r?.following || r?.requested) }) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [limited, id, token])
+  return limited && !(following?.id === id && following?.following)
 }
 
 type Quote = NonNullable<mastodon.v1.Status['quote']>
@@ -137,21 +163,42 @@ export function QuotedStatus({
   filterContext?: mastodon.v2.FilterContext
   detailed?: boolean
 }) {
+  // Mastodon's "Show anyway", for a filter's warning or a block or mute.
   const [revealed, setRevealed] = useState(false)
+  const [accountRevealed, setAccountRevealed] = useState(false)
   const quoted = quotedStatusOf(quote)
+  const accountHidden = useAccountHidden(quoted?.account ?? null, token)
   const filters = quoted ? quoteFilters(quoted, filterContext) : NO_FILTERS
   const filteredMessage = `Hidden due to your filter “${listFormat.format(filters.titles)}”`
+  const hiddenMessage = quoted && hiddenByReader(quote, quoted.account)
 
-  if (filters.action === 'hide' && quote.state !== 'pending') {
+  // In the order Mastodon's `useQuoteError` tries them.
+  if (quote.state === 'pending') return <QuotePlaceholder quote={quote} />
+  if (filters.action === 'hide') {
     return (
       <QuotePlaceholder
         message={detailed ? 'Hidden due to one of your filters' : filteredMessage}
       />
     )
   }
-  if (quote.state !== 'accepted' || !quoted) return <QuotePlaceholder quote={quote} />
+  if (quote.state === 'revoked') return <QuotePlaceholder quote={quote} />
   if (!detailed && filters.action === 'warn' && !revealed) {
     return <QuotePlaceholder message={filteredMessage} onShow={() => setRevealed(true)} />
+  }
+  if (hiddenMessage && !revealed) {
+    return <QuotePlaceholder message={hiddenMessage} onShow={() => setRevealed(true)} />
+  }
+  if (!quoted || (quote.state !== 'accepted' && !hiddenMessage)) {
+    return <QuotePlaceholder message="Post unavailable" />
+  }
+  if (accountHidden && !accountRevealed) {
+    const domain = getCachedInstance()?.domain ?? window.location.hostname
+    return (
+      <QuotePlaceholder
+        message={`This account has been hidden by the moderators of ${domain}.`}
+        onShow={() => setAccountRevealed(true)}
+      />
+    )
   }
   return (
     <QuotedPost

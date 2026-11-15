@@ -702,7 +702,11 @@ follows them, as Mastodon's web client does:
     hides it leaves “Hidden due to your filter “…”” in its place (“Hidden
     due to one of your filters” on a thread's focused post), one that warns
     does the same with Show anyway (on a thread's focused post, folds it
-    under “Matches filter “…””), and one that blurs covers its media.
+    under “Matches filter “…””), and one that blurs covers its media. A quoted
+    post by someone the reader blocked or muted, or on a domain they blocked,
+    is hidden and names them (“This post is hidden because you've blocked @…”),
+    and one by an account this server's moderators limited, unless the reader
+    follows it, says so; both can be shown anyway.
 
 A `:shortcode:` is drawn as an image only when the post, account, poll or
 announcement it belongs to lists that shortcode in its `emojis`, and only in
