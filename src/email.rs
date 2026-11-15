@@ -689,7 +689,8 @@ impl EmailSender {
     /// The summary of a staff member's held alerts (see
     /// [`crate::admin_digest`]): each report, appeal and account awaiting
     /// review in the order they came in, worded as their own mails word them,
-    /// sent as an `AdminMailer` mail is.
+    /// then the trends awaiting review and the moderation suggestions, if
+    /// any; sent as an `AdminMailer` mail is.
     pub async fn send_admin_digest(
         &self,
         to: &str,
@@ -700,10 +701,25 @@ impl EmailSender {
         let instance_domain = instance.local_domain.as_str();
         let web_domain = instance.web_domain();
         let count = |f: fn(&Alert) -> bool| alerts.iter().filter(|a| f(a)).count();
+        // Trends asked about over several rounds are one list, and moderation
+        // suggestions one link, however often they came in.
+        let mut trends = crate::trends::Requested::default();
+        for alert in alerts {
+            if let Alert::Trends(requested) = alert {
+                trends.links.extend(requested.links.iter().cloned());
+                trends.tags.extend(requested.tags.iter().cloned());
+                trends.statuses.extend(requested.statuses.iter().cloned());
+            }
+        }
+        let suggestions = alerts
+            .iter()
+            .any(|a| matches!(a, Alert::ModerationSuggestions));
         let counts = digest_counts(
             count(|a| matches!(a, Alert::Report { .. })),
             count(|a| matches!(a, Alert::Appeal { .. })),
             count(|a| matches!(a, Alert::PendingAccount { .. })),
+            trends.links.len() + trends.tags.len() + trends.statuses.len(),
+            suggestions,
         );
         let subject = format!("New for review on {instance_domain}: {counts}");
         let mut body = format!(
@@ -761,13 +777,29 @@ impl EmailSender {
                         html_escape(username)
                     )
                 }
+                // Gathered above, and listed after the rest.
+                Alert::Trends(_) | Alert::ModerationSuggestions => continue,
             };
             body.push_str(&entry);
         }
-        body.push_str(
-            "<p>You get at most one email like this an hour. The first new item after a \
-             quiet hour is emailed at once.</p>",
-        );
+        if !trends.is_empty() {
+            body.push_str(
+                "<p>These trends need a review before they can be displayed publicly:</p>",
+            );
+            body.push_str(&trend_sections(web_domain, &trends));
+        }
+        if suggestions {
+            let url = format!("https://{web_domain}/admin/moderation_suggestions");
+            body.push_str(&format!(
+                "<p>The moderation lists your server is subscribed to have published new \
+                 suggestions.<br><a href=\"{url}\">{url}</a></p>"
+            ));
+        }
+        body.push_str(&format!(
+            "<p>You get at most one email like this {}. The first new item after a \
+             quiet spell is emailed at once.</p>",
+            digest_interval(instance.staff_alert_digest_minutes)
+        ));
         self.send_admin(to, &subject, &body, false).await
     }
 
@@ -915,33 +947,9 @@ impl EmailSender {
         let instance_domain = instance.local_domain.as_str();
         let web_domain = instance.web_domain();
         let subject = format!("New trends up for review on {instance_domain}");
-        let section = |title: &str, items: &[crate::trends::ReviewItem], path: &str| {
-            if items.is_empty() {
-                return String::new();
-            }
-            let list: String = items
-                .iter()
-                .map(|item| {
-                    format!(
-                        "<li>{}<br>{}</li>",
-                        html_escape(&item.label),
-                        html_escape(&item.detail)
-                    )
-                })
-                .collect();
-            let url = format!("https://{web_domain}{path}");
-            format!("<h2>{title}</h2><ul>{list}</ul><p>View: <a href=\"{url}\">{url}</a></p>")
-        };
-        let body =
-            format!(
-            "<p>The following items need a review before they can be displayed publicly:</p>{}{}{}",
-            section("Trending links", &requested.links, "/admin/trends/links"),
-            section(
-                "Trending hashtags",
-                &requested.tags,
-                "/admin/trends/tags?status=pending_review"
-            ),
-            section("Trending posts", &requested.statuses, "/admin/trends/statuses"),
+        let body = format!(
+            "<p>The following items need a review before they can be displayed publicly:</p>{}",
+            trend_sections(web_domain, requested),
         );
         self.send_admin(to, &subject, &body, false).await
     }
@@ -1613,7 +1621,60 @@ fn appeal_action(action: &str) -> &'static str {
 }
 
 /// "3 reports, 1 appeal": how many of each, the nonzero ones only.
-fn digest_counts(reports: usize, appeals: usize, accounts: usize) -> String {
+/// `AdminMailer#new_trends`' sections, each with its admin page: links,
+/// hashtags, posts, leaving out a kind with nothing in it.
+fn trend_sections(web_domain: &str, requested: &crate::trends::Requested) -> String {
+    let section = |title: &str, items: &[crate::trends::ReviewItem], path: &str| {
+        if items.is_empty() {
+            return String::new();
+        }
+        let list: String = items
+            .iter()
+            .map(|item| {
+                format!(
+                    "<li>{}<br>{}</li>",
+                    html_escape(&item.label),
+                    html_escape(&item.detail)
+                )
+            })
+            .collect();
+        let url = format!("https://{web_domain}{path}");
+        format!("<h2>{title}</h2><ul>{list}</ul><p>View: <a href=\"{url}\">{url}</a></p>")
+    };
+    format!(
+        "{}{}{}",
+        section("Trending links", &requested.links, "/admin/trends/links"),
+        section(
+            "Trending hashtags",
+            &requested.tags,
+            "/admin/trends/tags?status=pending_review"
+        ),
+        section(
+            "Trending posts",
+            &requested.statuses,
+            "/admin/trends/statuses"
+        ),
+    )
+}
+
+/// How often a staff alert digest can come, in words: "an hour", "every 3
+/// hours", "every 90 minutes".
+fn digest_interval(minutes: u64) -> String {
+    match minutes.max(1) {
+        60 => "an hour".to_owned(),
+        1 => "a minute".to_owned(),
+        m if m % 60 == 0 => format!("every {} hours", m / 60),
+        m => format!("every {m} minutes"),
+    }
+}
+
+fn digest_counts(
+    reports: usize,
+    appeals: usize,
+    accounts: usize,
+    trends: usize,
+    suggestions: bool,
+) -> String {
     let plural = |n: usize, one: &str, many: &str| {
         if n == 1 {
             format!("1 {one}")
@@ -1634,6 +1695,12 @@ fn digest_counts(reports: usize, appeals: usize, accounts: usize) -> String {
             "account up for review",
             "accounts up for review",
         ));
+    }
+    if trends > 0 {
+        parts.push(plural(trends, "trend", "trends"));
+    }
+    if suggestions {
+        parts.push("moderation suggestions".to_owned());
     }
     parts.join(", ")
 }

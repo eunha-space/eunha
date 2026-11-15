@@ -266,6 +266,9 @@ experimental_features = ["fasp"]
 default_locale = "en"
 # Mastodon's FORCE_DEFAULT_LOCALE: ignore the browser's Accept-Language.
 force_default_locale = false
+# eunha's: how long a staff member's alert digest window stays open, in
+# minutes (see staff alert digests in moderation). An hour unless set.
+staff_alert_digest_minutes = 60
 ~~~~
 
 `default_locale` is Mastodon's `I18n.default_locale`, and a lone instance

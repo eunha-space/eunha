@@ -271,17 +271,33 @@ Staff alert digests
 -------------------
 
 Mastodon mails each staff member once per report, appeal and sign-up awaiting
-approval. eunha mails the first of these in a quiet hour at once, then holds
-what comes in for that staff member over the next hour and sends it as one
-summary, *New for review on …*, when the hour ends. The summary lists each
-item with its link, in the order they came in, and starts another hour, so a
-busy stretch makes one mail an hour; an hour with nothing held ends quietly,
-and the next alert is again mailed at once.
+approval, and once per round of [trends awaiting review](#trends) and of
+[moderation suggestions](#moderation-subscriptions). eunha mails the first of
+these in a quiet hour at once, then holds what comes in for that staff member
+over the next hour and sends it as one summary, *New for review on …*, when
+the hour ends. The summary lists each report, appeal and account with its
+link, in the order they came in, then the trends to review as one list and the
+moderation suggestions as one link. It starts another hour, so a busy stretch
+makes one mail an hour; an hour with nothing held ends quietly, and the next
+alert is again mailed at once.
 
-Each staff member has an hour of their own, and the opt-outs (`report`,
-`appeal`, `pending_account`) still decide what reaches them at all. The
-in-app `admin.report` and `admin.sign_up` notifications and web push are not
-held. The hour is the coordination Redis key
+The hour is an hour unless the instance's configuration says otherwise, in
+minutes:
+
+~~~~ toml
+[instance]
+staff_alert_digest_minutes = 180
+~~~~
+
+The summary says how often it can come, *at most one email like this every 3
+hours*. A longer window means fewer mails, and nothing waits longer for the
+first mail after a quiet spell; what follows it waits up to the window.
+
+Each staff member has a window of their own, and the opt-outs (`report`,
+`appeal`, `pending_account`, `trends`, `moderation_suggestions`) still decide
+what reaches them at all. The in-app `admin.report` and `admin.sign_up`
+notifications and web push are not held. The window is the coordination Redis
+key
 `admin_digest:<account_id>:window`, and the held alerts the set
 `admin_digest:<account_id>:held`; if Redis cannot be reached, the alert is
 mailed at once. The summary is sent by `Eunha::AdminDigestWorker` on the
@@ -370,7 +386,8 @@ Every six hours (and soon after a restart, once six hours have passed since
 the last time), unless `trendable_by_default` is on or trends are off, eunha
 looks for trends awaiting review that score above the allowed trend
 ranked third in their language. It marks each one as asked about and
-mails every moderator with `manage_taxonomies` who has trend emails on.
+mails every moderator with `manage_taxonomies` who has trend emails on,
+through their [staff alert digest](#staff-alert-digests).
 
 
 The moderation tools
@@ -566,7 +583,8 @@ Outside limited federation mode only blocks and limits are acted on; in limited
 federation mode, only allows. What is applied automatically is logged in the
 audit log as automatic, with the subscription; logs of all of it have their own
 tab. New suggestions are mailed to whoever can manage federation, unless they
-turned off `notification_emails.moderation_suggestions`.
+turned off `notification_emails.moderation_suggestions`, through their [staff
+alert digest](#staff-alert-digests).
 
 Applying a suggestion asks for confirmation before suspending or downgrading,
 and leaves other suggestions for the domain dismissed. Dismissing one dismisses

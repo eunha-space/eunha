@@ -967,6 +967,7 @@ impl TestContext {
                 disable_automatic_switching_to_approved_registrations: false,
                 disable_followers_synchronization: false,
                 hosted: false,
+                staff_alert_digest_minutes: 60,
                 hosting_provider: None,
                 translation: Default::default(),
                 secret_key_base: None,

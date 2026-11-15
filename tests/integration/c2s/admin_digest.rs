@@ -1,6 +1,6 @@
-//! Staff alert digests: the first alert of a quiet hour is mailed at once,
-//! what follows within the hour goes out as one summary, and a summary opens
-//! the next hour's window.
+//! Staff alert digests: the first alert of a quiet window is mailed at once,
+//! what follows within the window goes out as one summary, and a summary opens
+//! the next window.
 
 use eunha::admin_digest::{self, Alert};
 
@@ -198,4 +198,105 @@ async fn reports_go_through_the_digest() {
         matches!(held.as_slice(), [Alert::Report { target, .. }] if target == "dave"),
         "{held:?}"
     );
+}
+
+fn trends(tag: &str) -> Alert {
+    Alert::Trends(eunha::trends::Requested {
+        tags: vec![eunha::trends::ReviewItem {
+            label: format!("#{tag}"),
+            detail: "6 people today (1 yesterday) · Score: 7.50".into(),
+        }],
+        ..Default::default()
+    })
+}
+
+/// Trends awaiting review and moderation suggestions go through the digest
+/// too: the first is mailed as Mastodon mails it, and later rounds are
+/// gathered into the summary, the trends as one list and the suggestions as
+/// one link.
+#[tokio::test]
+async fn trends_and_moderation_suggestions_join_the_summary() {
+    let ctx = TestContext::new("admin-digest-trends").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    make_admin(&ctx.db, alice).await;
+
+    alert(&ctx, alice, STAFF, trends("first")).await;
+    let first = format!("New trends up for review on {}", ctx.domain);
+    let mail = ctx.mail_to(STAFF, &first).await.expect("mailed at once");
+    assert!(mail.text.contains("#first"));
+
+    alert(&ctx, alice, STAFF, Alert::ModerationSuggestions).await;
+    alert(&ctx, alice, STAFF, trends("second")).await;
+    alert(&ctx, alice, STAFF, report(1)).await;
+    alert(&ctx, alice, STAFF, trends("third")).await;
+    alert(&ctx, alice, STAFF, Alert::ModerationSuggestions).await;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert_eq!(ctx.sent_to(STAFF).len(), 1, "only the first was mailed");
+
+    close_window(&ctx, alice).await;
+    let subject = format!(
+        "New for review on {}: 1 report, 2 trends, moderation suggestions",
+        ctx.domain
+    );
+    let summary = ctx.mail_to(STAFF, &subject).await.expect("the summary");
+    let text = &summary.text;
+    assert!(text.contains("Report #1"));
+    assert!(text.contains("#second") && text.contains("#third"));
+    assert!(!text.contains("#first"), "already mailed");
+    assert_eq!(
+        text.matches("/admin/trends/tags?status=pending_review")
+            .count(),
+        1,
+        "one list of trends: {text}"
+    );
+    assert_eq!(
+        text.matches("/admin/moderation_suggestions").count(),
+        1,
+        "one link to the suggestions: {text}"
+    );
+    assert!(text.find("Report #1") < text.find("#second"));
+    assert!(text.contains("at most one email like this an hour"));
+}
+
+/// `staff_alert_digest_minutes` sets how long a window stays open.
+#[tokio::test]
+async fn the_window_follows_the_configured_minutes() {
+    let ctx = TestContext::new("admin-digest-minutes").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    let mut state = ctx.state.clone();
+    state.instance = std::sync::Arc::new(eunha::config::InstanceConfig {
+        staff_alert_digest_minutes: 180,
+        ..(*ctx.state.instance).clone()
+    });
+
+    admin_digest::alert(&state, alice, STAFF, report(1)).await;
+    let jobs = digest_jobs(&ctx).await;
+    assert_eq!(jobs.len(), 1);
+    let due = jobs[0].seconds_until_due;
+    assert!(due > 3.0 * 3600.0 && due <= 3.0 * 3600.0 + 60.0, "{due}");
+    let mut redis = ctx.state.redis_coordination.clone();
+    let ttl: i64 = redis::cmd("TTL")
+        .arg(
+            ctx.state
+                .redis_keys
+                .key(format!("admin_digest:{alice}:window")),
+        )
+        .query_async(&mut redis)
+        .await
+        .unwrap();
+    assert!(ttl > 3600 && ttl <= 3 * 3600, "{ttl}");
+
+    state
+        .mailer()
+        .send_admin_digest(STAFF, &state.instance, &[report(2)])
+        .await
+        .unwrap();
+    eunha::jobs::drain(&ctx.state).await.unwrap();
+    let subject = format!("New for review on {}: 1 report", ctx.domain);
+    let summary = ctx.mail_to(STAFF, &subject).await.expect("the summary");
+    assert!(summary
+        .text
+        .contains("at most one email like this every 3 hours"));
 }

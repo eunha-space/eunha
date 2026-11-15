@@ -1,14 +1,17 @@
-//! Staff alert digests: at most one mail an hour to each staff member about
-//! new reports, appeals and accounts awaiting review.
+//! Staff alert digests: at most one mail a window (an hour unless
+//! `staff_alert_digest_minutes` says otherwise) to each staff member about new
+//! reports, appeals, accounts awaiting review, trends awaiting review and
+//! moderation suggestions.
 //!
 //! Mastodon mails every staff member once per report (`AdminMailer#new_report`),
-//! per appeal (`#new_appeal`) and per sign-up awaiting approval
-//! (`#new_pending_account`). eunha sends the first alert of a quiet hour as
-//! Mastodon would, at once, and opens an hour's window for that member. What
-//! comes in while the window is open is held, and goes out as one summary when
-//! it closes; a summary opens the next window, so a busy stretch makes one
-//! mail an hour. An hour with nothing held ends quietly, and the next alert is
-//! again mailed at once.
+//! per appeal (`#new_appeal`), per sign-up awaiting approval
+//! (`#new_pending_account`), per round of trends to review (`#new_trends`) and
+//! per round of moderation suggestions (`#new_moderation_suggestions`). eunha
+//! sends the first alert of a quiet window as Mastodon would, at once, and
+//! opens a window for that member. What comes in while the window is open is
+//! held, and goes out as one summary when it closes; a summary opens the next
+//! window, so a busy stretch makes one mail a window. A window with nothing
+//! held ends quietly, and the next alert is again mailed at once.
 //!
 //! Each kind's `notification_emails.*` opt-out is asked before an alert gets
 //! here. The window is a `SET NX` key and the held alerts a set beside it, both
@@ -22,15 +25,23 @@ use std::time::Duration;
 
 use crate::state::AppState;
 
-/// How long a window stays open after the mail that opened it.
-pub const WINDOW: Duration = Duration::from_secs(60 * 60);
+/// How long a window stays open after the mail that opened it:
+/// `staff_alert_digest_minutes`, an hour unless set.
+pub fn window(state: &AppState) -> Duration {
+    Duration::from_secs(state.instance.staff_alert_digest_minutes.max(1) * 60)
+}
 
-/// How long after a window opens its summary is looked for: a little after it
+/// How long after a window opens its summary is looked for: a minute after it
 /// closes, so that everything held while it was open is there to be taken.
-pub const FLUSH_AFTER: Duration = Duration::from_secs(61 * 60);
+pub fn flush_after(state: &AppState) -> Duration {
+    window(state) + Duration::from_secs(60)
+}
 
-/// How long held alerts are kept if their summary never runs.
-const HELD_TTL: u64 = 24 * 60 * 60;
+/// How long held alerts are kept if their summary never runs: a day past
+/// when it should have.
+fn held_ttl(state: &AppState) -> u64 {
+    window(state).as_secs() + 24 * 60 * 60
+}
 
 /// One alert for a staff member.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -60,6 +71,11 @@ pub enum Alert {
         username: String,
         invite_request: Option<String>,
     },
+    /// `AdminMailer#new_trends`: the trends one round of
+    /// `Trends.request_review!` asked about.
+    Trends(crate::trends::Requested),
+    /// `AdminMailer#new_moderation_suggestions`.
+    ModerationSuggestions,
 }
 
 /// An alert as it is held, with when it came in, which also keeps two
@@ -90,7 +106,7 @@ pub async fn alert(state: &AppState, account_id: i64, to: &str, alert: Alert) {
         Ok(true) => {}
         Ok(false) => {
             send_now(state, to, &alert).await;
-            crate::jobs::push_in(state, FLUSH_AFTER, AdminDigestJob { account_id }).await;
+            crate::jobs::push_in(state, flush_after(state), AdminDigestJob { account_id }).await;
         }
         Err(error) => {
             tracing::warn!(%error, "could not hold a staff alert; mailing it now");
@@ -108,7 +124,7 @@ async fn hold(state: &AppState, account_id: i64, alert: &Alert) -> anyhow::Resul
         .arg("1")
         .arg("NX")
         .arg("EX")
-        .arg(WINDOW.as_secs())
+        .arg(window(state).as_secs())
         .query_async(&mut redis)
         .await?;
     if opened.is_some() {
@@ -126,7 +142,7 @@ async fn hold(state: &AppState, account_id: i64, alert: &Alert) -> anyhow::Resul
         .ignore()
         .cmd("EXPIRE")
         .arg(&key)
-        .arg(HELD_TTL)
+        .arg(held_ttl(state))
         .ignore()
         .query_async(&mut redis)
         .await?;
@@ -191,6 +207,8 @@ async fn send_now(state: &AppState, to: &str, alert: &Alert) {
                 )
                 .await
         }
+        Alert::Trends(requested) => mailer.send_new_trends(to, instance, requested).await,
+        Alert::ModerationSuggestions => mailer.send_new_moderation_suggestions(to, instance).await,
     };
     if let Err(error) = result {
         tracing::warn!(%error, "could not mail a staff alert");
@@ -259,18 +277,18 @@ pub async fn flush(state: &AppState, account_id: i64) -> anyhow::Result<usize> {
         .arg(held.iter().map(|(member, _)| member).collect::<Vec<_>>())
         .query_async(&mut redis)
         .await?;
-    // The summary counts as this hour's mail. If an alert has already opened
+    // The summary counts as this window's mail. If an alert has already opened
     // a window since the last one closed, that window has its own summary.
     let opened: Option<String> = redis::cmd("SET")
         .arg(window_key(state, account_id))
         .arg("1")
         .arg("NX")
         .arg("EX")
-        .arg(WINDOW.as_secs())
+        .arg(window(state).as_secs())
         .query_async(&mut redis)
         .await?;
     if opened.is_some() {
-        crate::jobs::push_in(state, FLUSH_AFTER, AdminDigestJob { account_id }).await;
+        crate::jobs::push_in(state, flush_after(state), AdminDigestJob { account_id }).await;
     }
     Ok(held.len())
 }

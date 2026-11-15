@@ -238,6 +238,10 @@ pub fn default_sign_integrity_proofs() -> bool {
     false
 }
 
+fn default_staff_alert_digest_minutes() -> u64 {
+    60
+}
+
 fn default_redis_process_metrics() -> bool {
     true
 }
@@ -517,6 +521,13 @@ pub struct InstanceConfig {
     /// (docs/operating/hosted.md).
     #[serde(default)]
     pub hosted: bool,
+    /// eunha's: how long, in minutes, a staff member's alert digest window
+    /// stays open. The first staff alert of a quiet window is mailed at once,
+    /// and what follows within it goes out as one summary when it closes
+    /// (docs/operating/moderation.md). An hour unless set; less than a minute
+    /// counts as a minute.
+    #[serde(default = "default_staff_alert_digest_minutes")]
+    pub staff_alert_digest_minutes: u64,
     /// eunha's: who hosts the instance, credited on its About page as
     /// "Hosted by …" (`[instance.hosting_provider]`). Unset, no credit.
     #[serde(default)]

@@ -556,13 +556,14 @@ struct StatusRow {
 // ── Requesting reviews ────────────────────────────────────────────────────
 
 /// A trend staff are asked to review.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ReviewItem {
     pub label: String,
     pub detail: String,
 }
 
 /// What [`request_review`] found, by kind.
-#[derive(Default)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Requested {
     pub links: Vec<ReviewItem>,
     pub tags: Vec<ReviewItem>,
@@ -570,15 +571,16 @@ pub struct Requested {
 }
 
 impl Requested {
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.links.is_empty() && self.tags.is_empty() && self.statuses.is_empty()
     }
 }
 
 /// `Trends.request_review!`: unless every trend is allowed by default, or
 /// trends are off, mark what outscores the third allowed trend but awaits a
-/// review as asked about, and mail each `manage_taxonomies` user who wants
-/// it the list.
+/// review as asked about, and alert each `manage_taxonomies` user who wants
+/// it to the list, through their staff alert digest
+/// ([`crate::admin_digest`]).
 pub async fn request_review(state: &AppState) -> anyhow::Result<Requested> {
     if crate::settings::boolean(state, "trendable_by_default").await
         || !crate::settings::boolean(state, "trends").await
@@ -614,13 +616,13 @@ pub async fn request_review(state: &AppState) -> anyhow::Result<Requested> {
         ) {
             continue;
         }
-        if let Err(error) = state
-            .mailer()
-            .send_new_trends(&recipient.email, &state.instance, &requested)
-            .await
-        {
-            tracing::warn!(%error, "could not mail staff about trends to review");
-        }
+        crate::admin_digest::alert(
+            state,
+            staff_id,
+            &recipient.email,
+            crate::admin_digest::Alert::Trends(requested.clone()),
+        )
+        .await;
     }
     Ok(requested)
 }

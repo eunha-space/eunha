@@ -957,7 +957,8 @@ pub async fn run_scheduled(state: &AppState) -> Result<()> {
     mail_suggestions(state).await
 }
 
-/// `#mail_suggestions!`.
+/// `#mail_suggestions!`, through each moderator's staff alert digest
+/// ([`crate::admin_digest`]).
 async fn mail_suggestions(state: &AppState) -> Result<()> {
     let any_new = sqlx::query_scalar!(
         r#"SELECT EXISTS (SELECT 1 FROM moderation_suggestions WHERE state = $1) AS "e!""#,
@@ -988,13 +989,13 @@ async fn mail_suggestions(state: &AppState) -> Result<()> {
         ) {
             continue;
         }
-        if let Err(error) = state
-            .mailer()
-            .send_new_moderation_suggestions(&recipient.email, &state.instance)
-            .await
-        {
-            tracing::error!(%error, "could not mail moderation suggestions");
-        }
+        crate::admin_digest::alert(
+            state,
+            account_id,
+            &recipient.email,
+            crate::admin_digest::Alert::ModerationSuggestions,
+        )
+        .await;
     }
     sqlx::query!(
         "UPDATE moderation_suggestions SET state = $2, updated_at = now() WHERE state = $1",
