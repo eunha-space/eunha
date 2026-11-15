@@ -112,7 +112,7 @@ test('single image handles a missing description and failed original', async ({ 
   await expect(viewer.getByRole('link', { name: 'Open original image in a new tab' })).toHaveAttribute('href', '/media/1.svg')
 })
 
-test('mobile viewer fits tall images, swipes between images and supports original size', async ({ page }) => {
+test('mobile viewer fits tall images, swipes between images and supports original size', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await setup(page)
   await page.getByRole('button', { name: 'View image: A blue portrait' }).click()
@@ -131,7 +131,7 @@ test('mobile viewer fits tall images, swipes between images and supports origina
   await expect(original).toBeVisible()
   await viewer.getByRole('button', { name: 'Fit image to screen' }).click()
   await expect(viewer.getByRole('button', { name: 'View image at original size' })).toBeVisible()
-  await page.screenshot({ path: '/tmp/eunha-image-viewer-mobile.png' })
+  await page.screenshot({ path: testInfo.outputPath('image-viewer-mobile.png') })
 })
 
 

@@ -165,7 +165,7 @@ test('tree starts with my ancestry and supports collapse, search and finding me'
   await expect(page).toHaveURL(/\/admin\/invites\?grant_to=1$/)
 })
 
-test('tree keeps a former member\'s branch and a deep search usable on mobile', async ({ page }) => {
+test('tree keeps a former member\'s branch and a deep search usable on mobile', async ({ page }, testInfo) => {
   await signIn(page, 1 << 16)
   await page.setViewportSize({ width: 390, height: 844 })
   let chain: Nested = { ...member, id: '20', acct: 'last', username: 'last', display_name: 'Last' }
@@ -178,7 +178,7 @@ test('tree keeps a former member\'s branch and a deep search usable on mobile', 
   await expect(page.getByRole('link', { name: 'Last @last' })).toBeVisible()
   await expect(page.getByRole('link', { name: /Hand out invites to/ })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.screenshot({ path: '/tmp/eunha-invite-tree-mobile.png', fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath('invite-tree-mobile.png'), fullPage: true })
 })
 
 test('tree empty search and load failure have clear recovery states', async ({ page }) => {
@@ -228,7 +228,7 @@ test('visitors do not see invite navigation', async ({ page }) => {
 })
 
 
-test('member sharing preserves grant batches and copying does not consume links', async ({ page, context }) => {
+test('member sharing preserves grant batches and copying does not consume links', async ({ page, context }, testInfo) => {
   await signIn(page, 0)
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const grantA = { id: '1', granted_by: 'mira', created_at: '2026-01-01T00:00:00Z' }
@@ -264,7 +264,7 @@ test('member sharing preserves grant batches and copying does not consume links'
   await expect(page.getByLabel('Invite link', { exact: true })).toHaveCount(1)
   await page.setViewportSize({ width: 360, height: 800 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await page.screenshot({ path: '/tmp/eunha-member-invites-mobile.png', fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath('member-invites-mobile.png'), fullPage: true })
 })
 
 test('unlimited links hide the sidebar count and do not imply a people allowance', async ({ page }) => {
