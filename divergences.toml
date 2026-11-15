@@ -1634,6 +1634,17 @@ since = "4.7.3"
 reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
+id = "web-search-progress-steps"
+kind = "behaviour"
+summary = "The web client searches in parts and shows each part's progress"
+mastodon = "The web client's search page sends one `GET /api/v2/search` with `resolve` for a signed-in user and shows a single loading indicator until all of it answers; a URL is opened from the search box's \"Open URL\" quick action."
+eunha = "The search page sends people, hashtags and posts on this server, and for a complete handle or a URL the remote lookup, as separate requests, lists each as a step with whether it is running and how much it found, and shows what has come back while the rest runs. A URL is only looked up, not also searched for as text."
+why = "Without Elasticsearch a post search can take seconds, and a remote fetch longer; one request made the whole page wait for the slowest part with no sign of what it was waiting for."
+evidence = "frontend/e2e/search.spec.ts"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
 id = "account-reach-storage"
 kind = "behaviour"
 summary = "Tracks actor reach in a bounded PostgreSQL set"

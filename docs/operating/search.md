@@ -105,7 +105,9 @@ The web app's search page sends each part as a request of its own: people,
 hashtags and posts on this server, and, for a URL or a complete handle, the
 remote lookup. Each shows as a step with whether it is still running and how
 much it found, and what has come back shows while the rest runs. A URL is only
-looked up, not searched for as text.
+looked up, not searched for as text. Mastodon's web client sends one request
+and shows one loading indicator; the difference is in
+[the divergence list](../mastodon/divergences).
 
 `GET /api/v1/accounts/search` needs a signed-in user with the `read:accounts`
 scope. It takes `q`, `limit` (40 by default, at most 80), `offset`, `resolve`

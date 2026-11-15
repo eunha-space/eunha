@@ -131,7 +131,8 @@ pub async fn search(
 
     // The three searches are independent, so they run at once: a response
     // waits for the slowest (post search, without Elasticsearch) rather than
-    // for all three in turn.
+    // for all three in turn. The results are the same as running them in
+    // turn, so this is not recorded as a divergence.
     let accounts = async {
         if !wants("accounts") {
             return Ok(vec![]);
@@ -206,8 +207,14 @@ pub async fn search(
         render_tags(&state, instance.web_domain(), &found, viewer_id).await
     };
 
-    (results.accounts, results.statuses, results.hashtags) =
-        tokio::try_join!(accounts, statuses, hashtags)?;
+    // Each runs to the end even when another fails, and the first failure in
+    // Mastodon's order is the one reported, so a failed search has the same
+    // side effects and the same error as `SearchService`'s, which runs them
+    // in turn: a remote account WebFinger found is still stored.
+    let (accounts, statuses, hashtags) = tokio::join!(accounts, statuses, hashtags);
+    results.accounts = accounts?;
+    results.statuses = statuses?;
+    results.hashtags = hashtags?;
 
     Ok(Json(results))
 }

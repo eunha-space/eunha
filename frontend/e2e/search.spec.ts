@@ -90,7 +90,7 @@ test('the boost button offers boosting and quoting, and quoting a found post ope
   await expect.poll(() => boosted).toBe(true)
   await expect(page.getByRole('menu')).toHaveCount(0)
   await page.getByRole('button', { name: 'Boost or quote' }).click()
-  await expect(page.getByRole('menuitem', { name: 'Undo boost' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Unboost' })).toBeVisible()
   // Quoting is no longer in the post's "More" menu.
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)

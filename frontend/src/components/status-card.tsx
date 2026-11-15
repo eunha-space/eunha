@@ -675,8 +675,8 @@ export function StatusCard({
               onClick={() => {}}
             />
           ) : (
-            // Boosting asks first, and offers quoting beside it, the way
-            // Mastodon's web client does once quotes are on.
+            // Boosting asks first, and offers quoting beside it, as
+            // Mastodon's `BoostButton` does, with its labels.
             <DropdownMenu>
               <DropdownMenuTrigger
                 disabled={busy}
@@ -701,11 +701,11 @@ export function StatusCard({
                 <DropdownMenuItem
                   onClick={() => act(() => setReblog(token, status.id, !status.reblogged))}
                 >
-                  <Repeat2 /> {status.reblogged ? 'Undo boost' : 'Boost'}
+                  <Repeat2 /> {status.reblogged ? 'Unboost' : 'Boost'}
                 </DropdownMenuItem>
                 {canQuote && (
                   <DropdownMenuItem onClick={() => openCompose({ quoteOf: status })}>
-                    <Quote /> Quote
+                    <Quote /> {currentUserPolicy === 'manual' ? 'Request to quote' : 'Quote'}
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
