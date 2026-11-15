@@ -698,6 +698,11 @@ follows them, as Mastodon's web client does:
     quote the quoted post makes is not drawn again, only named (“Quoted a
     post by @…”), as Mastodon stops at one level of nesting. A click on the
     quote, other than on its media, poll or links, opens its thread.
+    Filters act on a quoted post in the quoting post's context: one that
+    hides it leaves “Hidden due to your filter “…”” in its place (“Hidden
+    due to one of your filters” on a thread's focused post), one that warns
+    does the same with Show anyway (on a thread's focused post, folds it
+    under “Matches filter “…””), and one that blurs covers its media.
 
 A `:shortcode:` is drawn as an image only when the post, account, poll or
 announcement it belongs to lists that shortcode in its `emojis`, and only in

@@ -127,6 +127,10 @@ and carries the quoted post unless it is `unauthorized`.
 What still differs
 ------------------
 
+ -  A quoted post is sent without its `filtered`, which Mastodon's
+    `REST::StatusSerializer` gives it, so the web client's filtering of
+    quoted posts has nothing to act on yet.
+
  -  Statuses are soft-deleted, and their quotes kept: a deleted quoted post is
     shown as `deleted` from its row, where Mastodon nullifies
     `quoted_status_id`.

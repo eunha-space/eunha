@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 
 import type { mastodon } from '../masto.ts'
 import { getStatus } from '../api.ts'
+import { getMeId } from '../me.ts'
+import { Button } from '@/components/ui/button.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
@@ -57,21 +59,108 @@ function useQuotedStatus(quote: Quote, token?: string): mastodon.v1.Status | nul
   return fetched?.id === id ? fetched.status : undefined
 }
 
-function QuotePlaceholder({ quote }: { quote: Quote }) {
+function QuotePlaceholder({
+  quote,
+  message,
+  onShow,
+}: {
+  quote?: Quote
+  message?: string
+  // Mastodon's "Show anyway", for a quote hidden by the reader's own choice.
+  onShow?: () => void
+}) {
   return (
-    <div className="text-muted-foreground rounded-md border px-3 py-2 text-xs">
-      {QUOTE_PLACEHOLDER[quote.state] ?? 'Post unavailable'}
+    <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 rounded-md border px-3 py-2 text-xs">
+      <span>{message ?? QUOTE_PLACEHOLDER[quote?.state ?? ''] ?? 'Post unavailable'}</span>
+      {onShow && (
+        <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onShow}>
+          Show anyway
+        </Button>
+      )}
     </div>
   )
 }
 
+interface QuoteFilters {
+  // Every filter of the context the quoted post matches, blurring ones too,
+  // as Mastodon's `selectStatusFilters` lists them.
+  titles: string[]
+  action: 'hide' | 'warn' | null
+  // Those that hide or warn, which Mastodon's `FilterWarning` names.
+  warnedBy: string[]
+  blurredBy: string[]
+}
+
+const NO_FILTERS: QuoteFilters = { titles: [], action: null, warnedBy: [], blurredBy: [] }
+
+// Mastodon's `selectStatusFilters` for a quoted post, in the quoting post's
+// filter context: a `hide` filter hides it, any other but `blur` warns, and
+// the reader's own posts are never filtered.
+function quoteFilters(
+  status: mastodon.v1.Status,
+  context?: mastodon.v2.FilterContext,
+): QuoteFilters {
+  if (!context || status.account.id === getMeId()) return NO_FILTERS
+  const matches = (status.filtered ?? []).filter((r) => r.filter.context.includes(context))
+  let action: QuoteFilters['action'] = null
+  for (const { filter } of matches) {
+    if (filter.filterAction === 'hide') action = 'hide'
+    else if (filter.filterAction !== 'blur') action ??= 'warn'
+  }
+  return {
+    titles: matches.map((r) => r.filter.title),
+    action,
+    warnedBy: matches.filter((r) => r.filter.filterAction !== 'blur').map((r) => r.filter.title),
+    blurredBy: matches.filter((r) => r.filter.filterAction === 'blur').map((r) => r.filter.title),
+  }
+}
+
+const listFormat = new Intl.ListFormat('en', { type: 'conjunction' })
+
 // The post embedded by a quote. Like Mastodon, the quoted post is only rendered
 // once the quote is accepted; other states (pending approval, revoked, deleted,
 // blocked/muted, …) show a message instead.
-export function QuotedStatus({ quote, token }: { quote: Quote; token?: string }) {
+//
+// `detailed` is the focused post of a thread, which Mastodon draws with its
+// legacy `QuotedStatus`; elsewhere it draws its redesigned `StatusQuote`. The
+// two say a filtered quote differently: the first "Hidden due to one of your
+// filters", folding a warned one behind a banner; the second names the
+// filters, and offers "Show anyway" for a warning.
+export function QuotedStatus({
+  quote,
+  token,
+  filterContext,
+  detailed = false,
+}: {
+  quote: Quote
+  token?: string
+  filterContext?: mastodon.v2.FilterContext
+  detailed?: boolean
+}) {
+  const [revealed, setRevealed] = useState(false)
   const quoted = quotedStatusOf(quote)
+  const filters = quoted ? quoteFilters(quoted, filterContext) : NO_FILTERS
+  const filteredMessage = `Hidden due to your filter “${listFormat.format(filters.titles)}”`
+
+  if (filters.action === 'hide' && quote.state !== 'pending') {
+    return (
+      <QuotePlaceholder
+        message={detailed ? 'Hidden due to one of your filters' : filteredMessage}
+      />
+    )
+  }
   if (quote.state !== 'accepted' || !quoted) return <QuotePlaceholder quote={quote} />
-  return <QuotedPost status={quoted} token={token} />
+  if (!detailed && filters.action === 'warn' && !revealed) {
+    return <QuotePlaceholder message={filteredMessage} onShow={() => setRevealed(true)} />
+  }
+  return (
+    <QuotedPost
+      status={quoted}
+      token={token}
+      filteredBy={detailed && filters.action === 'warn' ? filters.warnedBy : []}
+      mediaFilteredBy={filters.blurredBy}
+    />
+  )
 }
 
 // Mastodon's `MAX_QUOTE_POSTS_NESTING_LEVEL` is 1: a quoted post's own quote is
@@ -103,11 +192,18 @@ export function QuotedPost({
   status,
   linked = true,
   token,
+  filteredBy = [],
+  mediaFilteredBy = [],
 }: {
   status: mastodon.v1.Status
   linked?: boolean
   // Votes in the quoted post's poll; without one the poll shows its results.
   token?: string
+  // Warning filters it matches, which fold it behind Mastodon's
+  // `FilterWarning` until shown.
+  filteredBy?: string[]
+  // Filters that blur its media.
+  mediaFilteredBy?: string[]
 }) {
   const navigate = useNavigate()
   const name = status.account.displayName || status.account.username
@@ -115,7 +211,9 @@ export function QuotedPost({
   // A quoted post's content warning folds it as it would a post of its own.
   const { expandSpoilers } = useReadingPreferences()
   const [opened, setOpened] = useState<boolean | null>(null)
-  const expanded = opened ?? (expandSpoilers || !status.spoilerText)
+  const [showDespiteFilter, setShowDespiteFilter] = useState(false)
+  const filtered = filteredBy.length > 0 && !showDespiteFilter
+  const expanded = !filtered && (opened ?? (expandSpoilers || !status.spoilerText))
   const threadPath = `/@${status.account.acct}/${status.id}`
 
   // Mastodon's status opens on a click anywhere that is not a control of its
@@ -161,7 +259,19 @@ export function QuotedPost({
           </Link>
         )}
       </div>
-      {status.spoilerText && (
+      {filteredBy.length > 0 && (
+        <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 text-sm">
+          <span>Matches filter “{filteredBy.join(', ')}”</span>
+          <button
+            type="button"
+            onClick={() => setShowDespiteFilter(!showDespiteFilter)}
+            className="text-primary text-xs font-medium underline"
+          >
+            {showDespiteFilter ? 'Hide post' : 'Show anyway'}
+          </button>
+        </div>
+      )}
+      {!filtered && status.spoilerText && (
         <AnimateEmoji className="mt-1 text-sm">
           <span>
             <EmojiText text={status.spoilerText} emojis={status.emojis} />
@@ -187,6 +297,7 @@ export function QuotedPost({
             <MediaAttachments
               attachments={status.mediaAttachments}
               sensitive={status.sensitive}
+              filteredBy={mediaFilteredBy}
             />
           )}
           {/* As on a post of its own: a card only with no media and no quote. */}

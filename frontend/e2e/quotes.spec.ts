@@ -281,3 +281,54 @@ test('someone else’s followers-only post cannot be boosted', async ({ page }) 
   await expect(boost).toBeDisabled()
   await expect(boost).toHaveAttribute('title', 'This post cannot be boosted')
 })
+
+const filterResult = (title: string, action: string, context: string[]) => ({
+  filter: { id: title, title, context, expires_at: null, filter_action: action },
+  keyword_matches: [title],
+  status_matches: null,
+})
+
+async function homeWith(page: Page, statuses: unknown[]) {
+  await signedIn(page)
+  await page.route('**/api/v1/timelines/home**', (r) => r.fulfill({ json: statuses }))
+  await page.goto('/')
+}
+
+test('in a timeline, a quoted post a filter hides is named as hidden by it', async ({ page }) => {
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', carol, { content: '<p>Spoilers</p>', filtered: [filterResult('tv', 'hide', ['home'])] }) } })])
+  await expect(page.getByText('Hidden due to your filter “tv”')).toBeVisible()
+  await expect(page.getByText('Spoilers')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Show anyway' })).toHaveCount(0)
+})
+
+test('in a timeline, a quoted post a filter warns of can be shown anyway', async ({ page }) => {
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', carol, { content: '<p>Spoilers</p>', filtered: [filterResult('tv', 'warn', ['home'])] }) } })])
+  await expect(page.getByText('Hidden due to your filter “tv”')).toBeVisible()
+  await expect(page.getByText('Spoilers')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Show anyway' }).click()
+  await expect(page.getByText('Spoilers')).toBeVisible()
+})
+
+test('a filter for another context leaves a quoted post alone', async ({ page }) => {
+  await homeWith(page, [status('10', bob, { quote: { state: 'accepted', quoted_status:
+    status('20', carol, { content: '<p>Spoilers</p>', filtered: [filterResult('tv', 'hide', ['public'])] }) } })])
+  await expect(page.getByText('Spoilers')).toBeVisible()
+})
+
+test('on a thread, a quoted post a filter hides says one of your filters did', async ({ page }) => {
+  await setup(page, status('20', bob, { content: '<p>Spoilers</p>', filtered: [filterResult('tv', 'hide', ['thread'])] }))
+  await expect(page.getByText('Hidden due to one of your filters')).toBeVisible()
+  await expect(page.getByText('Spoilers')).toHaveCount(0)
+})
+
+test('on a thread, a quoted post a filter warns of is folded behind its name', async ({ page }) => {
+  await setup(page, status('20', bob, { content: '<p>Spoilers</p>', filtered: [filterResult('tv', 'warn', ['thread'])] }))
+  const quote = page.getByTestId('quoted-post')
+  await expect(quote.getByText('Matches filter “tv”')).toBeVisible()
+  await expect(quote.getByText('@bob')).toBeVisible()
+  await expect(quote.getByText('Spoilers')).toHaveCount(0)
+  await quote.getByRole('button', { name: 'Show anyway' }).click()
+  await expect(quote.getByText('Spoilers')).toBeVisible()
+})

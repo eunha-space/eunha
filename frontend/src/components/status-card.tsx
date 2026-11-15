@@ -672,7 +672,14 @@ export function StatusCard({
                     sensitive={status.sensitive}
                   />
                 )}
-                {status.quote && <QuotedStatus quote={status.quote} token={token} />}
+                {status.quote && (
+                  <QuotedStatus
+                    quote={status.quote}
+                    token={token}
+                    filterContext={filterContext}
+                    detailed={detailed}
+                  />
+                )}
               </>
             )}
           </>
