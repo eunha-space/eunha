@@ -21,17 +21,19 @@ quoted author is mentioned silently in the quote (`ensure_quoted_access`), a
 mention an edit leaves alone, and is notified with a `quote` notification
 about the `Quote`, as `LocalNotificationWorker` writes it.
 
-The web client's Quote item, in a post's menu, can be chosen only when the
-post's `quote_approval.current_user` is `automatic` or `manual` and the post
-is public or unlisted, or is your own followers-only post, which it quotes
-to your followers alone; otherwise it is disabled and says why (“Private posts
-cannot be quoted”, “Only followers can quote this post”, or “You are not
-allowed to quote this post”), as Mastodon's boost menu does. Where the
-author reviews quotes by hand (`manual`) it reads “Request to quote”, with
-“Author will manually review” under it, and a pending quote says “Post
-pending” with a “Learn more” that says why. Posts from the
-public and hashtag streams carry a policy written for no one, which the web
-client drops, as Mastodon's does, and fetches afresh when the menu opens.
+The web client's Quote item, in a post's boost menu (“Boost or quote”), can be
+chosen only when the post's `quote_approval.current_user` is `automatic` or
+`manual` and the post is public or unlisted, or is your own followers-only
+post, which it quotes to your followers alone; otherwise it is disabled and
+says why (“Private posts cannot be quoted”, “Only followers can quote this
+post”, or “You are not allowed to quote this post”), as Mastodon's boost menu
+does. When neither boosting nor quoting is allowed the menu is disabled
+(“Boosts and quotes are disabled”). Where the author reviews quotes by hand
+(`manual`) it reads “Request to quote”, with “Author will manually review”
+under it, and a pending quote says “Post pending” with a “Learn more” that says
+why. Posts from the public and hashtag streams carry a policy written for no
+one, which the web client drops, as Mastodon's does, and fetches afresh when
+the boost menu opens.
 
 A quote of a remote post stays pending, and a `QuoteRequest`, named under the
 quoter (`/quote_requests/{uuid}`), goes to the quoted author's own inbox.

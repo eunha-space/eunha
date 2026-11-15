@@ -175,7 +175,7 @@ test('quoting a post opens the composer with the post in it', async ({ page }) =
   await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: post }))
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
-  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await expect(page.getByText('Quoting this post')).toBeVisible()
@@ -201,7 +201,7 @@ async function openPost(page: Page, post: Record<string, unknown>) {
   await page.route(`**/api/v1/statuses/${post.id}`, (r) => r.fulfill({ json: post }))
   await page.route(`**/api/v1/statuses/${post.id}/context`, (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto(`/@${(post.account as { acct: string }).acct}/${post.id}`)
-  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
 }
 
 test('a post the reader may not quote says why, and cannot be chosen', async ({ page }) => {
@@ -218,14 +218,6 @@ test('a post only followers may quote says so', async ({ page }) => {
   await expect(page.getByRole('menuitem', { name: /Quote/ })).toContainText('Only followers can quote this post')
 })
 
-test('someone else’s followers-only post cannot be quoted', async ({ page }) => {
-  await signedIn(page)
-  await openPost(page, status('10', bob, { visibility: 'private', quote_approval: approval('denied', []) }))
-  const item = page.getByRole('menuitem', { name: /Quote/ })
-  await expect(item).toContainText('Private posts cannot be quoted')
-  await expect(item).toHaveAttribute('aria-disabled', 'true')
-})
-
 test('a post without a quote policy for the reader fetches one when the menu opens', async ({ page }) => {
   await signedIn(page)
   let fetches = 0
@@ -235,7 +227,7 @@ test('a post without a quote policy for the reader fetches one when the menu ope
   })
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
-  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
   await expect(page.getByRole('menuitem', { name: 'Quote' })).not.toHaveAttribute('aria-disabled', 'true')
   expect(fetches).toBe(2)
 })
@@ -267,20 +259,21 @@ test('your own followers-only post can be boosted to your followers again', asyn
     return r.fulfill({ json: status('12', alice, { reblog: status('10', alice, { visibility: 'private', reblogged: true, reblogs_count: 1 }) }) })
   })
   await page.goto('/@alice/10')
-  const boost = page.getByRole('button', { name: 'Boost' })
-  await expect(boost).toHaveAttribute('title', 'Share again with your followers')
+  await page.getByRole('button', { name: 'Boost or quote' }).click()
+  const boost = page.getByRole('menuitem', { name: /Boost/ })
+  await expect(boost).toContainText('Share again with your followers')
   await boost.click()
   await expect.poll(() => boosted).toBe(true)
 })
 
-test('someone else’s followers-only post cannot be boosted', async ({ page }) => {
+test('someone else’s followers-only post can be neither boosted nor quoted', async ({ page }) => {
   await signedIn(page)
   await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: status('10', bob, { visibility: 'private' }) }))
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
-  const boost = page.getByRole('button', { name: 'Boost' })
-  await expect(boost).toBeDisabled()
-  await expect(boost).toHaveAttribute('title', 'This post cannot be boosted')
+  // The menu has nothing to offer, so it cannot be opened: Mastodon's `isMenuDisabled`.
+  const menu = page.getByRole('button', { name: 'Boosts and quotes are disabled' })
+  await expect(menu).toBeDisabled()
 })
 
 const filterResult = (title: string, action: string, context: string[]) => ({
@@ -439,13 +432,13 @@ test('quoting a quiet public post says what that does first', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await page.getByRole('button', { name: "Don't remind me again" }).click()
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await page.getByRole('button', { name: 'Close' }).click()
 
-  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await expect(page.getByText('Quoting quiet public posts')).toHaveCount(0)
@@ -457,7 +450,7 @@ async function draftThenQuote(page: Page, draft: () => Promise<void>) {
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
   await draft()
-  await page.getByRole('button', { name: 'More', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
   await page.getByRole('menuitem', { name: 'Quote' }).click()
 }
 
@@ -517,21 +510,17 @@ test('a draft with a poll takes no quote', async ({ page }) => {
 test('a draft already quoting takes no second quote', async ({ page }) => {
   await draftThenQuote(page, async () => {})
   await page.getByPlaceholder('What would you like to say?').fill('first')
-  await page.getByRole('button', { name: 'More', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Boost or quote' }).first().click()
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await expect(page.getByText('Only one quote at a time is allowed.')).toBeVisible()
 })
 
-test('signed out, Quote is there but disabled, as Boost is', async ({ page }) => {
+test('signed out, boosting and quoting are disabled together', async ({ page }) => {
   await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: status('10', bob, { quote_approval: approval('denied') }) }))
   await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
   await page.goto('/@bob/10')
   await expect(page.getByRole('button', { name: 'Boost' })).toBeDisabled()
-  await page.getByRole('button', { name: 'More', exact: true }).click()
-  const item = page.getByRole('menuitem', { name: 'Quote' })
-  await expect(item).toHaveAttribute('aria-disabled', 'true')
-  // The disabled state's reasons are a member's; a visitor is not told them.
-  await expect(item).not.toContainText('You are not allowed')
+  await expect(page.getByRole('button', { name: 'Boost or quote' })).toHaveCount(0)
 })
 
 test('in a timeline, a quoted post with a content warning shows only the warning', async ({ page }) => {
