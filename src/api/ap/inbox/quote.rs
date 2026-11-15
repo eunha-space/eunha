@@ -230,12 +230,14 @@ pub(super) async fn update_quote(
                     .map_err(crate::error::AppError::Internal)?;
             }
             crate::quotes::destroy(&state.db, &quote).await?;
-            insert_pending(state, status_id, account_id, &fields).await?
+            insert_pending(state, status_id, account_id, &fields, fields.deleted).await?
         }
         Some(quote) => {
             Some(reset_if_stamp_changed(state, quote, fields.approval_uri, fields.legacy).await?)
         }
-        None => insert_pending(state, status_id, account_id, &fields).await?,
+        // `Quote.create(status:, approval_uri: nil, legacy:)`, with no state:
+        // pending, even of a `Tombstone`.
+        None => insert_pending(state, status_id, account_id, &fields, false).await?,
     };
     if let Some(quote) = quote {
         let embedded = fields.embedded(&account_uri, context);
@@ -247,13 +249,15 @@ pub(super) async fn update_quote(
     state_moved(state, status_id, before).await
 }
 
+/// A new quote of `status_id`: pending, or `deleted` when `deleted`.
 async fn insert_pending(
     state: &AppState,
     status_id: i64,
     account_id: i64,
     fields: &QuoteFields<'_>,
+    deleted: bool,
 ) -> AppResult<Option<Quote>> {
-    let quote_state = if fields.deleted {
+    let quote_state = if deleted {
         quote_state::DELETED
     } else {
         quote_state::PENDING

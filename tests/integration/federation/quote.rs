@@ -1489,3 +1489,52 @@ async fn test_a_quote_request_for_a_post_quoting_nothing_is_retried() {
     .unwrap();
     assert_eq!(queued, 1);
 }
+
+impl Requested {
+    /// Carol's `Update` of her post `n` to `object`'s fields, edited at
+    /// `updated`.
+    fn update(&self, n: u32, updated: &str, fields: Value) -> Value {
+        let carol = &self.carol_uri;
+        let alice = format!("https://{}/users/alice", self.ctx.domain);
+        let mut object = json!({
+            "id": format!("{carol}/statuses/{n}"),
+            "type": "Note",
+            "attributedTo": carol,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [alice],
+            "content": "carol quotes",
+            "published": "2026-01-01T00:00:00Z",
+            "updated": updated,
+        });
+        for (k, v) in fields.as_object().unwrap() {
+            object[k] = v.clone();
+        }
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{carol}/statuses/{n}#updates/{updated}"),
+            "type": "Update",
+            "actor": carol,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "object": object,
+        })
+    }
+}
+
+/// `update_quote!` creates a quote an edit adds with no state, so pending,
+/// even when it is a `Tombstone`; only a replaced quote is created deleted.
+#[tokio::test]
+async fn test_a_quote_an_edit_adds_of_a_tombstone_is_pending() {
+    let r = Requested::new("quote-edit-adds-tombstone").await;
+    let mut create = r.create(1);
+    create["object"].as_object_mut().unwrap().remove("quote");
+    create["object"]["published"] = json!("2026-01-01T00:00:00Z");
+    r.send(&create).await;
+    let quoting = r.status(1).await;
+    r.send(&r.update(
+        1,
+        "2026-01-02T00:00:00Z",
+        json!({"quote": {"type": "Tombstone"}}),
+    ))
+    .await;
+    assert_eq!(quote_state(&r.ctx, quoting).await, 0);
+}
