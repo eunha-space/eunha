@@ -139,6 +139,12 @@ function morePrivate(
   return PRIVACY_ORDER.indexOf(a) > PRIVACY_ORDER.indexOf(b) ? a : b
 }
 
+export interface DraftInfo {
+  direct: boolean
+  poll: boolean
+  media: boolean
+}
+
 export function Compose({
   token,
   replyTo,
@@ -149,6 +155,7 @@ export function Compose({
   onPosted,
   onTypeChange,
   onDraftChange,
+  onDraftInfo,
   framed = true,
 }: {
   token: string
@@ -166,6 +173,9 @@ export function Compose({
   // now that the audience menu can switch it.
   onTypeChange?: (type: 'post' | 'reply' | 'message') => void
   onDraftChange?: (dirty: boolean) => void
+  // What the draft holds that a quote cannot join, as Mastodon's
+  // `quoteComposeByStatus` asks before adding one.
+  onDraftInfo?: (info: DraftInfo) => void
   framed?: boolean
 }) {
   const [text, setText] = useState(initialText)
@@ -258,7 +268,14 @@ export function Compose({
     return () => {
       cancelled = true
     }
-  }, [token, messageTo, replyTo?.visibility, quoteFloor])
+    // The quote's floor is applied as the quote arrives, below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, messageTo, replyTo?.visibility])
+
+  // A quote added to a draft already open brings the same floor with it.
+  useEffect(() => {
+    if (quoteFloor) setVisibility((current) => morePrivate(quoteFloor, current))
+  }, [quoteOf?.id, quoteFloor])
 
   // When a reply is opened, prefill the composer with the conversation's
   // handles (like Mastodon's COMPOSE_REPLY) and park the caret after them so
@@ -304,6 +321,10 @@ export function Compose({
     // Once per quoted post, not on each of its re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteOf?.id])
+
+  useEffect(() => {
+    onDraftInfo?.({ direct: visibility === 'direct', poll: !!poll, media: attachments.length > 0 || uploading })
+  }, [onDraftInfo, visibility, poll, attachments.length, uploading])
 
   const label = replyTo ? 'Reply' : isMessage ? 'Send' : quoteOf ? 'Quote' : 'Publish'
 

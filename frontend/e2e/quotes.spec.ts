@@ -450,3 +450,74 @@ test('quoting a quiet public post says what that does first', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
   await expect(page.getByText('Quoting quiet public posts')).toHaveCount(0)
 })
+
+async function draftThenQuote(page: Page, draft: () => Promise<void>) {
+  await signedIn(page)
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: status('10', bob, { quote_approval: approval('automatic') }) }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto('/@bob/10')
+  await draft()
+  await page.getByRole('button', { name: 'More', exact: true }).first().click()
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+}
+
+const newPost = async (page: Page, text: string) => {
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.getByPlaceholder('What would you like to say?').fill(text)
+}
+
+test('quoting while a post is drafted adds the quote to it', async ({ page }) => {
+  await draftThenQuote(page, () => newPost(page, 'my thoughts'))
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+  await expect(page.getByText('Quoting this post')).toBeVisible()
+  await expect(page.getByPlaceholder('What would you like to say?')).toHaveValue('my thoughts')
+})
+
+test('quoting while a reply is drafted asks what to do with it', async ({ page }) => {
+  await draftThenQuote(page, async () => {
+    await page.getByRole('button', { name: 'Reply' }).first().click()
+    await page.getByRole('textbox').last().fill('@bob a reply')
+  })
+  await expect(page.getByText('Draft in progress')).toBeVisible()
+  await page.getByRole('button', { name: 'Add quote to existing draft' }).click()
+  await expect(page.getByText('Quoting this post')).toBeVisible()
+  await expect(page.getByText('Replying to @bob')).toBeVisible()
+  await expect(page.getByRole('textbox').last()).toHaveValue('@bob a reply')
+})
+
+test('a drafted reply can be given up for a new quote', async ({ page }) => {
+  await draftThenQuote(page, async () => {
+    await page.getByRole('button', { name: 'Reply' }).first().click()
+    await page.getByRole('textbox').last().fill('@bob a reply')
+  })
+  await page.getByRole('button', { name: 'Delete draft and start a new post' }).click()
+  await expect(page.getByText('Quoting this post')).toBeVisible()
+  await expect(page.getByText('Replying to @bob')).toHaveCount(0)
+  await expect(page.getByPlaceholder('What would you like to say?')).toHaveValue('')
+})
+
+test('a message being drafted takes no quote', async ({ page }) => {
+  await draftThenQuote(page, async () => {
+    await newPost(page, 'hello')
+    await page.getByRole('button', { name: 'Who can see this' }).click()
+    await page.getByRole('menuitem', { name: 'Compose a message instead' }).click()
+  })
+  await expect(page.getByText('Quoting is not allowed with direct mentions.')).toBeVisible()
+  await expect(page.getByText('Quoting this post')).toHaveCount(0)
+})
+
+test('a draft with a poll takes no quote', async ({ page }) => {
+  await draftThenQuote(page, async () => {
+    await newPost(page, 'which?')
+    await page.getByRole('button', { name: 'Add a poll' }).click()
+  })
+  await expect(page.getByText('Quoting is not allowed with polls.')).toBeVisible()
+})
+
+test('a draft already quoting takes no second quote', async ({ page }) => {
+  await draftThenQuote(page, async () => {})
+  await page.getByPlaceholder('What would you like to say?').fill('first')
+  await page.getByRole('button', { name: 'More', exact: true }).first().click()
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await expect(page.getByText('Only one quote at a time is allowed.')).toBeVisible()
+})

@@ -14,7 +14,7 @@ import { Maximize2, Minus, X } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
 import { getActiveAccountId, getToken } from '../auth.ts'
-import { Compose } from '@/components/compose.tsx'
+import { Compose, type DraftInfo } from '@/components/compose.tsx'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,6 +74,12 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
     useState<((status: mastodon.v1.Status) => void) | null>(null)
   // A quote of a quiet public post waiting on Mastodon's note about it.
   const [quietQuote, setQuietQuote] = useState<ComposeOptions | null>(null)
+  // A quote waiting on what to do with the reply being drafted.
+  const [draftQuote, setDraftQuote] = useState<ComposeOptions | null>(null)
+  const draftInfo = useRef<DraftInfo>({ direct: false, poll: false, media: false })
+  const onDraftInfo = useCallback((info: DraftInfo) => {
+    draftInfo.current = info
+  }, [])
 
   const finishClose = useCallback(() => {
     setOpen(false)
@@ -97,41 +103,87 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
     closeTimer.current = window.setTimeout(finishClose, 140)
   }, [finishClose])
 
-  const start = useCallback((options?: ComposeOptions) => {
+  const drafting = open && dirty && !closing
+
+  // A fresh composer, whatever was in the last one.
+  const begin = useCallback((options?: ComposeOptions) => {
     window.clearTimeout(closeTimer.current)
     setClosing(false)
     setMinimized(false)
     const nextMessage = 'messageTo' in (options ?? {}) ? (options?.messageTo ?? null) : undefined
-    if (open && dirty && !closing) {
-      if (replyTo?.id !== options?.replyTo?.id || quoteOf?.id !== options?.quoteOf?.id
-          || messageTo?.id !== nextMessage?.id || (messageTo === undefined) !== (nextMessage === undefined)) {
-        toast.info('Finish or close your current draft to start another.')
-      }
-      return
-    }
     setDraftVersion((version) => version + 1)
     setReplyTo(options?.replyTo ?? null)
     setQuoteOf(options?.quoteOf ?? null)
     setMessageTo(nextMessage)
     setOnPosted(() => options?.onPosted ?? null)
     setOpen(true)
-  }, [open, dirty, closing, replyTo, quoteOf, messageTo])
+  }, [])
 
-  // Mastodon's `quoteComposeByStatus`, in its order: a post the reader may
-  // not quote is refused, and quoting a quiet public post first says what
-  // that does to the quote, until told not to again.
+  const start = useCallback((options?: ComposeOptions) => {
+    const nextMessage = 'messageTo' in (options ?? {}) ? (options?.messageTo ?? null) : undefined
+    if (drafting) {
+      setMinimized(false)
+      if (replyTo?.id !== options?.replyTo?.id || quoteOf?.id !== options?.quoteOf?.id
+          || messageTo?.id !== nextMessage?.id || (messageTo === undefined) !== (nextMessage === undefined)) {
+        toast.info('Finish or close your current draft to start another.')
+      }
+      return
+    }
+    begin(options)
+  }, [drafting, replyTo, quoteOf, messageTo, begin])
+
+  // Mastodon's `quoteCompose`: a quote joins the draft being written, or
+  // starts one.
+  const addQuote = useCallback((options: ComposeOptions) => {
+    if (!drafting) {
+      begin(options)
+      return
+    }
+    setMinimized(false)
+    setQuoteOf(options.quoteOf ?? null)
+  }, [drafting, begin])
+
+  // Mastodon's `quoteComposeByStatus`, in its order: a draft holding what a
+  // quote cannot join refuses it; so does a post the reader may not quote;
+  // quoting a quiet public post first says what that does to the quote,
+  // until told not to again; and a reply being drafted asks whether the
+  // quote joins it. Otherwise the quote joins the draft, or starts one.
   const openCompose = useCallback((options?: ComposeOptions) => {
     const quoted = options?.quoteOf
-    if (quoted && !mayQuote(quoted)) {
+    if (!options || !quoted) {
+      start(options)
+      return
+    }
+    if (drafting) {
+      const refusal = draftInfo.current.direct
+        ? 'Quoting is not allowed with direct mentions.'
+        : draftInfo.current.poll
+          ? 'Quoting is not allowed with polls.'
+          : draftInfo.current.media
+            ? 'Quoting is not allowed with media attachments.'
+            : quoteOf
+              ? 'Only one quote at a time is allowed.'
+              : null
+      if (refusal) {
+        setMinimized(false)
+        toast.error(refusal)
+        return
+      }
+    }
+    if (!mayQuote(quoted)) {
       toast.error('You are not authorized to quote this post.')
       return
     }
-    if (quoted?.visibility === 'unlisted' && !isDismissed(QUIET_POST_HINT)) {
-      setQuietQuote(options ?? null)
+    if (quoted.visibility === 'unlisted' && !isDismissed(QUIET_POST_HINT)) {
+      setQuietQuote(options)
       return
     }
-    start(options)
-  }, [start])
+    if (drafting && replyTo) {
+      setDraftQuote(options)
+      return
+    }
+    addQuote(options)
+  }, [start, drafting, quoteOf, replyTo, addQuote])
 
   const value = useMemo(() => ({ openCompose }), [openCompose])
   const token = getToken()
@@ -159,7 +211,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
             <AlertDialogCancel
               onClick={() => {
                 dismiss(QUIET_POST_HINT)
-                start(quietQuote ?? undefined)
+                if (quietQuote) addQuote(quietQuote)
               }}
             >
               Don't remind me again
@@ -167,12 +219,48 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
             <AlertDialogAction
               onClick={() => {
                 setQuietQuote(null)
-                start(quietQuote ?? undefined)
+                if (quietQuote) addQuote(quietQuote)
               }}
             >
               Got it
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Mastodon's `ComposerQuoteAddConfirm`. */}
+      <AlertDialog
+        open={!!draftQuote}
+        onOpenChange={(next) => {
+          if (!next) setDraftQuote(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Draft in progress</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have a draft already in progress. What would you like to do?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-2">
+            <Button
+              onClick={() => {
+                setDraftQuote(null)
+                if (draftQuote) addQuote(draftQuote)
+              }}
+            >
+              Add quote to existing draft
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setDraftQuote(null)
+                if (draftQuote) begin(draftQuote)
+              }}
+            >
+              Delete draft and start a new post
+            </Button>
+            <AlertDialogCancel variant="ghost">Go back</AlertDialogCancel>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
       {open && token
@@ -248,6 +336,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                   messageTo={messageTo}
                   onTypeChange={setType}
                   onDraftChange={setDirty}
+                  onDraftInfo={onDraftInfo}
                   onCancelReply={replyTo || quoteOf ? close : undefined}
                   onPosted={(status) => {
                     onPosted?.(status)
