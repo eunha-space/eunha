@@ -1,35 +1,82 @@
-import { Moon, Sun } from 'lucide-react'
+import { Laptop, Moon, Sun } from 'lucide-react'
 
-import { Button } from '@/components/ui/button.tsx'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu.tsx'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx'
 import { useTheme } from '@/components/theme-provider.tsx'
 
+const themes = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Laptop },
+] as const
+
+type Theme = (typeof themes)[number]['value']
+
+const isTheme = (value: unknown): value is Theme =>
+  themes.some((theme) => theme.value === value)
+
+// Light, Dark and System as one pill, the chosen one filled, cornered like
+// the account menu rather than rounded off. Signed out, it
+// sits beside the sign-in button; signed in, `ThemeMenuPill` puts the same
+// pill in the account menu.
 export function ModeToggle() {
-  const { setTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="icon" />}>
-        <Sun className="h-[1.2rem] w-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-        <Moon className="absolute h-[1.2rem] w-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-        <span className="sr-only">Toggle theme</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')}>
-          Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>
-          Dark
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>
-          System
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ToggleGroup
+      aria-label="Theme"
+      size="sm"
+      spacing={0}
+      value={[theme]}
+      onValueChange={(value) => {
+        // Pressing the chosen segment again would empty the group; keep it.
+        const next = value.find((v) => v !== theme) ?? value[0]
+        if (isTheme(next)) setTheme(next)
+      }}
+      className="rounded-lg! border p-0.5"
+    >
+      {themes.map(({ value, label, icon: Icon }) => (
+        <ToggleGroupItem
+          key={value}
+          value={value}
+          aria-label={label}
+          title={label}
+          className="rounded-md! px-2.5 aria-pressed:bg-muted"
+        >
+          <Icon />
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+  )
+}
+
+// The same pill as menu items, words only so it fits the card-wide menu, so the account menu's arrow keys reach every
+// segment. Choosing one leaves the menu open, showing the new choice.
+export function ThemeMenuPill() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <DropdownMenuRadioGroup
+      aria-label="Theme"
+      value={theme}
+      onValueChange={(value) => {
+        if (isTheme(value)) setTheme(value)
+      }}
+      className="my-1 flex gap-0.5 rounded-lg border p-0.5"
+    >
+      {themes.map(({ value, label }) => (
+        <DropdownMenuRadioItem
+          key={value}
+          value={value}
+          closeOnClick={false}
+          className="min-w-0 flex-1 justify-center rounded-md! px-1.5! text-xs data-checked:bg-muted data-checked:font-medium [&>[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
+        >
+          {label}
+        </DropdownMenuRadioItem>
+      ))}
+    </DropdownMenuRadioGroup>
   )
 }

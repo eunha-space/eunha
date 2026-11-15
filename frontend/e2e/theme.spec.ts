@@ -1,12 +1,10 @@
 import { expect, test } from '@playwright/test'
 
-test('theme switcher opens and toggles dark mode', async ({ page }) => {
+test('theme pill toggles dark mode', async ({ page }) => {
   await page.goto('/')
   const html = page.locator('html')
-
-  // Open the dropdown (regression guard: this stayed hidden on React 18).
-  await page.getByRole('button', { name: 'Toggle theme' }).click()
-  await expect(page.getByRole('menuitem', { name: 'Dark' })).toBeVisible()
+  const pill = page.getByRole('group', { name: 'Theme' })
+  await expect(pill.getByRole('button', { name: 'System' })).toHaveAttribute('aria-pressed', 'true')
 
   // What the browser draws of its own accord — scrollbars, form controls — is
   // set by `color-scheme` and `scrollbar-color` on <html>, and on macOS, where
@@ -35,16 +33,16 @@ test('theme switcher opens and toggles dark mode', async ({ page }) => {
     })
 
   // Switch to Dark.
-  await page.getByRole('menuitem', { name: 'Dark' }).click()
+  await pill.getByRole('button', { name: 'Dark' }).click()
   await expect(html).toHaveClass(/dark/)
+  await expect(pill.getByRole('button', { name: 'Dark' })).toHaveAttribute('aria-pressed', 'true')
   const dark = await chrome()
   expect(dark.colorScheme).toBe('dark')
   expect(dark.scrollbar).not.toBe('auto')
   expect(dark.scrollbar).toBe(dark.fromToken)
 
   // Switch back to Light.
-  await page.getByRole('button', { name: 'Toggle theme' }).click()
-  await page.getByRole('menuitem', { name: 'Light' }).click()
+  await pill.getByRole('button', { name: 'Light' }).click()
   await expect(html).not.toHaveClass(/dark/)
   const light = await chrome()
   expect(light.colorScheme).toBe('light')

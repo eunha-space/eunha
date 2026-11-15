@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   Bell,
@@ -10,17 +10,14 @@ import {
   MessageCircle,
   Home,
   Info,
-  Laptop,
   List,
   LogIn,
   LogOut,
-  Moon,
   MoreHorizontal,
   PenLine,
   Search,
   Settings,
   Shield,
-  Sun,
   Ticket,
   User,
   UserPlus,
@@ -40,8 +37,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
-import { useTheme } from '@/components/theme-provider.tsx'
-import { ModeToggle } from '@/components/mode-toggle.tsx'
+import { ModeToggle, ThemeMenuPill } from '@/components/mode-toggle.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { useAvailableInvites } from '../hooks/use-available-invites.ts'
 import { useUnreadNotifications } from '../hooks/use-unread-notifications.ts'
@@ -268,7 +264,8 @@ function AccountCard({
   account: MeAccount
   onNavigate?: () => void
 }) {
-  const { setTheme } = useTheme()
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   // An account cached before the still avatar was stored has none to show
   // until `loadMe` fills it in, and the animated one is not shown in its place.
   const avatar = useAnimatedImage(
@@ -276,7 +273,14 @@ function AccountCard({
     account.avatarStatic,
   )
   return (
-    <div className="flex items-center gap-2 rounded-lg border p-2">
+    // While the menu is open the card squares its top corners and takes the
+    // menu's surface, so the two read as one panel grown up out of the card
+    // (see `.account-menu` in styles.css).
+    <div
+      ref={cardRef}
+      data-menu-open={menuOpen || undefined}
+      className="account-card flex items-center gap-2 rounded-lg border p-2"
+    >
       <Link
         to={`/@${account.acct}`}
         onClick={onNavigate}
@@ -298,14 +302,20 @@ function AccountCard({
           </span>
         </span>
       </Link>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           aria-label="Account menu"
           className="text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring flex size-11 shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2"
         >
           <MoreHorizontal className="size-5" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent
+          anchor={cardRef}
+          side="top"
+          align="center"
+          sideOffset={-1}
+          className="account-menu"
+        >
           {getSavedAccounts().map((saved) => (
             <DropdownMenuItem
               key={saved.account.id}
@@ -326,15 +336,7 @@ function AccountCard({
           <DropdownMenuItem render={<Link to="/settings" />}>
             <Settings /> Settings
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('light')}>
-            <Sun /> Light
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('dark')}>
-            <Moon /> Dark
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('system')}>
-            <Laptop /> System
-          </DropdownMenuItem>
+          <ThemeMenuPill />
           <DropdownMenuItem
             variant="destructive"
             onClick={async () => {

@@ -95,7 +95,7 @@ test('signed out, the local row owns the root path', async ({ page }) => {
   const local = page.locator('aside').getByRole('link', { name: 'Local' })
   await expect(local).toHaveClass(/bg-muted/)
   // And there is still a way to change the theme without an account menu.
-  await expect(page.getByRole('button', { name: 'Toggle theme' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Theme' })).toBeVisible()
 })
 
 // Mastodon's navigation offers a live feed only to whoever may read it:

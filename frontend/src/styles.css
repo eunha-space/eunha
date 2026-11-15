@@ -410,3 +410,67 @@
   height: 20px;
   margin: -3px 0 0;
 }
+
+/* The account menu grows up out of the account card rather than popping
+   beside its button: it is anchored to the card, as wide as it, and overlaps
+   its top border by a pixel, and while it is open the card squares its top
+   corners and takes the menu's surface. The reveal is a clip from the card
+   edge upward, so the menu reads as the card extending, not as a second box.
+   Unlayered, so it wins over the popup's own zoom and slide utilities. */
+.account-card {
+  transition:
+    border-radius 160ms ease-out,
+    background-color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+.account-card[data-menu-open] {
+  border-top-color: transparent;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  background-color: var(--popover);
+}
+
+[data-slot='dropdown-menu-content'].account-menu {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: 0 -1px 0 0 var(--border);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  animation: account-menu-extend 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-slot='dropdown-menu-content'].account-menu[data-closed] {
+  animation: account-menu-retract 140ms ease-in forwards;
+}
+
+@keyframes account-menu-extend {
+  from {
+    clip-path: inset(100% 0 0 0);
+    opacity: 0.4;
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+}
+
+@keyframes account-menu-retract {
+  from {
+    clip-path: inset(0 0 0 0);
+    opacity: 1;
+  }
+  to {
+    clip-path: inset(100% 0 0 0);
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .account-card,
+  [data-slot='dropdown-menu-content'].account-menu,
+  [data-slot='dropdown-menu-content'].account-menu[data-closed] {
+    transition: none;
+    animation: none;
+  }
+}
