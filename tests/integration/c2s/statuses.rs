@@ -8862,3 +8862,61 @@ async fn test_status_quotes_filter_and_page_as_mastodon() {
     .await;
     assert_eq!(ids, vec![carols, public]);
 }
+
+/// A quote whose post is a boost (as a remote server may have sent one)
+/// carries no post: `REST::BaseQuoteSerializer#quoted_status` checks
+/// `!object.quoted_status&.reblog?`, and its state stays accepted.
+#[tokio::test]
+async fn test_quote_of_a_boost_carries_no_post() {
+    let ctx = TestContext::new("quote-of-boost").await;
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "boost me", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{original_id}/reblog"),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &json!({"status": "quoting", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    sqlx::query("UPDATE quotes SET quoted_status_id = $1 WHERE status_id = $2")
+        .bind(boost["id"].as_str().unwrap().parse::<i64>().unwrap())
+        .bind(quote_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let fetched: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{quote_id}"),
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        fetched["quote"],
+        json!({"state": "accepted", "quoted_status": null}),
+        "{fetched}"
+    );
+}

@@ -225,14 +225,14 @@ impl ResolvedQuote {
     }
 
     /// `REST::BaseQuoteSerializer#quoted_status`: the quoted post, when the
-    /// quote is accepted (or the source was requested), the post is there,
-    /// and the viewer may see it.
+    /// quote is accepted (or the source was requested), the post is there
+    /// and is not a boost, and the viewer may see it.
     fn shown(&self, source_requested: bool) -> Option<&crate::db::models::Status> {
         if self.state != crate::db::models::quote_state::ACCEPTED && !source_requested {
             return None;
         }
         let quoted = self.quoted.as_ref()?;
-        (self.filter != Some("unauthorized")).then_some(quoted)
+        (quoted.reblog_of_id.is_none() && self.filter != Some("unauthorized")).then_some(quoted)
     }
 
     /// `REST::ShallowQuoteSerializer`: the quote of a quoted post, naming
