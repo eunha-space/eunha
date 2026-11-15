@@ -9089,3 +9089,56 @@ async fn test_quote_of_a_boost_carries_no_post() {
         "{fetched}"
     );
 }
+
+/// `StatusEditSerializer#emojis`: each version names the custom emoji of
+/// its own content warning, text and poll options (`StatusEdit#emojis`),
+/// not the post's as it is now.
+#[tokio::test]
+async fn test_status_history_carries_each_versions_emojis() {
+    let ctx = TestContext::new("edit-history-emojis").await;
+    for shortcode in ["blobcat", "party", "warned"] {
+        sqlx::query(
+            "INSERT INTO custom_emojis (id, shortcode, domain, disabled, image_file_name,
+                                        image_content_type, created_at, updated_at)
+             VALUES (nextval('custom_emojis_id_seq'), $1, NULL, false, $1 || '.png',
+                     'image/png', now(), now())",
+        )
+        .bind(shortcode)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "first :blobcat:", "public")
+        .await;
+    let id = status["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{id}"),
+            Some(&ctx.alice_token),
+            &json!({"status": "second", "spoiler_text": ":warned:",
+                    "poll": {"options": [":party:", "two"], "expires_in": 86400}}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let history: Vec<Value> = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{id}/history"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let shortcodes = |version: &Value| -> Vec<String> {
+        version["emojis"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["shortcode"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(history.len(), 2, "{history:?}");
+    assert_eq!(shortcodes(&history[0]), ["blobcat"], "{history:?}");
+    assert_eq!(shortcodes(&history[1]), ["warned", "party"], "{history:?}");
+}

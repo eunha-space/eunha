@@ -683,9 +683,23 @@ pub(crate) async fn status_edits(
         .unwrap_or_default()
     };
 
+    // `StatusEdit#emojis`: `CustomEmoji.from_text` of the version's
+    // `spoiler_text`, `text` and poll options, on the author's domain.
+    let emoji_texts: Vec<(usize, Option<String>, String)> = edits
+        .iter()
+        .enumerate()
+        .map(|(position, e)| {
+            let mut fields = vec![e.spoiler_text.clone(), e.text.clone()];
+            fields.extend(e.poll_options.iter().flatten().cloned());
+            (position, author.domain.clone(), fields.join(" "))
+        })
+        .collect();
+    let mut emojis = crate::api::mastodon::convert::emojis_from_texts(state, &emoji_texts).await;
+
     Ok(edits
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(position, e)| {
             let poll = e.poll_options.as_ref().filter(|o| !o.is_empty()).map(|opts| {
                 serde_json::json!({
                     "options": opts.iter().map(|t| serde_json::json!({ "title": t })).collect::<Vec<_>>()
@@ -701,7 +715,7 @@ pub(crate) async fn status_edits(
                     e.ordered_media_attachment_ids.as_ref(),
                     e.media_descriptions.as_ref(),
                 ),
-                emojis: vec![],
+                emojis: emojis.remove(&position).unwrap_or_default(),
                 poll,
                 quote: e.quote_id.map(|quote_id| match &current_quote {
                     Some((current, quote)) if *current == quote_id => quote.clone(),
