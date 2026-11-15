@@ -260,10 +260,15 @@ export function StatusCard({
   const { openCompose } = useComposeModal()
 
   const isOwn = !!token && getMeId() === status.account.id
-  // The Quote item is always there for a member, disabled with the reason
-  // when the post may not be quoted, as in Mastodon's boost menu.
-  const quoteItem = quoteItemState(status, token ? getMeId() : null)
-  const canQuote = !!token
+  // The Quote item is always there, disabled with the reason when the post
+  // may not be quoted, as in Mastodon's boost menu. Signed out, Mastodon
+  // leaves it enabled to open its remote-interaction dialog, which eunha's
+  // web client does not have (`remote-interaction-helper-not-served`); it is
+  // disabled instead, as Boost and Favourite are.
+  const quoteItem = token
+    ? quoteItemState(status, getMeId())
+    : { ...quoteItemState(status, null), disabled: true }
+  const canQuote = true
   // A post that came from another instance: `acct` carries the domain only for
   // remote accounts. `url` is then the post's page on that instance, which is
   // where its full context lives — offer it the way Mastodon's web client does.

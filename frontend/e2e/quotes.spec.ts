@@ -521,3 +521,15 @@ test('a draft already quoting takes no second quote', async ({ page }) => {
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await expect(page.getByText('Only one quote at a time is allowed.')).toBeVisible()
 })
+
+test('signed out, Quote is there but disabled, as Boost is', async ({ page }) => {
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: status('10', bob, { quote_approval: approval('denied') }) }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto('/@bob/10')
+  await expect(page.getByRole('button', { name: 'Boost' })).toBeDisabled()
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  const item = page.getByRole('menuitem', { name: 'Quote' })
+  await expect(item).toHaveAttribute('aria-disabled', 'true')
+  // The disabled state's reasons are a member's; a visitor is not told them.
+  await expect(item).not.toContainText('You are not allowed')
+})

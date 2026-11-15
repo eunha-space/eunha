@@ -1917,12 +1917,13 @@ kind = "omission"
 summary = "Does not serve `/remote_interaction_helper`"
 mastodon = """
 Serves a page that its own web UI frames, same-origin only, to look up a \
-visitor's home server when they follow or boost from a page here while signed \
-out."""
+visitor's home server when they follow, boost, favourite or quote from a page \
+here while signed out."""
 eunha = """
 Does not serve it, and its web client has no such step: a visitor signs in \
-here, or searches for the post from their own server. The route other servers \
-use, `/authorize_interaction`, is served."""
+here, or searches for the post from their own server, and the web client's \
+Boost, Favourite and Quote are disabled while signed out. The route other \
+servers use, `/authorize_interaction`, is served."""
 why = """
 `frame_ancestors :self` keeps it private to Mastodon's web UI, which eunha does \
 not serve. Not having the flow is a gap in the web client, not in federation."""
