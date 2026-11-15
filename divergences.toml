@@ -2185,3 +2185,25 @@ and that it may retry. Nothing is written either way."""
 evidence = "tests/integration/c2s/statuses.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "quote-stamp-array-fields-unverified"
+kind = "behaviour"
+summary = "A stamp whose fields are arrays leaves its quote pending without failing the post"
+mastodon = """
+`VerifyQuoteService` reads a stamp's `attributedTo`, `interactingObject` and \
+`interactionTarget` with `value_or_id`, which raises `TypeError` on an array. \
+The quote stays pending, and the error escapes `Create#fetch_and_verify_quote`, \
+so the post, already saved, is never distributed to feeds or its mentions \
+notified, and `ProcessingWorker` retries an activity that then finds the post \
+and does nothing."""
+eunha = """
+Reads such a field as naming nothing, so the stamp does not match and the \
+quote stays pending, and goes on to distribute the post."""
+why = """
+What the stamp decides is the same: it is not accepted. Leaving the post \
+undistributed is an accident of the crash, not a decision about stamps, and \
+retrying an activity that can only fail the same way does nothing."""
+evidence = "tests/remote_quotes.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

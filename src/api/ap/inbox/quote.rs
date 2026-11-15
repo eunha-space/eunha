@@ -482,7 +482,11 @@ async fn verify(
         }
     };
 
-    let attributed_to = first(json.get("attributedTo")).and_then(value_or_id);
+    // `value_or_id(@json['attributedTo'])`, and the same of
+    // `interactingObject` and `interactionTarget` below: an array is none of
+    // them (Mastodon's `value_or_id` raises `TypeError` on one, and the stamp
+    // is never accepted), so the quote is left pending.
+    let attributed_to = json.get("attributedTo").and_then(value_or_id);
     if !attributed_to.is_some_and(|a| same_host(&approval_uri, a)) {
         return Ok(false);
     }
@@ -503,7 +507,7 @@ async fn verify(
     let quoting_uri = crate::quotes::status_uri(state, quote.status_id).await?;
     if !supported_context
         || !is_authorization
-        || quoting_uri.as_deref() != first(json.get("interactingObject")).and_then(value_or_id)
+        || quoting_uri.as_deref() != json.get("interactingObject").and_then(value_or_id)
     {
         return Ok(false);
     }
@@ -530,7 +534,7 @@ async fn verify(
     };
 
     // `matching_quoted_post?` and `matching_quoted_author?`
-    let target = first(json.get("interactionTarget")).and_then(value_or_id);
+    let target = json.get("interactionTarget").and_then(value_or_id);
     let quoted_status_uri = crate::quotes::status_uri(state, quoted_status_id).await?;
     let quoted_account_uri = match quote.quoted_account_id {
         Some(id) => crate::quotes::account_uri(state, id).await?,

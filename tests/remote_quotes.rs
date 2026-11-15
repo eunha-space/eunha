@@ -275,3 +275,23 @@ async fn test_a_stamp_by_someone_elsewhere_leaves_the_quote_pending() {
     .await;
     assert_eq!(state, 0);
 }
+
+/// A stamp field given as an array is one Mastodon's `value_or_id` raises
+/// on: the stamp is never accepted, and the quote stays pending.
+#[tokio::test]
+async fn test_a_stamp_with_its_author_in_an_array_leaves_the_quote_pending() {
+    let state = verified_with("stamp-array", |base| {
+        let mut stamp = stamp(base, "/stamps/1", "q", "p");
+        stamp["attributedTo"] = json!([stamp["attributedTo"].clone()]);
+        (StatusCode::OK, stamp)
+    })
+    .await;
+    assert_eq!(state, 0);
+    let state = verified_with("stamp-array-target", |base| {
+        let mut stamp = stamp(base, "/stamps/1", "q", "p");
+        stamp["interactionTarget"] = json!([stamp["interactionTarget"].clone()]);
+        (StatusCode::OK, stamp)
+    })
+    .await;
+    assert_eq!(state, 0);
+}
