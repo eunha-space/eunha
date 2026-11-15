@@ -463,20 +463,22 @@ async fn verify(
         return Ok(false);
     };
 
-    let json = match crate::federation::fetch::signed_get_json(state, &approval_uri).await {
-        Ok(json) if json.get("id").and_then(Value::as_str) == Some(approval_uri.as_str()) => json,
-        Ok(_) => {
-            reject(state, &mut quote, saved).await?;
-            return Ok(false);
-        }
-        Err(error) if temporary(&error) => {
-            tracing::debug!(%approval_uri, %error, "quote stamp not fetched for now");
-            return Ok(true);
-        }
-        Err(_) => {
+    // `fetch_resource(@approval_uri, raise_on_error: :temporary)`: no
+    // redirect followed, and only a `200` served as ActivityPub, whose `id`
+    // is the stamp's. What it raises is tried again; what it reads as `nil`
+    // rejects the quote. Whoever the stamp names as its author is checked
+    // below, as Mastodon checks it, not by the fetch.
+    use crate::federation::json_ld::{fetch_resource, RaiseOn};
+    let json = match fetch_resource(state, &approval_uri, None, RaiseOn::Temporary).await {
+        Ok(Some(json)) => json,
+        Ok(None) => {
             // `return quote.reject! if @json.nil?`
             reject(state, &mut quote, saved).await?;
             return Ok(false);
+        }
+        Err(error) => {
+            tracing::debug!(%approval_uri, %error, "quote stamp not fetched for now");
+            return Ok(true);
         }
     };
 
@@ -612,19 +614,6 @@ impl crate::jobs::Job for RefetchAndVerifyQuoteWorker {
         }
         anyhow::ensure!(!retry, "the quote's stamp could not be fetched for now");
         Ok(())
-    }
-}
-
-/// A fetch that failed for now, which Mastodon retries (`raise_on_error:
-/// :temporary`): no answer, or one that may change.
-fn temporary(error: &anyhow::Error) -> bool {
-    match error.downcast_ref::<ojak::fetch::FetchError>() {
-        Some(ojak::fetch::FetchError::Status(code)) => {
-            !crate::federation::delivery::unsalvageable(*code)
-        }
-        Some(ojak::fetch::FetchError::Request(_) | ojak::fetch::FetchError::Signing(_)) => true,
-        Some(_) => false,
-        None => true,
     }
 }
 
