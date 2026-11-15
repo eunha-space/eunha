@@ -417,20 +417,6 @@ pub(crate) async fn process_status(
     let resolved =
         resolve_mention_accounts(&state, &mention_handles, &state.instance.local_domain).await;
 
-    // Mastodon safeguard_private_mention_quote!: a direct post that quotes
-    // someone else's status must mention that author, otherwise they would be
-    // quoted into a conversation they cannot see.
-    if visibility == "direct" {
-        if let Some(qauthor) = quoted_author_id {
-            if qauthor != account.id && !resolved.iter().any(|(_, a)| a.id == qauthor) {
-                return Err(AppError::Unprocessable(
-                    "Validation failed: Cannot quote a non-mentioned user in a Private Mention post."
-                        .into(),
-                ).into());
-            }
-        }
-    }
-
     // Safeguard: if the caller passed allowed_mentions, reject the post if any resolved
     // mentions are not in that list (mirrors Mastodon's PostStatusService#safeguard_mentions!).
     if let Some(ref allowed_ids) = form.allowed_mentions {
@@ -445,6 +431,20 @@ pub(crate) async fn process_status(
                 "unexpected_accounts": unexpected,
             });
             return Err(PostError::UnexpectedMentions(body));
+        }
+    }
+
+    // Mastodon safeguard_private_mention_quote!, after safeguard_mentions!: a
+    // direct post that quotes someone else's status must mention that author,
+    // otherwise they would be quoted into a conversation they cannot see.
+    if visibility == "direct" {
+        if let Some(qauthor) = quoted_author_id {
+            if qauthor != account.id && !resolved.iter().any(|(_, a)| a.id == qauthor) {
+                return Err(AppError::Unprocessable(
+                    "Validation failed: Cannot quote a non-mentioned user in a Private Mention post."
+                        .into(),
+                ).into());
+            }
         }
     }
 

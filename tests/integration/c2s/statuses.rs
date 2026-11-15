@@ -6975,6 +6975,40 @@ async fn test_direct_quote_requires_mentioning_quoted_author() {
     );
 }
 
+/// `safeguard_mentions!` runs before `safeguard_private_mention_quote!`: a
+/// direct quote that both leaves out the quoted author and mentions someone
+/// `allowed_mentions` does not list is answered with the unexpected accounts.
+#[tokio::test]
+async fn test_unexpected_mentions_are_checked_before_the_quoted_author() {
+    let ctx = TestContext::new("direct-quote-mention-order").await;
+    let (carol_id, _) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@example.com").await;
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "alice public post", "public")
+        .await;
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({
+                "status": "@carol look",
+                "quoted_status_id": original["id"],
+                "visibility": "direct",
+                "allowed_mentions": [],
+            }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["unexpected_accounts"][0]["id"],
+        json!(carol_id.to_string()),
+        "{body}"
+    );
+}
+
 /// Quoting a followers-only status forces the quote down to followers-only,
 /// even when the client asks for public (PostStatusService#preprocess_attributes).
 /// Only the author may quote it: a local post no one else may see has its quote
