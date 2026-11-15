@@ -525,7 +525,22 @@ async fn verify(
             {
                 let mut target = target.clone();
                 target["@context"] = json.get("@context").cloned().unwrap_or(Value::Null);
-                if let Some(found) = fetch_remote_status_prefetched(state, uri, target).await? {
+                // `FetchRemoteStatusService.new.call(object['id'], prefetched_body:
+                // object, on_behalf_of: …, depth: @depth)`: at the quoting
+                // post's own depth, not one deeper, and not from depth 0.
+                let found = Box::pin(super::fetch_remote_status_with(
+                    state,
+                    uri,
+                    super::FetchOptions {
+                        prefetched_body: Some(target),
+                        on_behalf_of,
+                        depth,
+                        ..Default::default()
+                    },
+                ))
+                .await?
+                .map(|(id, _)| id);
+                if let Some(found) = found {
                     quote = set_quoted_status(state, quote, found, saved).await?;
                     fast_track(state, &mut quote, saved).await?;
                 }

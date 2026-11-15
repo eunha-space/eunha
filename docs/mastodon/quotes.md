@@ -54,7 +54,8 @@ the quoted post is fetched if need be, a self-quote is accepted, and a
 `quoteAuthorization` stamp is fetched and accepted only if it is a
 `QuoteAuthorization` on its author's host naming both posts. A quoted post is
 fetched three deep at most: a post taken in fetches the one it quotes, and so
-on until a post at depth 3. The quoted post and the stamp are fetched on behalf
+on until a post at depth 3. A quoted post the stamp inlines is taken in at the
+quoting post's own depth. The quoted post and the stamp are fetched on behalf
 of the local account that last followed the quoting one
 (`followers.local.first`), or else of the instance actor. A stamp is fetched as
 `fetch_resource` fetches it, with no redirect followed: one that is gone, or

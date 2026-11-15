@@ -376,3 +376,29 @@ async fn test_a_chain_of_quotes_is_fetched_three_deep() {
     assert!(!held(&ctx, &base, "c4").await);
     assert!(!remote.fetched("/notes/c4"));
 }
+
+/// A quoted post the stamp inlines is taken in at the quoting post's own
+/// depth (`depth: @depth`), so the chain it starts stops where the quoting
+/// post's would: c2, at depth 2, imports c3 from its stamp at depth 2, c3
+/// fetches c4 at depth 3, and c4's quote, c5, is not fetched.
+#[tokio::test]
+async fn test_a_post_inlined_in_a_stamp_is_taken_in_at_the_quoting_depth() {
+    let (ctx, remote, base) = context("inlined-target-depth").await;
+    remote.put("/notes/c0", note(&base, "eve", "c0", Some("c1"), None));
+    remote.put("/notes/c1", note(&base, "eve", "c1", Some("c2"), None));
+    remote.put(
+        "/notes/c2",
+        note(&base, "eve", "c2", Some("c3"), Some("/stamps/c3")),
+    );
+    let mut stamp = stamp(&base, "/stamps/c3", "c2", "c3");
+    stamp["interactionTarget"] = note(&base, "fay", "c3", Some("c4"), None);
+    remote.put("/stamps/c3", stamp);
+    remote.put("/notes/c4", note(&base, "eve", "c4", Some("c5"), None));
+    remote.put("/notes/c5", note(&base, "eve", "c5", None, None));
+    store(&ctx, &base, "c0").await;
+    for name in ["c1", "c2", "c3", "c4"] {
+        assert!(held(&ctx, &base, name).await, "{name}");
+    }
+    assert!(!held(&ctx, &base, "c5").await);
+    assert!(!remote.fetched("/notes/c5"));
+}
