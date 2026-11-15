@@ -5,6 +5,10 @@
 //! emojis, cards and counters. Split out of `accounts.rs`.
 //!
 //! Mastodon: app/serializers/rest/status_serializer.rb
+//! Mastodon: app/serializers/rest/base_quote_serializer.rb
+//! Mastodon: app/serializers/rest/quote_serializer.rb
+//! Mastodon: app/serializers/rest/shallow_quote_serializer.rb
+//! Mastodon: app/serializers/rest/shallow_status_serializer.rb
 //! Mastodon: app/presenters/status_relationships_presenter.rb
 
 use super::accounts::{
@@ -193,8 +197,193 @@ async fn attach_quotes(
     }
 }
 
-/// Batch-fetch quoted statuses for a list of statuses. Returns a map from
-/// quoting status ID → fully-built API `Status` (without the quote's own quote).
+/// What `REST::BaseQuoteSerializer` reads of one status's quote, for one
+/// viewer.
+struct ResolvedQuote {
+    /// `quotes.state`.
+    state: i32,
+    /// `object.quoted_status`, under `Status`'s `default_scope { kept }`:
+    /// `None` when the quoted post is gone or was never known.
+    quoted: Option<crate::db::models::Status>,
+    /// `StatusFilter#filter_state_for_quote` for the viewer.
+    filter: Option<&'static str>,
+}
+
+impl ResolvedQuote {
+    /// `REST::BaseQuoteSerializer#state`.
+    fn state(&self) -> String {
+        use crate::db::models::quote_state;
+        if self.state != quote_state::ACCEPTED {
+            quote_state::to_str(self.state).to_owned()
+        } else if self.quoted.is_none() {
+            "deleted".to_owned()
+        } else {
+            self.filter.unwrap_or("accepted").to_owned()
+        }
+    }
+
+    /// `REST::BaseQuoteSerializer#quoted_status`: the quoted post, when the
+    /// quote is accepted (or the source was requested), the post is there,
+    /// and the viewer may see it.
+    fn shown(&self, source_requested: bool) -> Option<&crate::db::models::Status> {
+        if self.state != crate::db::models::quote_state::ACCEPTED && !source_requested {
+            return None;
+        }
+        let quoted = self.quoted.as_ref()?;
+        (self.filter != Some("unauthorized")).then_some(quoted)
+    }
+
+    /// `REST::ShallowQuoteSerializer`: the quote of a quoted post, naming
+    /// what it quotes by id.
+    fn shallow(&self, source_requested: bool) -> super::types::QuoteInfo {
+        super::types::QuoteInfo {
+            state: self.state(),
+            quoted_status: None,
+            quoted_status_id: self.shown(source_requested).map(|q| q.id.to_string()),
+            shallow: true,
+        }
+    }
+}
+
+/// The quotes `status_ids` make that `REST::StatusSerializer#quote` shows
+/// (`object.quote if object.quote&.acceptable?`: accepted, or not legacy),
+/// each with its quoted post and how `viewer_id` sees it.
+async fn resolve_quotes(
+    state: &AppState,
+    status_ids: &[i64],
+    viewer_id: Option<i64>,
+) -> AppResult<std::collections::HashMap<i64, ResolvedQuote>> {
+    use std::collections::{HashMap, HashSet};
+
+    if status_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let quote_rows = sqlx::query!(
+        r#"SELECT status_id, quoted_status_id, state FROM quotes
+           WHERE status_id = ANY($1::bigint[]) AND (state = 1 OR NOT legacy)"#,
+        status_ids,
+    )
+    .fetch_all(&state.db)
+    .await?;
+    if quote_rows.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let quote_ids: Vec<i64> = quote_rows
+        .iter()
+        .filter_map(|r| r.quoted_status_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let quoted_statuses: HashMap<i64, crate::db::models::Status> = sqlx::query_as!(
+        crate::db::models::Status,
+        "SELECT * FROM statuses WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL",
+        &quote_ids,
+    )
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|s| (s.id, s))
+    .collect();
+
+    // `StatusFilter#filter_state_for_quote` for each quoted status, as the
+    // viewer sees it: nothing for their own post, `unauthorized` for one
+    // `StatusPolicy#show?` hides from them, then `blocked_domain`,
+    // `blocked_account` and `muted_account`.
+    let mut filter_states: HashMap<i64, &'static str> = HashMap::new();
+    if !quoted_statuses.is_empty() {
+        let author_ids: Vec<i64> = quoted_statuses
+            .values()
+            .map(|s| s.account_id)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        let relations = sqlx::query!(
+            r#"SELECT a.id,
+                      (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS "unavailable!",
+                      EXISTS (SELECT 1 FROM blocks WHERE account_id = a.id AND target_account_id = $2) AS "blocks_viewer!",
+                      EXISTS (SELECT 1 FROM account_domain_blocks adb JOIN accounts v ON v.id = $2
+                              WHERE adb.account_id = a.id AND adb.domain = v.domain) AS "blocks_viewer_domain!",
+                      EXISTS (SELECT 1 FROM blocks WHERE account_id = $2 AND target_account_id = a.id) AS "blocked!",
+                      EXISTS (SELECT 1 FROM account_domain_blocks
+                              WHERE account_id = $2 AND domain = a.domain) AS "domain_blocked!",
+                      EXISTS (SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id) AS "muted!",
+                      EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = a.id) AS "following!"
+               FROM accounts a WHERE a.id = ANY($1::bigint[])"#,
+            &author_ids,
+            viewer_id,
+        )
+        .fetch_all(&state.db)
+        .await?;
+        let relations: HashMap<i64, _> = relations.into_iter().map(|r| (r.id, r)).collect();
+        let mentioned: HashSet<i64> = match viewer_id {
+            Some(vid) => sqlx::query_scalar!(
+                "SELECT status_id FROM mentions WHERE account_id = $1 AND status_id = ANY($2::bigint[])",
+                vid,
+                &quote_ids,
+            )
+            .fetch_all(&state.db)
+            .await?
+            .into_iter()
+            .collect(),
+            None => HashSet::new(),
+        };
+        use crate::db::models::vis;
+        for qs in quoted_statuses.values() {
+            let Some(r) = relations.get(&qs.account_id) else {
+                continue;
+            };
+            if viewer_id == Some(qs.account_id) {
+                continue;
+            }
+            let shown = !r.unavailable
+                && match qs.visibility {
+                    vis::DIRECT | vis::LIMITED => mentioned.contains(&qs.id),
+                    vis::PRIVATE => r.following || mentioned.contains(&qs.id),
+                    _ => viewer_id.is_none() || (!r.blocks_viewer && !r.blocks_viewer_domain),
+                };
+            let filter = if !shown {
+                Some("unauthorized")
+            } else if viewer_id.is_some() && r.domain_blocked {
+                Some("blocked_domain")
+            } else if viewer_id.is_some() && r.blocked {
+                Some("blocked_account")
+            } else if viewer_id.is_some() && r.muted {
+                Some("muted_account")
+            } else {
+                None
+            };
+            if let Some(filter) = filter {
+                filter_states.insert(qs.id, filter);
+            }
+        }
+    }
+
+    Ok(quote_rows
+        .into_iter()
+        .map(|r| {
+            let quoted = r
+                .quoted_status_id
+                .and_then(|id| quoted_statuses.get(&id).cloned());
+            let filter = quoted
+                .as_ref()
+                .and_then(|q| filter_states.get(&q.id).copied());
+            (
+                r.status_id,
+                ResolvedQuote {
+                    state: r.state,
+                    quoted,
+                    filter,
+                },
+            )
+        })
+        .collect())
+}
+
+/// `REST::StatusSerializer#quote` for each of `status_ids` that has one, as
+/// `viewer_id` sees it: `REST::QuoteSerializer`, the quoted post embedded
+/// when it is shown, and that post's own quote rendered shallow
+/// (`REST::ShallowStatusSerializer`).
 pub async fn batch_quote_data(
     state: &AppState,
     status_ids: &[i64],
@@ -202,43 +391,18 @@ pub async fn batch_quote_data(
 ) -> AppResult<std::collections::HashMap<i64, super::types::QuoteInfo>> {
     use std::collections::{HashMap, HashSet};
 
-    // The quotes these statuses make, as `REST::StatusSerializer#quote` shows
-    // them: `object.quote if object.quote&.acceptable?`, accepted or not
-    // legacy.
-    let quote_rows = sqlx::query!(
-        r#"SELECT status_id, quoted_status_id, state FROM quotes
-           WHERE status_id = ANY($1::bigint[]) AND (state = 1 OR NOT legacy)"#,
-        status_ids,
-    )
-    .fetch_all(&state.db)
-    .await
-    .unwrap_or_default();
-    if quote_rows.is_empty() {
+    let resolved = resolve_quotes(state, status_ids, viewer_id).await?;
+    if resolved.is_empty() {
         return Ok(HashMap::new());
     }
 
-    // Map from quoting status ID → quoted status ID
-    let quote_of: HashMap<i64, i64> = quote_rows
-        .iter()
-        .filter_map(|r| r.quoted_status_id.map(|qid| (r.status_id, qid)))
-        .collect();
-    let quote_states: HashMap<i64, i32> =
-        quote_rows.iter().map(|r| (r.status_id, r.state)).collect();
-
-    let quote_ids: Vec<i64> = quote_of
+    let mut seen = HashSet::new();
+    let quoted_statuses: Vec<crate::db::models::Status> = resolved
         .values()
+        .filter_map(|r| r.shown(false))
+        .filter(|q| seen.insert(q.id))
         .cloned()
-        .collect::<HashSet<_>>()
-        .into_iter()
         .collect();
-
-    let quoted_statuses = sqlx::query_as!(
-        crate::db::models::Status,
-        "SELECT * FROM statuses WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL",
-        &quote_ids,
-    )
-    .fetch_all(&state.db)
-    .await?;
 
     let account_ids: Vec<i64> = quoted_statuses
         .iter()
@@ -287,101 +451,9 @@ pub async fn batch_quote_data(
             )
         };
 
-    // `StatusFilter#filter_state_for_quote` for each quoted status, as the
-    // viewer sees it: nothing for their own post, `unauthorized` for one
-    // `StatusPolicy#show?` hides from them, then `blocked_domain`,
-    // `blocked_account` and `muted_account`.
-    let mut filter_states: HashMap<i64, &'static str> = HashMap::new();
-    if !quoted_statuses.is_empty() {
-        let author_ids: Vec<i64> = account_ids.clone();
-        let relations = sqlx::query!(
-            r#"SELECT a.id,
-                      (a.suspended_at IS NOT NULL OR a.requested_deletion_at IS NOT NULL) AS "unavailable!",
-                      EXISTS (SELECT 1 FROM blocks WHERE account_id = a.id AND target_account_id = $2) AS "blocks_viewer!",
-                      EXISTS (SELECT 1 FROM account_domain_blocks adb JOIN accounts v ON v.id = $2
-                              WHERE adb.account_id = a.id AND adb.domain = v.domain) AS "blocks_viewer_domain!",
-                      EXISTS (SELECT 1 FROM blocks WHERE account_id = $2 AND target_account_id = a.id) AS "blocked!",
-                      EXISTS (SELECT 1 FROM account_domain_blocks
-                              WHERE account_id = $2 AND domain = a.domain) AS "domain_blocked!",
-                      EXISTS (SELECT 1 FROM mutes WHERE account_id = $2 AND target_account_id = a.id) AS "muted!",
-                      EXISTS (SELECT 1 FROM follows WHERE account_id = $2 AND target_account_id = a.id) AS "following!"
-               FROM accounts a WHERE a.id = ANY($1::bigint[])"#,
-            &author_ids,
-            viewer_id,
-        )
-        .fetch_all(&state.db)
-        .await?;
-        let relations: HashMap<i64, _> = relations.into_iter().map(|r| (r.id, r)).collect();
-        let mentioned: HashSet<i64> = match viewer_id {
-            Some(vid) => sqlx::query_scalar!(
-                "SELECT status_id FROM mentions WHERE account_id = $1 AND status_id = ANY($2::bigint[])",
-                vid,
-                &quote_ids,
-            )
-            .fetch_all(&state.db)
-            .await?
-            .into_iter()
-            .collect(),
-            None => HashSet::new(),
-        };
-        use crate::db::models::vis;
-        for qs in &quoted_statuses {
-            let Some(r) = relations.get(&qs.account_id) else {
-                continue;
-            };
-            if viewer_id == Some(qs.account_id) {
-                continue;
-            }
-            let shown = !r.unavailable
-                && match qs.visibility {
-                    vis::DIRECT | vis::LIMITED => mentioned.contains(&qs.id),
-                    vis::PRIVATE => r.following || mentioned.contains(&qs.id),
-                    _ => viewer_id.is_none() || (!r.blocks_viewer && !r.blocks_viewer_domain),
-                };
-            let filter = if !shown {
-                Some("unauthorized")
-            } else if viewer_id.is_some() && r.domain_blocked {
-                Some("blocked_domain")
-            } else if viewer_id.is_some() && r.blocked {
-                Some("blocked_account")
-            } else if viewer_id.is_some() && r.muted {
-                Some("muted_account")
-            } else {
-                None
-            };
-            if let Some(filter) = filter {
-                filter_states.insert(qs.id, filter);
-            }
-        }
-    }
-
-    // Fetch shallow quote states for nested quotes (quoted statuses that themselves quote something).
-    let nested_quoting_ids: Vec<i64> = quoted_statuses.iter().map(|qs| qs.id).collect();
-    // (status_id → (state, quoted_status_id)) for nested quotes
-    let nested_quote_info: HashMap<i64, (String, i64)> = if !nested_quoting_ids.is_empty() {
-        let rows = sqlx::query!(
-            "SELECT status_id, state, quoted_status_id FROM quotes WHERE status_id = ANY($1::bigint[]) AND quoted_status_id IS NOT NULL",
-            &nested_quoting_ids,
-        )
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
-        rows.into_iter()
-            .filter_map(|r| {
-                r.quoted_status_id.map(|qid| {
-                    (
-                        r.status_id,
-                        (
-                            crate::db::models::quote_state::to_str(r.state).to_owned(),
-                            qid,
-                        ),
-                    )
-                })
-            })
-            .collect()
-    } else {
-        HashMap::new()
-    };
+    // The quoted posts' own quotes, as `REST::ShallowQuoteSerializer` has
+    // them, under the same rules for the same viewer.
+    let nested = resolve_quotes(state, &qs_ids, viewer_id).await?;
 
     // Build a map from quoted status id → API Status
     let mut qs_map: HashMap<i64, super::types::Status> = HashMap::new();
@@ -407,57 +479,29 @@ pub async fn batch_quote_data(
         api.emojis = emojis_map.get(&qs.id).cloned().unwrap_or_default();
         api.poll = polls_map.get(&qs.id).cloned();
         api.card = cards_map.get(&qs.id).cloned();
-        // Attach shallow quote info for the nested quote (ShallowQuoteSerializer behavior)
-        if let Some((state_str, nested_qid)) = nested_quote_info.get(&qs.id) {
-            api.quote = Some(super::types::QuoteInfo {
-                state: state_str.clone(),
-                quoted_status: None,
-                quoted_status_id: Some(nested_qid.to_string()),
-                shallow: true,
-            });
-        }
+        api.quote = nested.get(&qs.id).map(|r| r.shallow(false));
         qs_map.insert(qs.id, api);
     }
 
-    // Build the final map keyed by quoting status ID → QuoteInfo, as
-    // `REST::BaseQuoteSerializer` has it: a quote not accepted shows its
-    // state alone; an accepted one is `deleted` when the quoted post is gone,
-    // else filtered as the viewer sees the quoted post, and carries it unless
-    // the viewer may not see it.
-    let mut result: HashMap<i64, super::types::QuoteInfo> = HashMap::new();
-    for &status_id in status_ids {
-        let Some(&db_state) = quote_states.get(&status_id) else {
-            continue;
-        };
-        let quoted_id = quote_of.get(&status_id).copied();
-        let quoted = quoted_id.and_then(|qid| qs_map.get(&qid));
-        let (effective_state, quoted_status) =
-            if db_state != crate::db::models::quote_state::ACCEPTED {
-                (
-                    crate::db::models::quote_state::to_str(db_state).to_string(),
-                    None,
-                )
-            } else if let Some(quoted) = quoted {
-                let filter = quoted_id.and_then(|qid| filter_states.get(&qid).copied());
-                let shown = filter != Some("unauthorized");
-                (
-                    filter.unwrap_or("accepted").to_string(),
-                    shown.then(|| quoted.clone()),
-                )
-            } else {
-                ("deleted".to_string(), None)
-            };
-        result.insert(
-            status_id,
-            super::types::QuoteInfo {
-                state: effective_state,
-                quoted_status: quoted_status.map(Box::new),
-                quoted_status_id: None,
-                shallow: false,
-            },
-        );
-    }
-    Ok(result)
+    Ok(resolved
+        .into_iter()
+        .map(|(status_id, r)| {
+            let quoted_status = r
+                .shown(false)
+                .and_then(|q| qs_map.get(&q.id))
+                .cloned()
+                .map(Box::new);
+            (
+                status_id,
+                super::types::QuoteInfo {
+                    state: r.state(),
+                    quoted_status,
+                    quoted_status_id: None,
+                    shallow: false,
+                },
+            )
+        })
+        .collect())
 }
 
 pub async fn fetch_status_poll(

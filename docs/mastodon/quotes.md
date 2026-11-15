@@ -124,7 +124,11 @@ that was never accepted is left out. A quote not accepted shows its state
 alone; an accepted one is `deleted` when the quoted post is gone, and
 otherwise is filtered as `StatusFilter#filter_state_for_quote` has it for the
 viewer (`unauthorized`, `blocked_domain`, `blocked_account`, `muted_account`)
-and carries the quoted post unless it is `unauthorized`.
+and carries the quoted post unless it is `unauthorized`. The quoted post's
+own quote is rendered shallow, as `REST::ShallowQuoteSerializer` renders it,
+under the same rules for the same viewer: its `quoted_status_id` names the
+post it quotes only where the quote would carry that post, and is `null`
+otherwise.
 
 
 What still differs

@@ -8372,3 +8372,109 @@ async fn test_boosted_quote_post_keeps_its_quote() {
         .expect("the boost on carol's home timeline");
     check(boosted, "home timeline");
 }
+
+/// The quote of a quoted post is rendered by `REST::ShallowQuoteSerializer`
+/// under the rules of the top-level one (`REST::BaseQuoteSerializer`): a
+/// legacy quote never accepted is left out, a quote not accepted shows its
+/// state alone, an accepted one is `deleted` when its post is gone and is
+/// filtered for the viewer, and `quoted_status_id` names the post only when
+/// it would be shown.
+#[tokio::test]
+async fn test_nested_quote_follows_the_quote_rules() {
+    let ctx = TestContext::new("quote-nested-rules").await;
+
+    let post = |token: String, text: &'static str, quoted: Option<String>| {
+        let ctx = &ctx;
+        async move {
+            let mut body = json!({"status": text, "visibility": "public"});
+            if let Some(quoted) = quoted {
+                body["quoted_status_id"] = json!(quoted);
+            }
+            let resp = ctx
+                .api
+                .post_json("/api/v1/statuses", Some(&token), &body)
+                .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body: Value = resp.json().await.unwrap();
+            body["id"].as_str().unwrap().to_owned()
+        }
+    };
+    let original = post(ctx.alice_token.clone(), "the original", None).await;
+    let inner = post(ctx.bob_token.clone(), "bob quotes", Some(original.clone())).await;
+    let outer = post(
+        ctx.alice_token.clone(),
+        "alice quotes bob",
+        Some(inner.clone()),
+    )
+    .await;
+    let inner_id: i64 = inner.parse().unwrap();
+
+    let nested = |token: &'static str| {
+        let ctx = &ctx;
+        let outer = outer.clone();
+        let token = match token {
+            "bob" => ctx.bob_token.clone(),
+            _ => ctx.alice_token.clone(),
+        };
+        async move {
+            let body: Value = ctx
+                .api
+                .get(&format!("/api/v1/statuses/{outer}"), Some(&token))
+                .await
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(body["quote"]["state"], "accepted", "{body}");
+            body["quote"]["quoted_status"]["quote"].clone()
+        }
+    };
+    let set = |sql: &'static str| {
+        let ctx = &ctx;
+        async move {
+            sqlx::query(sql)
+                .bind(inner_id)
+                .execute(&ctx.db)
+                .await
+                .unwrap();
+        }
+    };
+
+    assert_eq!(
+        nested("alice").await,
+        json!({"state": "accepted", "quoted_status_id": original})
+    );
+
+    // Filtered as the viewer sees the post it quotes.
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/mute", ctx.alice_id),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        nested("bob").await,
+        json!({"state": "muted_account", "quoted_status_id": original})
+    );
+
+    set("UPDATE quotes SET state = 0 WHERE status_id = $1").await;
+    assert_eq!(
+        nested("alice").await,
+        json!({"state": "pending", "quoted_status_id": null})
+    );
+
+    // `acceptable?`: a legacy quote that was never accepted is not shown.
+    set("UPDATE quotes SET legacy = true WHERE status_id = $1").await;
+    assert_eq!(nested("alice").await, Value::Null);
+
+    set(
+        "UPDATE quotes SET legacy = false, state = 1, quoted_status_id = NULL WHERE status_id = $1",
+    )
+    .await;
+    assert_eq!(
+        nested("alice").await,
+        json!({"state": "deleted", "quoted_status_id": null})
+    );
+}
