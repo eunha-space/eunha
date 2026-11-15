@@ -59,7 +59,9 @@ client shows its live feeds: everyone when it is `public`, the signed in when
 it is `authenticated`, and otherwise only a role whose permissions carry the
 `view_feeds` bit. Like Mastodon's client, that last check reads the bit alone,
 so a role with only `administrator`, which the server lets read the feeds, is
-not shown the rows.
+not shown the rows. Unlike Mastodon, eunha defaults `remote_live_feed_access`
+to `authenticated`, so a visitor sees the local timeline and not the federated
+one until an administrator saves `public`.
 
 Signed in, the sidebar groups its rows. Home, Notifications, Messages,
 Search and Explore come first, under **New post**; **Feeds** holds Local,

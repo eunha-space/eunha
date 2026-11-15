@@ -763,7 +763,7 @@ async fn test_public_timeline_scoped_to_instance() {
     // Federated timeline (no ?local) for instance A.
     let timeline: Vec<Value> = ctx_a
         .api
-        .get("/api/v1/timelines/public", None)
+        .get("/api/v1/timelines/public", Some(&ctx_a.alice_token))
         .await
         .json()
         .await
@@ -1964,7 +1964,7 @@ async fn test_public_timeline_excludes_reply_with_deleted_parent() {
     // The status currently has reply=false and appears in the timeline.
     let before: Vec<Value> = ctx
         .api
-        .get("/api/v1/timelines/public", None)
+        .get("/api/v1/timelines/public", Some(&ctx.alice_token))
         .await
         .json()
         .await
@@ -1988,7 +1988,7 @@ async fn test_public_timeline_excludes_reply_with_deleted_parent() {
 
     let after: Vec<Value> = ctx
         .api
-        .get("/api/v1/timelines/public", None)
+        .get("/api/v1/timelines/public", Some(&ctx.alice_token))
         .await
         .json()
         .await

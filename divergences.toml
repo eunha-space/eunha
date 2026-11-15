@@ -2133,3 +2133,21 @@ own contact and description."""
 evidence = "tests/integration/c2s/server_admin/hosted.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "federated-timeline-signed-in-by-default"
+kind = "behaviour"
+summary = "The federated timeline is for the signed in unless an administrator opens it"
+mastodon = "Defaults `remote_live_feed_access` to `public`, so a visitor reads the federated timeline."
+eunha = """
+Defaults `remote_live_feed_access` to `authenticated`: a visitor is refused \
+the federated timeline and not offered its row, while the local timeline stays \
+public. An administrator who saves `public` gets Mastodon's behaviour."""
+why = """
+The federated timeline is whatever other servers' posts reach this one, which \
+nobody here chose or moderated, shown under the instance's own name. A small \
+community's front door should be its own posts; members, who see what their \
+follows bring in, keep the feed for discovery."""
+evidence = "tests/integration/c2s/feed_access.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

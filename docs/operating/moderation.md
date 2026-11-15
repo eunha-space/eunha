@@ -133,6 +133,9 @@ the public timeline, and `local_topic_feed_access` and
 role may `view_feeds` only). A feed that is not `public` asks for a
 functional user as above; one the viewer may not see is left out, so asking
 for both local and remote posts returns only the half the viewer may read.
+All four default to `public` as in Mastodon, except
+`remote_live_feed_access`, which defaults to `authenticated`: the federated
+timeline is for the signed in until an administrator opens it.
 `/api/v2/instance` reports the settings under `timelines_access`.
 
 The link timeline answers only for a link that is trending and allowed,

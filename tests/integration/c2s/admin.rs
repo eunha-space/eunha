@@ -1179,7 +1179,7 @@ async fn test_suspension_hides_statuses_and_unsuspend_restores() {
     );
     let public: Vec<Value> = ctx
         .api
-        .get("/api/v1/timelines/public", None)
+        .get("/api/v1/timelines/public", Some(&ctx.alice_token))
         .await
         .json()
         .await

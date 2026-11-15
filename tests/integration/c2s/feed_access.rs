@@ -14,6 +14,54 @@ async fn ids(response: reqwest::Response) -> Vec<String> {
         .collect()
 }
 
+/// Unlike Mastodon, eunha's `remote_live_feed_access` defaults to
+/// `authenticated`: a visitor reads the local timeline but not the federated
+/// one, and a member reads both.
+#[tokio::test]
+async fn test_the_federated_timeline_is_for_the_signed_in_by_default() {
+    let ctx = TestContext::new("feed-access-default").await;
+    let post = ctx
+        .api
+        .post_status(&ctx.alice_token, "local post", "public")
+        .await;
+    let id = post["id"].as_str().unwrap().to_owned();
+
+    for path in [
+        "/api/v1/timelines/public",
+        "/api/v1/timelines/public?remote=true",
+    ] {
+        let response = ctx.api.get(path, None).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
+    }
+    let local = ids(ctx
+        .api
+        .get("/api/v1/timelines/public?local=true", None)
+        .await)
+    .await;
+    assert!(local.contains(&id));
+    let signed_in = ids(ctx
+        .api
+        .get("/api/v1/timelines/public", Some(&ctx.bob_token))
+        .await)
+    .await;
+    assert!(signed_in.contains(&id));
+
+    let instance: Value = ctx
+        .api
+        .get("/api/v2/instance", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let live = &instance["configuration"]["timelines_access"]["live_feeds"];
+    assert_eq!(live["local"], "public");
+    assert_eq!(live["remote"], "authenticated");
+}
+
 #[tokio::test]
 async fn test_live_feeds_follow_their_access_settings() {
     let ctx = TestContext::new("feed-access-live").await;
@@ -23,6 +71,8 @@ async fn test_live_feeds_follow_their_access_settings() {
         .await;
     let id = post["id"].as_str().unwrap().to_owned();
 
+    // Mastodon's default, so the remote half alone stays open to visitors.
+    set_setting(&ctx.db, "remote_live_feed_access", "public").await;
     set_setting(&ctx.db, "local_live_feed_access", "authenticated").await;
     // `require_auth?`: the local feed, or both, now need a user.
     for path in [
