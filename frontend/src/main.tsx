@@ -246,16 +246,24 @@ const routes = [
   { path: '*', element: <Home /> },
 ]
 
-const router = createBrowserRouter([{ element: <NavigationScroll />, children: routes }])
+// The compose modal renders posts (a quote's preview, a reply's parent) whose
+// links and click handlers need the router, so it mounts inside it.
+function Root() {
+  return (
+    <ComposeModalProvider>
+      <NavigationScroll />
+      <TermsOfServiceInterstitial />
+      <Toaster />
+    </ComposeModalProvider>
+  )
+}
+
+const router = createBrowserRouter([{ element: <Root />, children: routes }])
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider defaultTheme="system" storageKey="eunha-theme">
-      <ComposeModalProvider>
-        <RouterProvider router={router} />
-        <TermsOfServiceInterstitial />
-        <Toaster />
-      </ComposeModalProvider>
+      <RouterProvider router={router} />
     </ThemeProvider>
   </StrictMode>,
 )

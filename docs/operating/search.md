@@ -94,6 +94,19 @@ The request
 
 Typographic quotes (`“”„«»「」『』《》`) in `q` are read as `"`.
 
+Without `type`, the three searches run at the same time, so the response
+waits for the slowest of them rather than for all three in turn. Without
+Elasticsearch that is usually the post search: on a copy of a server with a
+million posts, a word few posts contain takes about two seconds, because
+`ILIKE` reads every post that could match. A trigram index does not help with
+short words, such as two-syllable Korean ones.
+
+The web app's search page sends each part as a request of its own: people,
+hashtags and posts on this server, and, for a URL or a complete handle, the
+remote lookup. Each shows as a step with whether it is still running and how
+much it found, and what has come back shows while the rest runs. A URL is only
+looked up, not searched for as text.
+
 `GET /api/v1/accounts/search` needs a signed-in user with the `read:accounts`
 scope. It takes `q`, `limit` (40 by default, at most 80), `offset`, `resolve`
 and `following`.

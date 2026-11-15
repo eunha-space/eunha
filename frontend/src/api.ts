@@ -611,9 +611,11 @@ export function votePoll(
 export async function search(
   q: string,
   token?: string,
+  options: { type?: 'accounts' | 'hashtags' | 'statuses'; resolve?: boolean } = {},
 ): Promise<mastodon.v2.Search> {
-  // resolve remote accounts/statuses only for authenticated searches.
-  return restClient(token).v2.search.list({ q, resolve: !!token, limit: 20 })
+  // Remote accounts and posts are resolved only for authenticated searches.
+  const resolve = !!token && (options.resolve ?? true)
+  return restClient(token).v2.search.list({ q, resolve, type: options.type, limit: 20 })
 }
 
 export function getFollowedTags(token: string): mastodon.Paginator<mastodon.v1.Tag[]> {

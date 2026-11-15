@@ -258,7 +258,7 @@ export function StatusCard({
   const remoteUrl = status.account.acct.includes('@') ? status.url : null
   const canReport = !!token && !isOwn
   const boostAccountId = boostedBy?.id ?? status.account.id
-  const hasMenu = isOwn || canQuote || !!remoteUrl || canReport
+  const hasMenu = isOwn || !!remoteUrl || canReport
 
   useEffect(() => {
     setStatus(initial)
@@ -507,13 +507,6 @@ export function StatusCard({
                       <ExternalLink /> Open original page
                     </DropdownMenuItem>
                   )}
-                  {canQuote && (
-                    <DropdownMenuItem
-                      onClick={() => openCompose({ quoteOf: status })}
-                    >
-                      <Quote /> Quote
-                    </DropdownMenuItem>
-                  )}
                   {canReport && (
                     <DropdownMenuItem
                       variant="destructive"
@@ -671,15 +664,53 @@ export function StatusCard({
             label="Reply"
             onClick={() => (onReply ? onReply(status) : navigate(threadPath))}
           />
-          <ActionButton
-            icon={notBoostable ? <Lock /> : <Repeat2 />}
-            count={status.reblogsCount}
-            active={status.reblogged ?? false}
-            activeClass="text-primary"
-            disabled={busy || !token || notBoostable}
-            label={notBoostable ? 'Boosting not allowed' : 'Boost'}
-            onClick={() => act(() => setReblog(token, status.id, !status.reblogged))}
-          />
+          {notBoostable || !token ? (
+            <ActionButton
+              icon={notBoostable ? <Lock /> : <Repeat2 />}
+              count={status.reblogsCount}
+              active={status.reblogged ?? false}
+              activeClass="text-primary"
+              disabled
+              label={notBoostable ? 'Boosting not allowed' : 'Boost'}
+              onClick={() => {}}
+            />
+          ) : (
+            // Boosting asks first, and offers quoting beside it, the way
+            // Mastodon's web client does once quotes are on.
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={busy}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Boost or quote"
+                    className={cn(
+                      'text-muted-foreground gap-1.5',
+                      status.reblogged && 'text-primary',
+                    )}
+                  />
+                }
+              >
+                <Repeat2 />
+                {status.reblogsCount ? (
+                  <span className="text-xs">{status.reblogsCount}</span>
+                ) : null}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem
+                  onClick={() => act(() => setReblog(token, status.id, !status.reblogged))}
+                >
+                  <Repeat2 /> {status.reblogged ? 'Undo boost' : 'Boost'}
+                </DropdownMenuItem>
+                {canQuote && (
+                  <DropdownMenuItem onClick={() => openCompose({ quoteOf: status })}>
+                    <Quote /> Quote
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <ActionButton
             icon={<Star />}
             count={status.favouritesCount}

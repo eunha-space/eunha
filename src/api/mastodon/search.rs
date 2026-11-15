@@ -129,7 +129,13 @@ pub async fn search(
 
     let wants = |kind: &str| search_type.is_none_or(|t| t == kind);
 
-    if wants("accounts") {
+    // The three searches are independent, so they run at once: a response
+    // waits for the slowest (post search, without Elasticsearch) rather than
+    // for all three in turn.
+    let accounts = async {
+        if !wants("accounts") {
+            return Ok(vec![]);
+        }
         if query_fasp.is_some() {
             crate::fasp::query_account_search_providers(&state, &query).await;
         }
@@ -146,44 +152,47 @@ pub async fn search(
             },
         )
         .await?;
-        results.accounts = batch_accounts_to_api(&state, &found).await;
-    }
+        AppResult::Ok(batch_accounts_to_api(&state, &found).await)
+    };
 
     // Post search requires a signed-in user; without Elasticsearch use ILIKE.
-    if wants("statuses") {
-        if let Some(viewer) = viewer_id {
-            let parse_id = |v: Option<&str>| present(v).map(ruby_to_i);
-            let options = crate::search::elasticsearch::StatusOptions {
-                limit,
-                offset,
-                account_id: parse_id(q.account_id.as_deref()),
-                min_id: parse_id(q.min_id.as_deref()),
-                max_id: parse_id(q.max_id.as_deref()),
-            };
-            use crate::search::elasticsearch::StatusSearchError;
-            let ids = if state.search.is_none() {
-                crate::search::statuses::search(&state, &query, viewer, &options).await?
-            } else {
-                match crate::search::elasticsearch::statuses(&state, &query, viewer, &options).await
-                {
-                    Ok(ids) => ids,
-                    Err(StatusSearchError::AccountNotFound) => return Err(AppError::NotFound),
-                    Err(StatusSearchError::NoKeyword) => {
-                        return Err(AppError::BadRequest(
-                            "At least one keyword or phrase is required".into(),
-                        ))
-                    }
-                    Err(StatusSearchError::InvalidDate) => {
-                        return Err(AppError::Unprocessable("Invalid date supplied".into()))
-                    }
-                    Err(StatusSearchError::App(e)) => return Err(e),
+    let statuses = async {
+        let Some(viewer) = viewer_id.filter(|_| wants("statuses")) else {
+            return Ok(vec![]);
+        };
+        let parse_id = |v: Option<&str>| present(v).map(ruby_to_i);
+        let options = crate::search::elasticsearch::StatusOptions {
+            limit,
+            offset,
+            account_id: parse_id(q.account_id.as_deref()),
+            min_id: parse_id(q.min_id.as_deref()),
+            max_id: parse_id(q.max_id.as_deref()),
+        };
+        use crate::search::elasticsearch::StatusSearchError;
+        let ids = if state.search.is_none() {
+            crate::search::statuses::search(&state, &query, viewer, &options).await?
+        } else {
+            match crate::search::elasticsearch::statuses(&state, &query, viewer, &options).await {
+                Ok(ids) => ids,
+                Err(StatusSearchError::AccountNotFound) => return Err(AppError::NotFound),
+                Err(StatusSearchError::NoKeyword) => {
+                    return Err(AppError::BadRequest(
+                        "At least one keyword or phrase is required".into(),
+                    ))
                 }
-            };
-            results.statuses = render_statuses(&state, &ids, viewer).await?;
-        }
-    }
+                Err(StatusSearchError::InvalidDate) => {
+                    return Err(AppError::Unprocessable("Invalid date supplied".into()))
+                }
+                Err(StatusSearchError::App(e)) => return Err(e),
+            }
+        };
+        render_statuses(&state, &ids, viewer).await
+    };
 
-    if wants("hashtags") {
+    let hashtags = async {
+        if !wants("hashtags") {
+            return Ok(vec![]);
+        }
         let found = crate::search::tags::search(
             &state,
             &query,
@@ -194,8 +203,11 @@ pub async fn search(
             },
         )
         .await?;
-        results.hashtags = render_tags(&state, instance.web_domain(), &found, viewer_id).await?;
-    }
+        render_tags(&state, instance.web_domain(), &found, viewer_id).await
+    };
+
+    (results.accounts, results.statuses, results.hashtags) =
+        tokio::try_join!(accounts, statuses, hashtags)?;
 
     Ok(Json(results))
 }
