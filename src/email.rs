@@ -796,8 +796,8 @@ impl EmailSender {
             ));
         }
         body.push_str(&format!(
-            "<p>You get at most one email like this {}. The first new item after a \
-             quiet spell is emailed at once.</p>",
+            "<p>You get at most one email like this {}. The first new report, appeal \
+             or account up for review after a quiet spell is emailed at once.</p>",
             digest_interval(instance.staff_alert_digest_minutes)
         ));
         self.send_admin(to, &subject, &body, false).await

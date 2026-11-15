@@ -294,10 +294,12 @@ async fn suggestions_are_mailed_confirmed_applied_and_dismissed() {
     lists::run_scheduled(&ctx.state).await.unwrap();
 
     assert!(block_of(&ctx, "bad.example").await.is_none());
-    assert!(ctx
-        .mail_to("alice@test.invalid", "New moderation suggestions")
-        .await
-        .is_some());
+    // Suggestions are not urgent: they wait for alice's staff alert digest.
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+    assert_eq!(
+        eunha::admin_digest::held(&ctx.state, alice).await,
+        vec![eunha::admin_digest::Alert::ModerationSuggestions]
+    );
     let waiting = suggestions(&ctx).await;
     assert_eq!(waiting.as_array().unwrap().len(), 2);
     assert_eq!(waiting[0]["target_key"], "bad.example");

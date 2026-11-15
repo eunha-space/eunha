@@ -2059,17 +2059,19 @@ awaiting approval (`#new_pending_account`), as each comes in, and once per \
 round of trends to review (`#new_trends`) and of moderation suggestions \
 (`#new_moderation_suggestions`)."""
 eunha = """
-Mails the first of these in a quiet hour at once, as Mastodon does, then holds \
-whatever comes in for that staff member during the next hour and sends it as \
-one summary when the hour ends, the trends as one list and the suggestions as \
-one link. A summary starts another hour; an hour with nothing held ends \
-quietly. The per-kind opt-outs apply as before. The instance's \
-`staff_alert_digest_minutes` makes the hour longer or shorter."""
+Mails the first report, appeal or sign-up of a quiet hour at once, as \
+Mastodon does, then holds whatever comes in for that staff member during the \
+next hour and sends it as one summary when the hour ends, the trends as one \
+list and the suggestions as one link. A summary starts another hour; an hour \
+with nothing held ends quietly. Trends and suggestions are never mailed at \
+once: they wait for a summary, and start no hour of their own. The per-kind \
+opt-outs apply as before. The instance's `staff_alert_digest_minutes` makes \
+the hour longer or shorter."""
 why = """
 A burst of reports or sign-ups, as a spam wave brings, otherwise sends each \
 moderator one mail apiece, and trends and suggestions add mails of their own. \
-The first alert still arrives at once, so a lone urgent report is not \
-delayed, and the dashboard and web push still show each one as it comes. A \
+The first report, appeal or sign-up still arrives at once, so a lone urgent \
+report is not delayed, and the dashboard and web push still show each one as it comes. A \
 host running many instances can widen the window to send fewer still."""
 evidence = "tests/integration/c2s/admin_digest.rs"
 since = "5.0.0-beta.1"

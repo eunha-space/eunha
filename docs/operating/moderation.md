@@ -272,14 +272,21 @@ Staff alert digests
 
 Mastodon mails each staff member once per report, appeal and sign-up awaiting
 approval, and once per round of [trends awaiting review](#trends) and of
-[moderation suggestions](#moderation-subscriptions). eunha mails the first of
-these in a quiet hour at once, then holds what comes in for that staff member
-over the next hour and sends it as one summary, *New for review on …*, when
-the hour ends. The summary lists each report, appeal and account with its
-link, in the order they came in, then the trends to review as one list and the
-moderation suggestions as one link. It starts another hour, so a busy stretch
-makes one mail an hour; an hour with nothing held ends quietly, and the next
-alert is again mailed at once.
+[moderation suggestions](#moderation-subscriptions). eunha mails the first
+report, appeal or sign-up of a quiet hour at once, then holds what comes in for
+that staff member over the next hour and sends it as one summary, *New for
+review on …*, when the hour ends. The summary lists each report, appeal and
+account with its link, in the order they came in, then the trends to review as
+one list and the moderation suggestions as one link. It starts another hour,
+so a busy stretch makes one mail an hour; an hour with nothing held ends
+quietly, and the next report, appeal or sign-up is again mailed at once.
+
+Trends and moderation suggestions are never urgent, so they are never mailed
+at once. One that comes in during a quiet hour is held without starting an
+hour, and goes out in a summary an hour later, or sooner in the summary of an
+hour a report, appeal or sign-up starts in the meantime. A summary with only
+trends and suggestions in it starts no hour either, so a report never waits
+behind them.
 
 The hour is an hour unless the instance's configuration says otherwise, in
 minutes:
@@ -290,15 +297,15 @@ staff_alert_digest_minutes = 180
 ~~~~
 
 The summary says how often it can come, *at most one email like this every 3
-hours*. A longer window means fewer mails, and nothing waits longer for the
-first mail after a quiet spell; what follows it waits up to the window.
+hours*. A longer window means fewer mails. The first report, appeal or
+sign-up after a quiet spell still comes at once; what follows it, and any
+trends and suggestions, wait up to the window.
 
 Each staff member has a window of their own, and the opt-outs (`report`,
 `appeal`, `pending_account`, `trends`, `moderation_suggestions`) still decide
 what reaches them at all. The in-app `admin.report` and `admin.sign_up`
 notifications and web push are not held. The window is the coordination Redis
-key
-`admin_digest:<account_id>:window`, and the held alerts the set
+key `admin_digest:<account_id>:window`, and the held alerts the set
 `admin_digest:<account_id>:held`; if Redis cannot be reached, the alert is
 mailed at once. The summary is sent by `Eunha::AdminDigestWorker` on the
 `mailers` queue.

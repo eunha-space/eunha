@@ -210,29 +210,35 @@ fn trends(tag: &str) -> Alert {
     })
 }
 
-/// Trends awaiting review and moderation suggestions go through the digest
-/// too: the first is mailed as Mastodon mails it, and later rounds are
-/// gathered into the summary, the trends as one list and the suggestions as
-/// one link.
+/// Trends awaiting review and moderation suggestions are not urgent: they
+/// are never mailed at once, and open no window, so a report that follows is
+/// mailed at once all the same. They wait for a summary a window later, the
+/// trends as one list and the suggestions as one link.
 #[tokio::test]
-async fn trends_and_moderation_suggestions_join_the_summary() {
+async fn trends_and_moderation_suggestions_wait_for_the_summary() {
     let ctx = TestContext::new("admin-digest-trends").await;
     ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
     let alice: i64 = ctx.alice_id.parse().unwrap();
     make_admin(&ctx.db, alice).await;
 
     alert(&ctx, alice, STAFF, trends("first")).await;
-    let first = format!("New trends up for review on {}", ctx.domain);
-    let mail = ctx.mail_to(STAFF, &first).await.expect("mailed at once");
-    assert!(mail.text.contains("#first"));
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(ctx.sent_to(STAFF).is_empty(), "not mailed at once");
+    let jobs = digest_jobs(&ctx).await;
+    assert_eq!(jobs.len(), 1, "a summary a window from now");
+    assert!(jobs[0].seconds_until_due > 3600.0 && jobs[0].seconds_until_due <= 3660.0);
 
+    // A report is still mailed at once, and opens a window that holds the
+    // rest.
+    alert(&ctx, alice, STAFF, report(1)).await;
+    let first = format!("New report for {} (#1)", ctx.domain);
+    assert!(ctx.mail_to(STAFF, &first).await.is_some());
     alert(&ctx, alice, STAFF, Alert::ModerationSuggestions).await;
     alert(&ctx, alice, STAFF, trends("second")).await;
-    alert(&ctx, alice, STAFF, report(1)).await;
-    alert(&ctx, alice, STAFF, trends("third")).await;
+    alert(&ctx, alice, STAFF, report(2)).await;
     alert(&ctx, alice, STAFF, Alert::ModerationSuggestions).await;
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert_eq!(ctx.sent_to(STAFF).len(), 1, "only the first was mailed");
+    assert_eq!(ctx.sent_to(STAFF).len(), 1, "only the report was mailed");
 
     close_window(&ctx, alice).await;
     let subject = format!(
@@ -241,9 +247,8 @@ async fn trends_and_moderation_suggestions_join_the_summary() {
     );
     let summary = ctx.mail_to(STAFF, &subject).await.expect("the summary");
     let text = &summary.text;
-    assert!(text.contains("Report #1"));
-    assert!(text.contains("#second") && text.contains("#third"));
-    assert!(!text.contains("#first"), "already mailed");
+    assert!(text.contains("Report #2"));
+    assert!(text.contains("#first") && text.contains("#second"));
     assert_eq!(
         text.matches("/admin/trends/tags?status=pending_review")
             .count(),
@@ -255,8 +260,54 @@ async fn trends_and_moderation_suggestions_join_the_summary() {
         1,
         "one link to the suggestions: {text}"
     );
-    assert!(text.find("Report #1") < text.find("#second"));
+    assert!(text.find("Report #2") < text.find("#first"));
     assert!(text.contains("at most one email like this an hour"));
+    assert_eq!(summaries(&ctx).len(), 1);
+}
+
+/// A summary of trends alone opens no window: the next report is mailed at
+/// once.
+#[tokio::test]
+async fn a_summary_of_trends_alone_opens_no_window() {
+    let ctx = TestContext::new("admin-digest-trends-alone").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+
+    alert(&ctx, alice, STAFF, trends("first")).await;
+    alert(&ctx, alice, STAFF, trends("second")).await;
+    close_window(&ctx, alice).await;
+    let subject = format!("New for review on {}: 2 trends", ctx.domain);
+    assert!(ctx.mail_to(STAFF, &subject).await.is_some());
+    assert_eq!(summaries(&ctx).len(), 1, "one summary for both rounds");
+    assert!(digest_jobs(&ctx).await.is_empty());
+
+    alert(&ctx, alice, STAFF, report(1)).await;
+    let first = format!("New report for {} (#1)", ctx.domain);
+    assert!(ctx.mail_to(STAFF, &first).await.is_some());
+}
+
+/// The summary a trend set leaves what is held to a window that has opened
+/// since, whose own summary carries it.
+#[tokio::test]
+async fn a_trends_summary_waits_for_a_window_opened_since() {
+    use eunha::jobs::Job;
+    let ctx = TestContext::new("admin-digest-trends-window").await;
+    ctx.state.jobs.set_mode(eunha::jobs::Mode::Durable);
+    let alice: i64 = ctx.alice_id.parse().unwrap();
+
+    alert(&ctx, alice, STAFF, trends("first")).await;
+    alert(&ctx, alice, STAFF, report(1)).await;
+    admin_digest::AdminDigestJob {
+        account_id: alice,
+        unless_window_open: true,
+    }
+    .perform(&ctx.state)
+    .await
+    .unwrap();
+    assert_eq!(
+        admin_digest::held(&ctx.state, alice).await,
+        vec![trends("first")]
+    );
 }
 
 /// `staff_alert_digest_minutes` sets how long a window stays open.

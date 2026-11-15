@@ -13,6 +13,13 @@
 //! window, so a busy stretch makes one mail a window. A window with nothing
 //! held ends quietly, and the next alert is again mailed at once.
 //!
+//! Trends and moderation suggestions are never urgent, so they are never
+//! mailed at once: one that comes in while no window is open is held without
+//! opening one, and goes out in a summary a window later, unless a report,
+//! appeal or sign-up opens a window first, whose summary then carries it. A
+//! summary of trends and suggestions alone opens no window either, so an
+//! urgent alert is never held behind one.
+//!
 //! Each kind's `notification_emails.*` opt-out is asked before an alert gets
 //! here. The window is a `SET NX` key and the held alerts a set beside it, both
 //! in the coordination pool, as email subscription batches are. Should Redis
@@ -99,14 +106,42 @@ fn held_key(state: &AppState, account_id: i64) -> String {
         .key(format!("admin_digest:{account_id}:held"))
 }
 
-/// Alert the staff member `account_id`, at `to`: mail it now if no window of
-/// theirs is open, and open one; otherwise hold it for the window's summary.
+impl Alert {
+    /// Whether the first of these after a quiet spell is mailed at once:
+    /// reports, appeals and sign-ups are; trends and moderation suggestions
+    /// wait for a summary.
+    pub fn is_urgent(&self) -> bool {
+        !matches!(self, Alert::Trends(_) | Alert::ModerationSuggestions)
+    }
+}
+
+/// Alert the staff member `account_id`, at `to`. An urgent alert is mailed
+/// now if no window of theirs is open, and opens one; otherwise it is held for
+/// the window's summary. Any other alert is held, and if no window is open, a
+/// summary is set for a window from now.
 pub async fn alert(state: &AppState, account_id: i64, to: &str, alert: Alert) {
+    if !alert.is_urgent() {
+        match hold_quietly(state, account_id, &alert).await {
+            Ok(true) => {}
+            Ok(false) => {
+                let job = AdminDigestJob {
+                    account_id,
+                    unless_window_open: true,
+                };
+                crate::jobs::push_in(state, flush_after(state), job).await;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "could not hold a staff alert; mailing it now");
+                send_now(state, to, &alert).await;
+            }
+        }
+        return;
+    }
     match hold(state, account_id, &alert).await {
         Ok(true) => {}
         Ok(false) => {
             send_now(state, to, &alert).await;
-            crate::jobs::push_in(state, flush_after(state), AdminDigestJob { account_id }).await;
+            crate::jobs::push_in(state, flush_after(state), AdminDigestJob::new(account_id)).await;
         }
         Err(error) => {
             tracing::warn!(%error, "could not hold a staff alert; mailing it now");
@@ -130,6 +165,29 @@ async fn hold(state: &AppState, account_id: i64, alert: &Alert) -> anyhow::Resul
     if opened.is_some() {
         return Ok(false);
     }
+    add_held(state, &mut redis, account_id, alert).await?;
+    Ok(true)
+}
+
+/// Hold `alert` for `account_id`'s next summary without opening a window.
+/// `true` when a window is open, whose summary will carry it.
+async fn hold_quietly(state: &AppState, account_id: i64, alert: &Alert) -> anyhow::Result<bool> {
+    let mut redis = state.redis_coordination.clone();
+    add_held(state, &mut redis, account_id, alert).await?;
+    let open: bool = redis::cmd("EXISTS")
+        .arg(window_key(state, account_id))
+        .query_async(&mut redis)
+        .await?;
+    Ok(open)
+}
+
+/// Add `alert` to `account_id`'s held set.
+async fn add_held(
+    state: &AppState,
+    redis: &mut redis::aio::ConnectionManager,
+    account_id: i64,
+    alert: &Alert,
+) -> anyhow::Result<()> {
     let held = serde_json::to_string(&Held {
         at: chrono::Utc::now(),
         alert: alert.clone(),
@@ -144,9 +202,9 @@ async fn hold(state: &AppState, account_id: i64, alert: &Alert) -> anyhow::Resul
         .arg(&key)
         .arg(held_ttl(state))
         .ignore()
-        .query_async(&mut redis)
+        .query_async(redis)
         .await?;
-    Ok(true)
+    Ok(())
 }
 
 /// The alert as Mastodon mails it.
@@ -277,8 +335,14 @@ pub async fn flush(state: &AppState, account_id: i64) -> anyhow::Result<usize> {
         .arg(held.iter().map(|(member, _)| member).collect::<Vec<_>>())
         .query_async(&mut redis)
         .await?;
-    // The summary counts as this window's mail. If an alert has already opened
-    // a window since the last one closed, that window has its own summary.
+    // A summary with a report, appeal or sign-up in it counts as this
+    // window's mail. One of trends and suggestions alone opens no window, so
+    // that the next urgent alert is not held behind it. If an alert has
+    // already opened a window since the last one closed, that window has its
+    // own summary.
+    if !held.iter().any(|(_, alert)| alert.is_urgent()) {
+        return Ok(held.len());
+    }
     let opened: Option<String> = redis::cmd("SET")
         .arg(window_key(state, account_id))
         .arg("1")
@@ -288,7 +352,7 @@ pub async fn flush(state: &AppState, account_id: i64) -> anyhow::Result<usize> {
         .query_async(&mut redis)
         .await?;
     if opened.is_some() {
-        crate::jobs::push_in(state, flush_after(state), AdminDigestJob { account_id }).await;
+        crate::jobs::push_in(state, flush_after(state), AdminDigestJob::new(account_id)).await;
     }
     Ok(held.len())
 }
@@ -297,6 +361,20 @@ pub async fn flush(state: &AppState, account_id: i64) -> anyhow::Result<usize> {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct AdminDigestJob {
     pub account_id: i64,
+    /// Set for the summary a trend or moderation suggestion set while no
+    /// window was open: if a window has opened since, its own summary will
+    /// carry what is held, and this one sends nothing.
+    #[serde(default)]
+    pub unless_window_open: bool,
+}
+
+impl AdminDigestJob {
+    fn new(account_id: i64) -> Self {
+        Self {
+            account_id,
+            unless_window_open: false,
+        }
+    }
 }
 
 impl crate::jobs::Job for AdminDigestJob {
@@ -305,6 +383,16 @@ impl crate::jobs::Job for AdminDigestJob {
         crate::jobs::Options::DEFAULT.queue(crate::jobs::Queue::Mailers);
 
     async fn perform(self, state: &AppState) -> anyhow::Result<()> {
+        if self.unless_window_open {
+            let mut redis = state.redis_coordination.clone();
+            let open: bool = redis::cmd("EXISTS")
+                .arg(window_key(state, self.account_id))
+                .query_async(&mut redis)
+                .await?;
+            if open {
+                return Ok(());
+            }
+        }
         flush(state, self.account_id).await.map(drop)
     }
 }
