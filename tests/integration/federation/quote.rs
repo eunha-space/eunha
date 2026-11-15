@@ -1467,3 +1467,25 @@ async fn test_a_quote_request_is_accepted_when_its_answer_cannot_be_sent() {
     .unwrap();
     assert_eq!(notified, 1);
 }
+
+/// A QuoteRequest whose instrument quotes nothing fails, as Mastodon's
+/// raises calling `quote` on it, and is tried again.
+#[tokio::test]
+async fn test_a_quote_request_for_a_post_quoting_nothing_is_retried() {
+    let r = Requested::new("quote-request-retried").await;
+    let carol_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
+        .bind(&r.carol_uri)
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    let plain = format!("{}/statuses/9", r.carol_uri);
+    seed_remote_status(&r.ctx.db, carol_id, &plain).await;
+    r.send(&r.request(&plain)).await;
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::ProcessingWorker'",
+    )
+    .fetch_one(&r.ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(queued, 1);
+}

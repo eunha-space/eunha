@@ -798,8 +798,12 @@ pub(super) async fn handle_quote_request(
         .await?
         .map(|(id, _)| id);
     }
+    // `# TODO: raise if status is nil`: it raises regardless, calling
+    // `quote` on nil, and the activity is tried again.
     let Some(quoting_id) = quoting_id else {
-        return Ok(());
+        return Err(crate::error::AppError::Internal(anyhow::anyhow!(
+            "the QuoteRequest's instrument {instrument_uri:?} could not be found"
+        )));
     };
     // Sanity check: `status.quote.quoted_status == quoted_status &&
     // status.account == @account`.
@@ -807,8 +811,11 @@ pub(super) async fn handle_quote_request(
         sqlx::query_scalar!("SELECT account_id FROM statuses WHERE id = $1", quoting_id)
             .fetch_one(&state.db)
             .await?;
+    // `status.quote.quoted_status` raises for a status that quotes nothing.
     let Some(quote) = crate::quotes::find_by_status(&state.db, quoting_id).await? else {
-        return Ok(());
+        return Err(crate::error::AppError::Internal(anyhow::anyhow!(
+            "the QuoteRequest's instrument {instrument_uri:?} quotes nothing"
+        )));
     };
     if quote.quoted_status_id != Some(quoted.id) || quoting_account != quoter_id {
         return Ok(());

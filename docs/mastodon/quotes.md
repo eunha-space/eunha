@@ -57,9 +57,10 @@ gone rejects the quote. A quote of a local post waits for its `QuoteRequest`,
 which is accepted when the requester may quote the post and the quoting post's
 quote names it, and answered at the requester's own inbox; a requester
 with no inbox, or an author with no key, is not answered, but the quote is
-accepted all the same. An edit that
-changes the quoted post replaces the quote, and a changed stamp sends it back
-to pending.
+accepted all the same. One whose quoting post cannot be found, or quotes
+nothing, fails and is tried again, as Mastodon's raises calling `quote` on it.
+An edit that changes the quoted post replaces the quote, and a changed stamp
+sends it back to pending.
 
 The `quotes_count` of the quoted post moves as `Quote`'s callbacks move it: up
 by one when a quote is created accepted or becomes accepted, down by one when an
