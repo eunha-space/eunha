@@ -355,3 +355,24 @@ async fn test_a_quote_is_verified_on_behalf_of_a_local_follower() {
         );
     }
 }
+
+/// `raise RecursionLimitExceededError if @depth > MAX_SYNCHRONOUS_DEPTH`:
+/// a post taken in at depth 0 has its quoted posts fetched at depths 1, 2
+/// and 3, and the one quoted at depth 3 is not fetched.
+#[tokio::test]
+async fn test_a_chain_of_quotes_is_fetched_three_deep() {
+    let (ctx, remote, base) = context("quote-chain-depth").await;
+    for n in 0..5 {
+        let quoted = format!("c{}", n + 1);
+        remote.put(
+            &format!("/notes/c{n}"),
+            note(&base, "eve", &format!("c{n}"), Some(&quoted), None),
+        );
+    }
+    store(&ctx, &base, "c0").await;
+    for n in 1..=3 {
+        assert!(held(&ctx, &base, &format!("c{n}")).await, "c{n}");
+    }
+    assert!(!held(&ctx, &base, "c4").await);
+    assert!(!remote.fetched("/notes/c4"));
+}

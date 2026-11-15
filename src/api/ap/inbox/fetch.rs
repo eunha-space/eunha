@@ -51,8 +51,9 @@ pub async fn fetch_remote_status_prefetched(
     .map(|(id, _)| id))
 }
 
-/// Largest depth to which quoted posts are fetched while a status is
-/// processed (`VerifyQuoteService::MAX_SYNCHRONOUS_DEPTH`).
+/// `VerifyQuoteService::MAX_SYNCHRONOUS_DEPTH`: a quoted post is fetched
+/// for a status at no greater depth than this, so the chain fetched goes one
+/// deeper (a status taken in at depth 0 fetches posts at depths 1 to 3).
 pub(super) const MAX_FETCH_DEPTH: u8 = 2;
 
 /// `::FetchRemoteStatusService#call` (not the `ActivityPub::` one): the

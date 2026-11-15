@@ -676,7 +676,7 @@ async fn find_or_fetch_status(
     }
     // `raise Mastodon::RecursionLimitExceededError if @depth >
     // MAX_SYNCHRONOUS_DEPTH && status.nil?`
-    if depth >= super::fetch::MAX_FETCH_DEPTH {
+    if depth > super::fetch::MAX_FETCH_DEPTH {
         return Ok(None);
     }
     Ok(Box::pin(super::fetch_remote_status_with(
