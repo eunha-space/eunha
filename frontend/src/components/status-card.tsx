@@ -260,15 +260,13 @@ export function StatusCard({
   const { openCompose } = useComposeModal()
 
   const isOwn = !!token && getMeId() === status.account.id
-  // The Quote item is always there, disabled with the reason when the post
-  // may not be quoted, as in Mastodon's boost menu. Signed out, Mastodon
-  // leaves it enabled to open its remote-interaction dialog, which eunha's
-  // web client does not have (`remote-interaction-helper-not-served`); it is
-  // disabled instead, as Boost and Favourite are.
-  const quoteItem = token
-    ? quoteItemState(status, getMeId())
-    : { ...quoteItemState(status, null), disabled: true }
-  const canQuote = true
+  // The boost menu's Quote item is always there, disabled with the reason
+  // when the post may not be quoted, as in Mastodon's `BoostOrQuoteMenu`.
+  // Signed out, Mastodon opens its remote-interaction dialog from the menu,
+  // which eunha's web client does not have
+  // (`remote-interaction-helper-not-served`): the button is disabled instead,
+  // as Favourite is.
+  const quoteItem = quoteItemState(status, getMeId())
   // A post that came from another instance: `acct` carries the domain only for
   // remote accounts. `url` is then the post's page on that instance, which is
   // where its full context lives — offer it the way Mastodon's web client does.
@@ -436,6 +434,9 @@ export function StatusCard({
   // Public and unlisted posts can be boosted, and your own followers-only
   // ones, to your followers again (Mastodon's `boostItemState`).
   const boostItem = boostItemState(status, token ? getMeId() : null)
+  // Mastodon's `isMenuDisabled`: nothing in the menu can be chosen.
+  const boostMenuDisabled = boostItem.disabled && quoteItem.disabled
+  const boostMenuLabel = boostMenuDisabled ? 'Boosts and quotes are disabled' : 'Boost or quote'
 
   if (deleted) return null
 
@@ -737,12 +738,13 @@ export function StatusCard({
             // Mastodon's `BoostButton` does, with its labels.
             <DropdownMenu>
               <DropdownMenuTrigger
-                disabled={busy}
+                disabled={busy || boostMenuDisabled}
                 render={
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Boost or quote"
+                    aria-label={boostMenuLabel}
+                    title={boostMenuLabel}
                     className={cn(
                       'text-muted-foreground gap-1.5',
                       status.reblogged && 'text-primary',
@@ -768,22 +770,18 @@ export function StatusCard({
                     )}
                   </span>
                 </DropdownMenuItem>
-                {canQuote && (
-                  <DropdownMenuItem
-                    disabled={quoteItem.disabled}
-                    onClick={() => openCompose({ quoteOf: status })}
-                  >
-                    <Quote />
-                    <span className="flex flex-col">
-                      {status.quoteApproval?.currentUser === 'manual' && !quoteItem.disabled
-                        ? 'Request to quote'
-                        : quoteItem.title}
-                      {quoteItem.meta && (
-                        <span className="text-muted-foreground text-xs">{quoteItem.meta}</span>
-                      )}
-                    </span>
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem
+                  disabled={quoteItem.disabled}
+                  onClick={() => openCompose({ quoteOf: status })}
+                >
+                  <Quote />
+                  <span className="flex flex-col">
+                    {quoteItem.title}
+                    {quoteItem.meta && (
+                      <span className="text-muted-foreground text-xs">{quoteItem.meta}</span>
+                    )}
+                  </span>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
