@@ -192,10 +192,12 @@ pub(super) async fn process_quote(
 
 /// `ActivityPub::ProcessStatusUpdateService`'s quote handling, for the remote
 /// status `status_id` just updated from `object`: `update_quote!` for an
-/// edit (`explicit`), `update_quote_approval!` otherwise. Says whether an
-/// implicit update is broadcast: whether the quote's last save moved its
-/// state (`@status.quote&.state_previously_changed?`). For an edit, whether
-/// the quote was replaced or moved state.
+/// edit (`explicit`), `update_quote_approval!` otherwise. For an implicit
+/// update, says whether it is broadcast: whether the quote's last save moved
+/// its state (`@status.quote&.state_previously_changed?`). For an edit, says
+/// whether the quote was added, dropped or replaced (`@quote_changed`), which
+/// makes the edit significant; see the `remote-edit-quote-change-significant`
+/// divergence.
 pub(super) async fn update_quote(
     state: &AppState,
     status_id: i64,
@@ -206,7 +208,6 @@ pub(super) async fn update_quote(
 ) -> AppResult<bool> {
     let fields = QuoteFields::parse(object, state.instance.web_domain());
     let existing = crate::quotes::find_by_status(&state.db, status_id).await?;
-    let before = existing.as_ref().map(|q| (q.id, q.state));
     let account_uri = crate::quotes::account_uri(state, account_id)
         .await?
         .unwrap_or_default();
@@ -263,8 +264,10 @@ pub(super) async fn update_quote(
         }
         return Ok(false);
     };
+    let mut changed = false;
     let quote = match existing {
         Some(quote) if quoted_uri.is_some() && quoted_uri.as_deref() != fields.uri => {
+            changed = true;
             // The quoted post changed: the old quote goes, revoked first if
             // it was an accepted quote of ours.
             if quote.accepted() && quoted_account_local(state, &quote).await? {
@@ -287,7 +290,10 @@ pub(super) async fn update_quote(
         ),
         // `Quote.create(status:, approval_uri: nil, legacy:)`, with no state:
         // pending, even of a `Tombstone`.
-        None => insert_pending(state, status_id, account_id, &fields, false).await?,
+        None => {
+            changed = true;
+            insert_pending(state, status_id, account_id, &fields, false).await?
+        }
     };
     if let Some(quote) = quote {
         let embedded = fields.embedded(&account_uri, context);
@@ -306,7 +312,7 @@ pub(super) async fn update_quote(
             refetch_and_verify_later(state, quote_id, fields.uri, fields.approval_uri).await;
         }
     }
-    state_moved(state, status_id, before).await
+    Ok(changed)
 }
 
 /// A new quote of `status_id`: pending, or `deleted` when `deleted`.
@@ -385,19 +391,6 @@ async fn reset_if_stamp_changed(
 #[derive(Default)]
 pub(super) struct Saved {
     state_changed: bool,
-}
-
-/// Whether the quote of `status_id` is another than `before`, or in another
-/// state.
-async fn state_moved(
-    state: &AppState,
-    status_id: i64,
-    before: Option<(i64, i32)>,
-) -> AppResult<bool> {
-    let after = crate::quotes::find_by_status(&state.db, status_id)
-        .await?
-        .map(|q| (q.id, q.state));
-    Ok(after != before)
 }
 
 async fn quoted_account_local(state: &AppState, quote: &Quote) -> AppResult<bool> {

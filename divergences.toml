@@ -2207,3 +2207,28 @@ retrying an activity that can only fail the same way does nothing."""
 evidence = "tests/remote_quotes.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "remote-edit-quote-change-significant"
+kind = "behaviour"
+summary = "A remote edit that adds, drops or replaces its quote is a significant edit"
+mastodon = """
+`ProcessStatusUpdateService#update_immediate_attributes!` includes \
+`@quote_changed` in `@significant_changes`, but runs before \
+`update_metadata!` calls `update_quote!`, the only place that sets it, so it \
+is always false there. An edit that changes only its quote gets no \
+`edited_at`, no edit history, no preview card reset, and is neither broadcast \
+nor forwarded."""
+eunha = """
+Counts an added, dropped or replaced quote as a significant change, as \
+`@quote_changed` is meant to: the post is marked edited, the version goes \
+into its history, its preview card is fetched again, and the update is \
+broadcast and forwarded."""
+why = """
+Mastodon clearly means a changed quote to count, since it names \
+`@quote_changed` among the significant changes; the order of two calls keeps \
+it from ever doing so. Changing which post a post quotes changes what readers \
+see, and leaving it out of the history hides the change."""
+evidence = "tests/integration/federation/quote.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

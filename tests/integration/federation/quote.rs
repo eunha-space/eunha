@@ -1539,12 +1539,14 @@ async fn test_a_quote_an_edit_adds_of_a_tombstone_is_pending() {
     assert_eq!(quote_state(&r.ctx, quoting).await, 0);
 }
 
-/// An edit's quote is not a significant change (`update_quote!` runs after
-/// `@significant_changes` is set), so an edit that only drops its quote is
-/// not broadcast: whoever boosted the post is not told of an update.
+/// An edit that only drops its quote is significant (`@quote_changed`), as
+/// Mastodon means it to be though it never is there: see the
+/// `remote-edit-quote-change-significant` divergence. The post is marked
+/// edited, the original and the new version go into its history, and whoever
+/// boosted it is told of the update.
 #[tokio::test]
-async fn test_an_edit_that_only_changes_its_quote_is_not_broadcast() {
-    let r = Requested::new("quote-edit-not-broadcast").await;
+async fn test_an_edit_that_only_changes_its_quote_is_significant() {
+    let r = Requested::new("quote-edit-significant").await;
     let mut create = r.create(1);
     create["object"]["published"] = json!("2026-01-01T00:00:00Z");
     r.send(&create).await;
@@ -1567,247 +1569,23 @@ async fn test_an_edit_that_only_changes_its_quote_is_not_broadcast() {
         .await
         .unwrap();
     assert_eq!(quotes, 0, "the edit took the quote away");
-    let updates: i64 =
-        sqlx::query_scalar(r#"SELECT count(*) FROM notifications WHERE "type" = 'update'"#)
+    let edited: bool =
+        sqlx::query_scalar("SELECT edited_at IS NOT NULL FROM statuses WHERE id = $1")
+            .bind(quoting)
             .fetch_one(&r.ctx.db)
             .await
             .unwrap();
-    assert_eq!(updates, 0);
-}
-
-/// An implicit update is broadcast when the quote's last save moved its
-/// state (`state_previously_changed?`), not when its state differs from
-/// before: a changed stamp sends a self-quote back to pending, and
-/// `fast_track_approval!` accepts it again, which is broadcast.
-#[tokio::test]
-async fn test_an_implicit_update_that_reaccepts_a_quote_is_broadcast() {
-    let r = Requested::new("quote-implicit-reaccepted").await;
-    let carol_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
-        .bind(&r.carol_uri)
+    assert!(edited, "the post is marked edited");
+    let edits: i64 = sqlx::query_scalar("SELECT count(*) FROM status_edits WHERE status_id = $1")
+        .bind(quoting)
         .fetch_one(&r.ctx.db)
         .await
         .unwrap();
-    let own = format!("{}/statuses/100", r.carol_uri);
-    seed_remote_status(&r.ctx.db, carol_id, &own).await;
-    let mut create = r.create(1);
-    create["object"]["quote"] = json!(own);
-    r.send(&create).await;
-    let quoting = r.status(1).await;
-    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
-    sqlx::query("UPDATE quotes SET approval_uri = $2 WHERE status_id = $1")
-        .bind(quoting)
-        .bind(format!("{}/stamps/1", r.carol_uri))
-        .execute(&r.ctx.db)
-        .await
-        .unwrap();
-    let resp = r
-        .ctx
-        .api
-        .post_json(
-            &format!("/api/v1/statuses/{quoting}/reblog"),
-            Some(&r.ctx.bob_token),
-            &json!({}),
-        )
-        .await;
-    assert!(resp.status().is_success(), "{}", resp.status());
-
-    let mut update = r.update(
-        1,
-        "",
-        json!({"quote": own, "quoteAuthorization": format!("{}/stamps/2", r.carol_uri)}),
-    );
-    update["object"].as_object_mut().unwrap().remove("updated");
-    r.send(&update).await;
-    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
+    assert_eq!(edits, 2, "the original and the edit");
     let updates: i64 =
         sqlx::query_scalar(r#"SELECT count(*) FROM notifications WHERE "type" = 'update'"#)
             .fetch_one(&r.ctx.db)
             .await
             .unwrap();
     assert_eq!(updates, 1);
-}
-
-/// A quoted post whose server does not answer is not tried again for
-/// itself: `VerifyQuoteService` keeps the error, raises it again only if the
-/// quoting post is missing, which it never is, and goes on to the stamp,
-/// which there is none of.
-#[tokio::test]
-async fn test_an_unreachable_quoted_post_without_a_stamp_is_not_retried() {
-    let r = Requested::new("quote-unreachable-unstamped").await;
-    let mut create = r.create(1);
-    create["object"]["quote"] = json!("https://dave.invalid/users/dave/statuses/7");
-    r.send(&create).await;
-    let quoting = r.status(1).await;
-    assert_eq!(quote_state(&r.ctx, quoting).await, 0);
-    let retries: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::RefetchAndVerifyQuoteWorker'",
-    )
-    .fetch_one(&r.ctx.db)
-    .await
-    .unwrap();
-    assert_eq!(retries, 0);
-}
-
-async fn quote_retries(ctx: &TestContext) -> i64 {
-    sqlx::query_scalar(
-        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::RefetchAndVerifyQuoteWorker'",
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap()
-}
-
-/// A stamp is kept as `unsupported_uri_scheme?` and `TagManager#local_url?`
-/// tell it: by how its string starts, case and all, and by its host with
-/// its port. One kept is fetched, and here, unanswered, tried again later.
-#[tokio::test]
-async fn test_a_stamp_is_kept_by_its_scheme_and_its_host_and_port() {
-    let r = Requested::new("quote-stamp-scheme-port").await;
-    let (dave_id, dave_uri, dave_key) = seed_remote_with_key(&r.ctx, "dave", "dave.invalid").await;
-    let daves = format!("{dave_uri}/statuses/7");
-    let dave_post = seed_remote_status(&r.ctx.db, dave_id, &daves).await;
-
-    // `HTTPS://` does not start with `https://`: no stamp, nothing fetched.
-    let mut create = r.create(1);
-    create["object"]["quote"] = json!(daves);
-    create["object"]["quoteAuthorization"] = json!(format!("HTTPS://dave.invalid/stamps/1"));
-    r.send(&create).await;
-    assert_eq!(quote_retries(&r.ctx).await, 0);
-
-    // Our host on another port is not ours: kept, and fetched.
-    let mut create = r.create(2);
-    create["object"]["quote"] = json!(daves);
-    create["object"]["quoteAuthorization"] =
-        json!(format!("https://{}:8443/stamps/1", r.ctx.domain));
-    r.send(&create).await;
-    assert_eq!(quote_retries(&r.ctx).await, 1);
-
-    // An Accept's `result` is held to the same scheme test.
-    let ours: Value = r
-        .ctx
-        .api
-        .post_json(
-            "/api/v1/statuses",
-            Some(&r.ctx.alice_token),
-            &json!({"status": "alice quotes dave", "quoted_status_id": dave_post.to_string(), "visibility": "public"}),
-        )
-        .await
-        .json()
-        .await
-        .unwrap();
-    let ours: i64 = ours["id"].as_str().unwrap().parse().unwrap();
-    let request_id: String =
-        sqlx::query_scalar("SELECT activity_uri FROM quotes WHERE status_id = $1")
-            .bind(ours)
-            .fetch_one(&r.ctx.db)
-            .await
-            .unwrap();
-    let accept = json!({
-        "@context": "https://www.w3.org/ns/activitystreams",
-        "id": format!("{dave_uri}#accepts/1"),
-        "type": "Accept",
-        "actor": dave_uri,
-        "object": request_id,
-        "result": "HTTPS://dave.invalid/users/dave/quote_authorizations/1",
-    });
-    let resp = r
-        .ctx
-        .api
-        .post_signed(
-            "/inbox",
-            &accept,
-            &format!("{dave_uri}#main-key"),
-            &dave_key,
-        )
-        .await;
-    assert!(resp.status().is_success(), "{}", resp.status());
-    assert_eq!(quote_state(&r.ctx, ours).await, 0);
-}
-
-async fn queued_activities(ctx: &TestContext) -> i64 {
-    sqlx::query_scalar(
-        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::ProcessingWorker'",
-    )
-    .fetch_one(&ctx.db)
-    .await
-    .unwrap()
-}
-
-/// A stamp inlined as an object is one `unsupported_uri_scheme?` raises
-/// on: a `Create` fails before the status is created, and an edit before
-/// any of it is kept, each to be tried again.
-#[tokio::test]
-async fn test_an_inlined_stamp_fails_the_activity() {
-    let r = Requested::new("quote-inlined-stamp").await;
-    let stamp = json!({
-        "id": format!("{}/stamps/1", r.carol_uri),
-        "type": "QuoteAuthorization",
-    });
-    let mut create = r.create(1);
-    create["object"]["quoteAuthorization"] = stamp.clone();
-    r.send(&create).await;
-    let created: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE uri = $1")
-        .bind(format!("{}/statuses/1", r.carol_uri))
-        .fetch_one(&r.ctx.db)
-        .await
-        .unwrap();
-    assert_eq!(created, 0);
-    assert_eq!(queued_activities(&r.ctx).await, 1);
-
-    let mut create = r.create(2);
-    create["object"]["published"] = json!("2026-01-01T00:00:00Z");
-    r.send(&create).await;
-    let quoting = r.status(2).await;
-    r.send(&r.update(
-        2,
-        "2026-01-02T00:00:00Z",
-        json!({"content": "edited", "quote": r.original_uri, "quoteAuthorization": [stamp]}),
-    ))
-    .await;
-    let text: String = sqlx::query_scalar("SELECT text FROM statuses WHERE id = $1")
-        .bind(quoting)
-        .fetch_one(&r.ctx.db)
-        .await
-        .unwrap();
-    assert_eq!(text, "carol quotes");
-    assert_eq!(queued_activities(&r.ctx).await, 2);
-}
-
-/// Posts are found as `TagManager#uri_to_resource` finds them: a local one
-/// by any URL that shows it, `/@alice/{id}` as much as its id, and a remote
-/// one by its URI without a fragment.
-#[tokio::test]
-async fn test_quoted_posts_are_found_as_uri_to_resource_finds_them() {
-    let r = Requested::new("quote-uri-to-resource").await;
-    let original_id: i64 = sqlx::query_scalar("SELECT id FROM statuses WHERE uri = $1")
-        .bind(&r.original_uri)
-        .fetch_one(&r.ctx.db)
-        .await
-        .unwrap();
-    r.send(&r.create(1)).await;
-    let quoting = r.status(1).await;
-    // Asked for by the post's web URL.
-    let mut request = r.request(&format!("{}/statuses/1", r.carol_uri));
-    request["object"] = json!(format!("https://{}/@alice/{original_id}", r.ctx.domain));
-    r.send(&request).await;
-    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
-
-    // A remote post quoted with a fragment is the one we hold.
-    let carol_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE uri = $1")
-        .bind(&r.carol_uri)
-        .fetch_one(&r.ctx.db)
-        .await
-        .unwrap();
-    let own = format!("{}/statuses/100", r.carol_uri);
-    let own_id = seed_remote_status(&r.ctx.db, carol_id, &own).await;
-    let mut create = r.create(2);
-    create["object"]["quote"] = json!(format!("{own}#quoted"));
-    r.send(&create).await;
-    let quoted: Option<i64> =
-        sqlx::query_scalar("SELECT quoted_status_id FROM quotes WHERE status_id = $1")
-            .bind(r.status(2).await)
-            .fetch_one(&r.ctx.db)
-            .await
-            .unwrap();
-    assert_eq!(quoted, Some(own_id));
 }

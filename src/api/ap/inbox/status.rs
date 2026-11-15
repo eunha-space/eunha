@@ -994,8 +994,8 @@ pub(super) async fn handle_update(
                 media_changed = true;
             }
             // `update_immediate_attributes!`: `@significant_changes`, the
-            // text, content warning, attachments or poll changed. (A quote
-            // changed only later, in `update_metadata!`, so it never counts.)
+            // text, content warning, attachments or poll changed, and below
+            // the quote.
             let significant = text_changed || media_changed || poll_changed;
 
             // Replace hashtags
@@ -1118,10 +1118,12 @@ pub(super) async fn handle_update(
 
             // `update_quote!` or `update_quote_approval!`, then
             // `broadcast_updates!`: for an edit that changed something, and
-            // for an implicit update that moved the quote. An edit's quote
-            // counts for nothing: `update_quote!` runs in `update_metadata!`,
-            // after `@significant_changes` was set, so an edit that changes
-            // only its quote is neither broadcast nor forwarded.
+            // for an implicit update that moved the quote. An edit that adds,
+            // drops or replaces its quote (`@quote_changed`) is significant.
+            // Mastodon means it to be, but sets `@significant_changes` in
+            // `update_immediate_attributes!`, before `update_metadata!` runs
+            // `update_quote!`, so there it never is: see the
+            // `remote-edit-quote-change-significant` divergence.
             let quote_moved = super::quote::update_quote(
                 state,
                 row.id,
@@ -1131,6 +1133,7 @@ pub(super) async fn handle_update(
                 explicit,
             )
             .await?;
+            let significant = significant || (explicit && quote_moved);
             if significant {
                 // `@status.edited_at = @status_parser.edited_at if
                 // significant_changes?`, then `create_edits!`: the original

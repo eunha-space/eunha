@@ -80,10 +80,12 @@ quotes nothing, fails and is tried again, as Mastodon's raises calling `quote`
 on it. An edit that changes the quoted post replaces the quote, and a changed
 stamp sends it back to pending. A quote an edit adds is pending, even of a
 `Tombstone`, as `update_quote!` creates it with no state; only a replaced one
-is `deleted`. A changed quote is not itself a change to the post, as
-`update_quote!` runs after Mastodon has decided whether the edit changed
-anything: an edit that changes only its quote records no version, and is
-neither shown again in timelines nor forwarded.
+is `deleted`. An edit that adds, drops or replaces its quote is a change to
+the post, as Mastodon means it to be: the post is marked edited, the version
+goes into its history, and the update is shown again in timelines and
+forwarded. Mastodon itself never counts it, because `update_quote!` runs after
+it has decided whether the edit changed anything; this is a recorded
+divergence.
 
 The `quotes_count` of the quoted post moves as `Quote`'s callbacks move it: up
 by one when a quote is created accepted or becomes accepted, down by one when an
