@@ -182,7 +182,11 @@ Two differences are decisions rather than bugs, and the flows leave them out:
 a report in a category that does not exist, and a push key that is the point
 at infinity, are each a 500 from Mastodon and a 422 from eunha
 (`report-unknown-category-rejected`,
-`push-subscription-unusable-key-rejected`).
+`push-subscription-unusable-key-rejected`). A third is a default: eunha keeps
+the federated timeline from visitors unless an administrator opens it
+(`federated-timeline-signed-in-by-default`), so its seed saves
+`remote_live_feed_access` as `public`, Mastodon's default, and a visitor's
+`/api/v1/timelines/public` is compared under the same setting on both.
 
 What they found, fixed in eunha: a remote account's entity carried `roles`; a
 report's posts were serialized for nobody rather than for the moderator reading

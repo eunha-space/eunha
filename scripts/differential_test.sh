@@ -177,6 +177,14 @@ SELECT id, 'Follow', 1, 10, 'follow', now(), now() FROM follow;
 INSERT INTO rules (priority, text, created_at, updated_at)
 VALUES (0, 'No spam', now(), now()),
        (1, 'Be kind', now(), now());
+-- Mastodon's default, which eunha's is not: eunha keeps the federated
+-- timeline from visitors unless an administrator opens it (divergences.toml,
+-- `federated-timeline-signed-in-by-default`). Compared under eunha's own
+-- default, a visitor's `/api/v1/timelines/public` is a 422 against
+-- Mastodon's 200, the divergence and not a difference; its evidence test
+-- covers that default. Saved as an administrator would save it.
+INSERT INTO settings (var, value, created_at, updated_at)
+VALUES ('remote_live_feed_access', '--- public' || chr(10), now(), now());
 -- And past the ids given explicitly above, or the first user, app or token
 -- made through the API collides with one of them — registering an app
 -- answered 500 until this was here. Accounts take `timestamp_id`, no sequence.
