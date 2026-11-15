@@ -31,6 +31,7 @@ import {
   translateStatus,
   setBookmark,
   setFavourite,
+  revokeQuote,
   setPin,
   setReblog,
   updateStatus,
@@ -45,6 +46,16 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog.tsx'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +74,7 @@ import { PreviewCard } from '@/components/preview-card.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
+import { RemoveQuoteHint } from '@/components/remove-quote-hint.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
 
@@ -232,6 +244,7 @@ export function StatusCard({
   const [editLanguage, setEditLanguage] = useState('')
   const [saving, setSaving] = useState(false)
   const [reporting, setReporting] = useState(false)
+  const [revoking, setRevoking] = useState(false)
   const [showFiltered, setShowFiltered] = useState(false)
   const [translation, setTranslation] = useState<StatusTranslation | null>(null)
   const [showTranslation, setShowTranslation] = useState(false)
@@ -257,8 +270,14 @@ export function StatusCard({
   // where its full context lives — offer it the way Mastodon's web client does.
   const remoteUrl = status.account.acct.includes('@') ? status.url : null
   const canReport = !!token && !isOwn
+  // Someone else's post quoting yours: Mastodon's `revokeQuote` interaction
+  // (`isQuoted && isNotMine`) takes your post out of it.
+  const quotedPost =
+    status.quote && 'quotedStatus' in status.quote ? status.quote.quotedStatus : null
+  const canRevokeQuote =
+    !!token && !isOwn && !!quotedPost && quotedPost.account.id === getMeId()
   const boostAccountId = boostedBy?.id ?? status.account.id
-  const hasMenu = isOwn || !!remoteUrl || canReport
+  const hasMenu = isOwn || !!remoteUrl || canReport || canRevokeQuote
 
   useEffect(() => {
     setStatus(initial)
@@ -352,6 +371,15 @@ export function StatusCard({
       setDeleted(true)
     } catch {
       // ignore
+    }
+  }
+
+  const onRevokeQuote = async () => {
+    if (!quotedPost) return
+    try {
+      setStatus(await revokeQuote(quotedPost.id, status.id, token))
+    } catch (e) {
+      toast.error(errorMessage(e))
     }
   }
 
@@ -505,6 +533,14 @@ export function StatusCard({
                       }
                     >
                       <ExternalLink /> Open original page
+                    </DropdownMenuItem>
+                  )}
+                  {canRevokeQuote && (
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => setRevoking(true)}
+                    >
+                      <Trash2 /> Remove my post from @{status.account.username}’s post
                     </DropdownMenuItem>
                   )}
                   {canReport && (
@@ -729,7 +765,32 @@ export function StatusCard({
             onClick={() => act(() => setBookmark(token, status.id, !status.bookmarked))}
           />
         </div>
+        <RemoveQuoteHint
+          canShow={canRevokeQuote && filterContext === 'notifications'}
+        />
       </CardContent>
+      {canRevokeQuote && (
+        <AlertDialog open={revoking} onOpenChange={setRevoking}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove post?</AlertDialogTitle>
+              <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  setRevoking(false)
+                  void onRevokeQuote()
+                }}
+              >
+                Remove post
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
       {canReport && (
         <ReportDialog
           account={status.account}

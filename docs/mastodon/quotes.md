@@ -65,6 +65,11 @@ with `unsafe`). A local author's stamp is named
 stored, as Mastodon validates. A remote author's `Delete` of a stamp revokes
 the quote here.
 
+The web client offers it, as Mastodon's does, in the menu of someone else's
+post that quotes yours (“Remove my post from @…’s post”), after a
+confirmation, and says once, on a quote notification, that the menu is
+where to find it.
+
 Changing a post's quote policy (`PUT /api/v1/statuses/:id/interaction_policy`)
 refreshes it in local timelines, without notifications, and sends it as an
 `Update`.

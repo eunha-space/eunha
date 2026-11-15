@@ -106,3 +106,62 @@ test('a quoted post’s own quote that cannot be fetched is unavailable', async 
   await setup(page, status('20', bob, { quote: { state: 'accepted', quoted_status_id: '30' } }))
   await expect(page.getByTestId('quoted-post').getByText('Post unavailable')).toBeVisible()
 })
+
+async function signedIn(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+    localStorage.setItem('eunha:me-id', '1')
+  })
+  await page.route('**/api/v1/accounts/verify_credentials**', (r) =>
+    r.fulfill({ json: { ...alice, source: { privacy: 'public' } } }))
+  await page.route('**/api/v1/notifications/unread_count**', (r) => r.fulfill({ json: { count: 0 } }))
+  await page.route('**/api/v1/markers', (r) => r.fulfill({ json: {} }))
+  await page.route('**/api/v1/timelines/**', (r) => r.fulfill({ json: [] }))
+}
+
+test('the quoted author can remove their post from a quote, after confirming', async ({ page }) => {
+  await signedIn(page)
+  const quoting = status('10', bob, { quote: { state: 'accepted', quoted_status: status('20', alice) } })
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: quoting }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  let revoked = false
+  await page.route('**/api/v1/statuses/20/quotes/10/revoke', (r) => {
+    revoked = r.request().method() === 'POST'
+    return r.fulfill({ json: { ...quoting, quote: { state: 'revoked', quoted_status: null } } })
+  })
+  await page.goto('/@bob/10')
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Remove my post from @bob’s post' }).click()
+  await expect(page.getByText('This action cannot be undone.')).toBeVisible()
+  await page.getByRole('button', { name: 'Remove post' }).click()
+  await expect(page.getByText('Post removed by author')).toBeVisible()
+  expect(revoked).toBe(true)
+})
+
+test('a quote of your post is not offered for removal to its own author', async ({ page }) => {
+  await signedIn(page)
+  const quoting = status('10', alice, { quote: { state: 'accepted', quoted_status: status('20', alice) } })
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: quoting }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto('/@alice/10')
+  await page.getByRole('button', { name: 'More' }).click()
+  await expect(page.getByRole('menuitem', { name: /Remove my post/ })).toHaveCount(0)
+})
+
+test('a quote notification says once where to remove the quote', async ({ page }) => {
+  await signedIn(page)
+  const quoting = (id: string) => status(id, bob, { quote: { state: 'accepted', quoted_status: status('20', alice) } })
+  await page.route('**/api/v1/notifications**', (r) => r.fulfill({ json: [
+    { id: '1', type: 'quote', created_at: '2026-01-01T00:00:00Z', account: bob, status: quoting('10') },
+    { id: '2', type: 'quote', created_at: '2026-01-01T00:00:00Z', account: bob, status: quoting('11') },
+  ] }))
+  await page.route('**/api/v1/notifications/unread_count**', (r) => r.fulfill({ json: { count: 0 } }))
+  await page.goto('/notifications')
+  await expect(page.getByText('Want to remove your quoted post?')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Got it' }).click()
+  await expect(page.getByText('Want to remove your quoted post?')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByText('quoted your post').first()).toBeVisible()
+  await expect(page.getByText('Want to remove your quoted post?')).toHaveCount(0)
+})

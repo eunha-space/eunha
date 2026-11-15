@@ -444,6 +444,21 @@ export function getStatus(id: string, token?: string): Promise<mastodon.v1.Statu
   return restClient(token).v1.statuses.$select(id).fetch()
 }
 
+// The quoted author's removal of someone's quote of their post
+// (`POST /api/v1/statuses/:quoted_id/quotes/:quoting_id/revoke`). It answers
+// with the quoting post, its quote now revoked. masto names no such method;
+// its proxy posts any action it does not know to the path it spells out.
+export function revokeQuote(
+  quotedId: string,
+  quotingId: string,
+  token: string,
+): Promise<mastodon.v1.Status> {
+  const quotes = restClient(token).v1.statuses.$select(quotedId).quotes as unknown as {
+    $select(id: string): { revoke(): Promise<mastodon.v1.Status> }
+  }
+  return quotes.$select(quotingId).revoke()
+}
+
 export function getStatusContext(
   id: string,
   token?: string,
