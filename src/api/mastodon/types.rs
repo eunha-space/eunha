@@ -261,13 +261,31 @@ pub struct QuoteApproval {
     pub current_user: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+/// A status's `quote`, as `REST::QuoteSerializer` renders it (`state` and
+/// `quoted_status`), or, for the quote of a quoted post,
+/// `REST::ShallowQuoteSerializer` (`state` and `quoted_status_id`). Either
+/// writes its second key whether or not it has a value, `null` when not.
+#[derive(Debug, Clone)]
 pub struct QuoteInfo {
     pub state: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub quoted_status: Option<Box<Status>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub quoted_status_id: Option<String>,
+    /// Rendered by `REST::ShallowQuoteSerializer`.
+    pub shallow: bool,
+}
+
+impl Serialize for QuoteInfo {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("state", &self.state)?;
+        if self.shallow {
+            map.serialize_entry("quoted_status_id", &self.quoted_status_id)?;
+        } else {
+            map.serialize_entry("quoted_status", &self.quoted_status)?;
+        }
+        map.end()
+    }
 }
 
 // ── Media ──────────────────────────────────────────────────────────────────

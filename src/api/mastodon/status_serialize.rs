@@ -413,6 +413,7 @@ pub async fn batch_quote_data(
                 state: state_str.clone(),
                 quoted_status: None,
                 quoted_status_id: Some(nested_qid.to_string()),
+                shallow: true,
             });
         }
         qs_map.insert(qs.id, api);
@@ -452,6 +453,7 @@ pub async fn batch_quote_data(
                 state: effective_state,
                 quoted_status: quoted_status.map(Box::new),
                 quoted_status_id: None,
+                shallow: false,
             },
         );
     }

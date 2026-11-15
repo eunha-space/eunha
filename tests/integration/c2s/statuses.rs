@@ -7463,7 +7463,7 @@ async fn test_quote_quoter_blocked_quotee_returns_404() {
 }
 
 /// A quote still waiting for its author's consent (as one of a remote post
-/// waits) shows its state, and does not embed the quoted post.
+/// waits) shows its state, and a `null` quoted post.
 #[tokio::test]
 async fn test_pending_quote_is_null_in_response() {
     let ctx = TestContext::new("quote-pending").await;
@@ -7511,9 +7511,10 @@ async fn test_pending_quote_is_null_in_response() {
         !quote["quote"].is_null(),
         "pending quote must appear in the response"
     );
-    assert_eq!(quote["quote"]["state"].as_str(), Some("pending"));
-    assert!(
-        quote["quote"]["quoted_status"].is_null(),
+    // `REST::QuoteSerializer` writes `quoted_status` even when it is nil.
+    assert_eq!(
+        quote["quote"],
+        json!({"state": "pending", "quoted_status": null}),
         "pending quote must not embed quoted_status"
     );
 }
