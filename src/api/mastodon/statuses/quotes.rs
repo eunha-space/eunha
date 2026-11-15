@@ -7,66 +7,114 @@ use super::*;
 
 // ── GET /api/v1/statuses/:id/quotes ──────────────────────────────────────
 
+/// `Api::V1::Statuses::QuotesController#index`: the posts quoting this one
+/// with an accepted quote, paged by the quotes' ids
+/// (`@status.quotes.accepted.paginate_by_max_id`), less those of accounts
+/// the viewer blocks, mutes or is blocked by (`not_excluded_by_account`);
+/// for anyone but the quoted author, a page is then rid of what
+/// `StatusFilter#filtered?` hides from them.
 pub async fn get_status_quotes(
     state: AppState,
     Path(id): Path<i64>,
     Extension(auth): Extension<AuthenticatedUser>,
-    axum::extract::RawQuery(raw_query): axum::extract::RawQuery,
     req_headers: axum::http::HeaderMap,
     axum::extract::OriginalUri(uri): axum::extract::OriginalUri,
     Query(params): Query<PaginationParams>,
 ) -> AppResult<impl axum::response::IntoResponse> {
     auth.require_scope("read:statuses")?;
-    let viewer_id = Some(auth.account_id);
+    let viewer_id = auth.account_id;
     let limit: i64 = params.limit_clamped(20, 40);
+    // `paginate_by_max_id(limit, params[:max_id], params[:since_id])`:
+    // `min_id` is not read.
     let max_id: Option<i64> = params.max_id.as_deref().and_then(|s| s.parse().ok());
     let since_id: Option<i64> = params.since_id.as_deref().and_then(|s| s.parse().ok());
-    let min_id: Option<i64> = params.min_id.as_deref().and_then(|s| s.parse().ok());
 
     // `set_status`: the quoted status, as `StatusPolicy#show?` lets the
     // caller see it.
     let (quoted_status, _) = fetch_status_with_account(&state, id).await?;
-    check_status_visible(&state, &quoted_status, auth.account_id).await?;
+    check_status_visible(&state, &quoted_status, viewer_id).await?;
 
-    // Only return accepted quotes; private quoting statuses are hidden from non-owners
-    let quoted_owner: Option<i64> =
-        sqlx::query_scalar!("SELECT account_id FROM statuses WHERE id = $1", id,)
-            .fetch_optional(&state.db)
-            .await?;
-    let viewer_is_owner = viewer_id.is_some() && viewer_id == quoted_owner;
-
-    let quotes = sqlx::query_as!(
-        DbStatus,
-        r#"SELECT s.* FROM statuses s
-           JOIN quotes q ON q.status_id = s.id AND q.quoted_status_id = $1
-           WHERE s.deleted_at IS NULL
-             AND q.state = 1
-             AND (s.visibility IN (0, 1) OR (s.visibility = 2 AND $6::bool))
-             AND ($2::bigint IS NULL OR q.id < $2)
-             AND ($3::bigint IS NULL OR q.id > $3)
+    let rows = sqlx::query!(
+        r#"SELECT q.id AS "quote_id!", s.id AS "status_id!" FROM quotes q
+           JOIN statuses s ON s.id = q.status_id AND s.deleted_at IS NULL
+           WHERE q.quoted_status_id = $1 AND q.state = 1
+             AND NOT EXISTS (SELECT 1 FROM blocks b
+                             WHERE b.account_id = $2 AND b.target_account_id = s.account_id)
+             AND NOT EXISTS (SELECT 1 FROM blocks b
+                             WHERE b.account_id = s.account_id AND b.target_account_id = $2)
+             AND NOT EXISTS (SELECT 1 FROM mutes m
+                             WHERE m.account_id = $2 AND m.target_account_id = s.account_id)
+             AND ($3::bigint IS NULL OR q.id < $3)
              AND ($4::bigint IS NULL OR q.id > $4)
            ORDER BY q.id DESC
            LIMIT $5"#,
         id,
+        viewer_id,
         max_id,
         since_id,
-        min_id,
         limit,
-        viewer_is_owner,
     )
     .fetch_all(&state.db)
     .await?;
 
-    use crate::api::mastodon::timelines::build_status_list_with_filters;
-    let result = build_status_list_with_filters(&state, quotes, viewer_id).await?;
+    // The next page's bounds, taken before the page is filtered.
+    let records_continue = rows.len() as i64 == limit;
+    let pagination_since_id = rows.first().map(|r| r.quote_id);
+    let pagination_max_id = rows.last().map(|r| r.quote_id).filter(|_| records_continue);
 
-    let link = result.first().zip(result.last()).map(|(newest, oldest)| {
-        let extra = crate::api::mastodon::non_pagination_query(raw_query.as_deref());
-        crate::api::mastodon::link_header(&req_headers, uri.path(), &extra, &newest.id, &oldest.id)
-    });
+    let status_ids: Vec<i64> = rows.iter().map(|r| r.status_id).collect();
+    let quotes = if viewer_id == quoted_status.account_id {
+        let mut by_id: std::collections::HashMap<i64, DbStatus> = sqlx::query_as!(
+            DbStatus,
+            "SELECT * FROM statuses WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL",
+            &status_ids,
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(|s| (s.id, s))
+        .collect();
+        status_ids
+            .iter()
+            .filter_map(|id| by_id.remove(id))
+            .collect()
+    } else {
+        super::context::permitted_statuses(&state, &status_ids, Some(viewer_id)).await?
+    };
+
+    use crate::api::mastodon::timelines::build_status_list_with_filters;
+    let result = build_status_list_with_filters(&state, quotes, Some(viewer_id)).await?;
+
+    // `next_path` when the page came back full, `prev_path` unless nothing
+    // is left of it, each with the request's `limit` alone.
+    let host = req_headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+    let proto = req_headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("https");
+    let given_limit = url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes())
+        .filter(|(key, _)| key == "limit")
+        .last()
+        .map(|(_, value)| {
+            url::form_urlencoded::byte_serialize(value.as_bytes()).collect::<String>()
+        });
+    let link = |key: &str, value: i64| match &given_limit {
+        Some(limit) => format!("{proto}://{host}{}?limit={limit}&{key}={value}", uri.path()),
+        None => format!("{proto}://{host}{}?{key}={value}", uri.path()),
+    };
+    let mut links = Vec::new();
+    if let Some(max_id) = pagination_max_id {
+        links.push(format!(r#"<{}>; rel="next""#, link("max_id", max_id)));
+    }
+    if let Some(since_id) = pagination_since_id.filter(|_| !result.is_empty()) {
+        links.push(format!(r#"<{}>; rel="prev""#, link("since_id", since_id)));
+    }
     let mut headers = axum::http::HeaderMap::new();
-    if let Some(v) = link {
-        if let Ok(val) = v.parse() {
+    if !links.is_empty() {
+        if let Ok(val) = links.join(", ").parse() {
             headers.insert(axum::http::header::LINK, val);
         }
     }

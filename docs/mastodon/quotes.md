@@ -137,6 +137,13 @@ Deleting a post answers it with its source, as Mastodon renders it with
 included, has its `text` in place of `content`, and the quote and its post's
 own quote show their posts whether or not they were accepted.
 
+`GET /api/v1/statuses/:id/quotes` lists the posts quoting one with an
+accepted quote, newest quote first, less those of accounts the reader blocks,
+mutes or is blocked by. The quoted author sees all of them; anyone else, as
+`StatusFilter` lets them see each. It pages by the quotes' ids, as Mastodon
+does: `next` (by `max_id`) only after a full page, `prev` by `since_id`, and
+`min_id` is not read.
+
 
 What still differs
 ------------------

@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT q.id AS \"quote_id!\", s.id AS \"status_id!\" FROM quotes q\n           JOIN statuses s ON s.id = q.status_id AND s.deleted_at IS NULL\n           WHERE q.quoted_status_id = $1 AND q.state = 1\n             AND NOT EXISTS (SELECT 1 FROM blocks b\n                             WHERE b.account_id = $2 AND b.target_account_id = s.account_id)\n             AND NOT EXISTS (SELECT 1 FROM blocks b\n                             WHERE b.account_id = s.account_id AND b.target_account_id = $2)\n             AND NOT EXISTS (SELECT 1 FROM mutes m\n                             WHERE m.account_id = $2 AND m.target_account_id = s.account_id)\n             AND ($3::bigint IS NULL OR q.id < $3)\n             AND ($4::bigint IS NULL OR q.id > $4)\n           ORDER BY q.id DESC\n           LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "quote_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "be1372393c40623f8272892d5fb253f154e996f3ecc4c1559e2aa271bb39fbe5"
+}

@@ -7707,7 +7707,8 @@ async fn test_post_status_quote_approval_policy() {
     );
 }
 
-/// GET /api/v1/statuses/:id/quotes: owner of quoted post sees private quotes; others do not.
+/// GET /api/v1/statuses/:id/quotes: the quoted author and the quoting author
+/// see a private quote; others who may not see it do not.
 #[tokio::test]
 async fn test_get_quotes_private_visibility_rules() {
     let ctx = TestContext::new("quote-list-private-visibility").await;
@@ -7742,7 +7743,8 @@ async fn test_get_quotes_private_visibility_rules() {
         "owner of quoted post should see private quoting posts"
     );
 
-    // Bob (not the quoted-post owner) cannot see his own private quote in this list
+    // Bob sees his own private quote: `StatusFilter#filtered?` never hides
+    // a viewer's own post.
     let quotes_bob: Value = ctx
         .api
         .get(
@@ -7753,10 +7755,25 @@ async fn test_get_quotes_private_visibility_rules() {
         .json()
         .await
         .unwrap();
+    assert_eq!(quotes_bob.as_array().unwrap().len(), 1);
+
+    // Carol, who does not follow bob, may not see it.
+    let (_, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let quotes_carol: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{original_id}/quotes"),
+            Some(&carol_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
     assert_eq!(
-        quotes_bob.as_array().unwrap().len(),
+        quotes_carol.as_array().unwrap().len(),
         0,
-        "non-owner viewer must not see private quoting posts"
+        "a viewer who may not see a private quoting post must not get it"
     );
 }
 
@@ -8723,4 +8740,125 @@ async fn test_deleted_quote_post_shows_its_quote_as_source() {
         json!({"state": "pending", "quoted_status_id": original}),
         "{deleted}"
     );
+}
+
+/// `GET /api/v1/statuses/:id/quotes` as `QuotesController#index` has it: the
+/// quoted author sees every accepted quote, a direct one included, less
+/// those of accounts they mute; anyone else only what `StatusFilter` lets
+/// them see. Pages go by the quotes' ids: `next` (`max_id`) for a full page
+/// only, `prev` by `since_id`, and `min_id` is not read.
+#[tokio::test]
+async fn test_status_quotes_filter_and_page_as_mastodon() {
+    let ctx = TestContext::new("quote-list-filter").await;
+    let (carol_id, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let (_, dave_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "dave", "dave@test.invalid").await;
+
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "quote me", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let quote = |token: String, text: &'static str, visibility: &'static str| {
+        let ctx = &ctx;
+        async move {
+            let resp = ctx
+                .api
+                .post_json(
+                    "/api/v1/statuses",
+                    Some(&token),
+                    &json!({"status": text, "quoted_status_id": original_id, "visibility": visibility}),
+                )
+                .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body: Value = resp.json().await.unwrap();
+            body["id"].as_str().unwrap().to_owned()
+        }
+    };
+    let public = quote(ctx.bob_token.clone(), "bob in public", "public").await;
+    let direct = quote(ctx.bob_token.clone(), "@alice bob in private", "direct").await;
+    let carols = quote(carol_token.clone(), "carol quotes", "public").await;
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{carol_id}/mute"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let list = |token: String, query: &'static str| {
+        let ctx = &ctx;
+        async move {
+            let resp = ctx
+                .api
+                .get(
+                    &format!("/api/v1/statuses/{original_id}/quotes{query}"),
+                    Some(&token),
+                )
+                .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            let link = resp
+                .headers()
+                .get("link")
+                .map(|v| v.to_str().unwrap().to_owned());
+            let body: Vec<Value> = resp.json().await.unwrap();
+            let ids: Vec<String> = body
+                .iter()
+                .map(|s| s["id"].as_str().unwrap().to_owned())
+                .collect();
+            (ids, link)
+        }
+    };
+
+    let (ids, _) = list(ctx.alice_token.clone(), "").await;
+    assert_eq!(ids, vec![direct.clone(), public.clone()]);
+    let (ids, _) = list(dave_token.clone(), "").await;
+    assert_eq!(ids, vec![carols.clone(), public.clone()]);
+
+    let quote_id = |status: &str| {
+        let ctx = &ctx;
+        let status: i64 = status.parse().unwrap();
+        async move {
+            sqlx::query_scalar::<_, i64>("SELECT id FROM quotes WHERE status_id = $1")
+                .bind(status)
+                .fetch_one(&ctx.db)
+                .await
+                .unwrap()
+        }
+    };
+    let (ids, link) = list(dave_token.clone(), "?limit=1").await;
+    assert_eq!(ids, vec![carols.clone()]);
+    let link = link.expect("a Link header");
+    let carols_quote = quote_id(&carols).await;
+    assert!(
+        link.contains(&format!("?limit=1&max_id={carols_quote}>; rel=\"next\"")),
+        "{link}"
+    );
+    assert!(
+        link.contains(&format!("?limit=1&since_id={carols_quote}>; rel=\"prev\"")),
+        "{link}"
+    );
+
+    let (ids, link) = list(
+        dave_token.clone(),
+        &*Box::leak(format!("?max_id={carols_quote}").into_boxed_str()),
+    )
+    .await;
+    assert_eq!(ids, vec![public.clone()]);
+    let link = link.expect("a Link header");
+    assert!(
+        !link.contains("rel=\"next\""),
+        "a short page has no next: {link}"
+    );
+
+    // `min_id` is not read.
+    let (ids, _) = list(
+        dave_token.clone(),
+        &*Box::leak(format!("?min_id={carols_quote}").into_boxed_str()),
+    )
+    .await;
+    assert_eq!(ids, vec![carols, public]);
 }
