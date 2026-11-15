@@ -1538,3 +1538,39 @@ async fn test_a_quote_an_edit_adds_of_a_tombstone_is_pending() {
     .await;
     assert_eq!(quote_state(&r.ctx, quoting).await, 0);
 }
+
+/// An edit's quote is not a significant change (`update_quote!` runs after
+/// `@significant_changes` is set), so an edit that only drops its quote is
+/// not broadcast: whoever boosted the post is not told of an update.
+#[tokio::test]
+async fn test_an_edit_that_only_changes_its_quote_is_not_broadcast() {
+    let r = Requested::new("quote-edit-not-broadcast").await;
+    let mut create = r.create(1);
+    create["object"]["published"] = json!("2026-01-01T00:00:00Z");
+    r.send(&create).await;
+    let quoting = r.status(1).await;
+    let resp = r
+        .ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{quoting}/reblog"),
+            Some(&r.ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    r.send(&r.update(1, "2026-01-02T00:00:00Z", json!({})))
+        .await;
+    let quotes: i64 = sqlx::query_scalar("SELECT count(*) FROM quotes WHERE status_id = $1")
+        .bind(quoting)
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(quotes, 0, "the edit took the quote away");
+    let updates: i64 =
+        sqlx::query_scalar(r#"SELECT count(*) FROM notifications WHERE "type" = 'update'"#)
+            .fetch_one(&r.ctx.db)
+            .await
+            .unwrap();
+    assert_eq!(updates, 0);
+}

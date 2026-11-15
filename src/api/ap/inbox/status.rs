@@ -1108,7 +1108,10 @@ pub(super) async fn handle_update(
 
             // `update_quote!` or `update_quote_approval!`, then
             // `broadcast_updates!`: for an edit that changed something, and
-            // for any update that moved the quote.
+            // for an implicit update that moved the quote. An edit's quote
+            // counts for nothing: `update_quote!` runs in `update_metadata!`,
+            // after `@significant_changes` was set, so an edit that changes
+            // only its quote is neither broadcast nor forwarded.
             let quote_moved = super::quote::update_quote(
                 state,
                 row.id,
@@ -1146,13 +1149,13 @@ pub(super) async fn handle_update(
                 )
                 .await;
             }
-            if quote_moved || (explicit && significant) {
+            if if explicit { significant } else { quote_moved } {
                 crate::quotes::distribute_update(state, row.id, false).await;
             }
             // `forward_activity! if significant_changes? &&
             // @status_parser.edited_at > last_edit_date`.
             if explicit
-                && (significant || quote_moved)
+                && significant
                 && crate::federation::forwarder::forwardable(state, activity, row.id).await
             {
                 crate::federation::forwarder::forward(state, row.account_id, activity, row.id)
