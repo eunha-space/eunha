@@ -652,6 +652,79 @@ pub(crate) async fn apply_filters(
 
 // ── DELETE /api/v1/statuses/:id ────────────────────────────────────────────
 
+/// `status`, rendered as `s` for `viewer_id`, as `REST::StatusSerializer`
+/// renders it with `source_requested: true`. The option reaches every
+/// serializer under it: each post, the boosted and quoted ones included,
+/// has its source `text` in place of `content`, and the quote
+/// (`REST::BaseQuoteSerializer#quoted_status`) and its post's own
+/// (`REST::ShallowQuoteSerializer#quoted_status_id`) show their post even
+/// when they are not accepted.
+async fn source_requested(
+    state: &AppState,
+    status: &DbStatus,
+    mut s: super::types::Status,
+    viewer_id: i64,
+) -> AppResult<serde_json::Value> {
+    use super::status_serialize::{hydrate_without_quotes, render_quotes, QuoteRendering};
+    let rendering = QuoteRendering {
+        source_requested: true,
+        ..QuoteRendering::STATUS
+    };
+    let proper = if s.reblog.is_some() {
+        s.reblog.as_deref_mut().unwrap()
+    } else {
+        &mut s
+    };
+    let proper_id = status.reblog_of_id.unwrap_or(status.id);
+    if let Some((_, mut quote)) = render_quotes(state, &[proper_id], Some(viewer_id), rendering)
+        .await?
+        .remove(&proper_id)
+    {
+        if let Some(quoted) = quote.quoted_status.as_deref_mut() {
+            hydrate_without_quotes(state, vec![quoted], Some(viewer_id)).await;
+        }
+        proper.quote = Some(quote);
+    }
+
+    let mut value = serde_json::to_value(&s).map_err(|e| AppError::Internal(e.into()))?;
+    fn ids(value: &serde_json::Value, out: &mut Vec<i64>) {
+        out.extend(value["id"].as_str().and_then(|id| id.parse::<i64>().ok()));
+        for nested in [&value["reblog"], &value["quote"]["quoted_status"]] {
+            if nested.is_object() {
+                ids(nested, out);
+            }
+        }
+    }
+    let mut status_ids = Vec::new();
+    ids(&value, &mut status_ids);
+    let texts: std::collections::HashMap<i64, String> =
+        sqlx::query_as::<_, (i64, String)>("SELECT id, text FROM statuses WHERE id = ANY($1)")
+            .bind(&status_ids)
+            .fetch_all(&state.db)
+            .await?
+            .into_iter()
+            .collect();
+    fn source(value: &mut serde_json::Value, texts: &std::collections::HashMap<i64, String>) {
+        let id = value["id"].as_str().and_then(|id| id.parse::<i64>().ok());
+        if let Some(fields) = value.as_object_mut() {
+            fields.remove("content");
+            let text = id
+                .and_then(|id| texts.get(&id))
+                .cloned()
+                .unwrap_or_default();
+            fields.insert("text".to_owned(), serde_json::Value::String(text));
+        }
+        if value["reblog"].is_object() {
+            source(&mut value["reblog"], texts);
+        }
+        if value["quote"]["quoted_status"].is_object() {
+            source(&mut value["quote"]["quoted_status"], texts);
+        }
+    }
+    source(&mut value, &texts);
+    Ok(value)
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub struct DeleteStatusParams {
     #[serde(default)]
@@ -678,13 +751,11 @@ pub async fn delete_status(
 
     // Rendered before `discard_with_reblogs`, for the media's own URLs, for
     // the author asking (`favourited`, `pinned` and the rest), and with
-    // `source_requested: true`: the source `text` in place of `content`.
-    let mut s = serialize_status(&state, &status, Some(auth.account_id)).await?;
-    s.text = Some(status.text.clone());
-    let mut s = serde_json::to_value(&s).map_err(|e| AppError::Internal(e.into()))?;
-    if let Some(fields) = s.as_object_mut() {
-        fields.remove("content");
-    }
+    // `source_requested: true`, which reaches the serializers of what the
+    // post carries too: the source `text` in place of `content` on each
+    // post, and its quote's post shown whatever the quote's state.
+    let s = serialize_status_for_viewer(&state, &status, auth.account_id).await?;
+    let s = source_requested(&state, &status, s, auth.account_id).await?;
 
     crate::remove_status::discard_with_reblogs(&state, &status).await?;
     sqlx::query!("DELETE FROM status_pins WHERE status_id = $1", id)

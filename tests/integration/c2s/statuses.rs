@@ -8658,3 +8658,69 @@ async fn test_edit_history_carries_the_quote() {
     );
     assert_eq!(versions[1]["quote"]["state"], "accepted");
 }
+
+/// Deleting a post answers it with `source_requested: true`, which reaches
+/// the serializers of its quote: the quoted post is shown whatever the
+/// quote's state, with its source `text` in place of `content`, and its own
+/// quote names its post whatever its state too.
+#[tokio::test]
+async fn test_deleted_quote_post_shows_its_quote_as_source() {
+    let ctx = TestContext::new("quote-delete-source").await;
+
+    let post = |token: String, text: &'static str, quoted: Option<String>| {
+        let ctx = &ctx;
+        async move {
+            let mut body = json!({"status": text, "visibility": "public"});
+            if let Some(quoted) = quoted {
+                body["quoted_status_id"] = json!(quoted);
+            }
+            let resp = ctx
+                .api
+                .post_json("/api/v1/statuses", Some(&token), &body)
+                .await;
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body: Value = resp.json().await.unwrap();
+            body["id"].as_str().unwrap().to_owned()
+        }
+    };
+    let original = post(ctx.alice_token.clone(), "the original", None).await;
+    let inner = post(
+        ctx.alice_token.clone(),
+        "alice quotes herself",
+        Some(original.clone()),
+    )
+    .await;
+    let outer = post(
+        ctx.bob_token.clone(),
+        "bob quotes alice",
+        Some(inner.clone()),
+    )
+    .await;
+    sqlx::query("UPDATE quotes SET state = 0 WHERE status_id = ANY($1)")
+        .bind(vec![
+            inner.parse::<i64>().unwrap(),
+            outer.parse::<i64>().unwrap(),
+        ])
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let resp = ctx
+        .api
+        .delete(&format!("/api/v1/statuses/{outer}"), &ctx.bob_token)
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let deleted: Value = resp.json().await.unwrap();
+    assert_eq!(deleted["text"], "bob quotes alice", "{deleted}");
+    assert!(deleted.get("content").is_none(), "{deleted}");
+    assert_eq!(deleted["quote"]["state"], "pending", "{deleted}");
+    let quoted = &deleted["quote"]["quoted_status"];
+    assert_eq!(quoted["id"].as_str(), Some(inner.as_str()), "{deleted}");
+    assert_eq!(quoted["text"], "alice quotes herself", "{deleted}");
+    assert!(quoted.get("content").is_none(), "{deleted}");
+    assert_eq!(
+        quoted["quote"],
+        json!({"state": "pending", "quoted_status_id": original}),
+        "{deleted}"
+    );
+}

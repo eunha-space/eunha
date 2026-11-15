@@ -474,7 +474,7 @@ pub(crate) async fn render_quotes(
         if let Some(serde_json::Value::Array(found)) = filters.get(&qs.id) {
             api.filtered = Some(found.clone());
         }
-        api.quote = nested.get(&qs.id).map(|r| r.shallow(false));
+        api.quote = nested.get(&qs.id).map(|r| r.shallow(how.source_requested));
         qs_map.insert(qs.id, api);
     }
 

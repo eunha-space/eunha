@@ -132,6 +132,11 @@ under the same rules for the same viewer: its `quoted_status_id` names the
 post it quotes only where the quote would carry that post, and is `null`
 otherwise.
 
+Deleting a post answers it with its source, as Mastodon renders it with
+`source_requested`, for a redraft: each post in the answer, the quoted one
+included, has its `text` in place of `content`, and the quote and its post's
+own quote show their posts whether or not they were accepted.
+
 
 What still differs
 ------------------
