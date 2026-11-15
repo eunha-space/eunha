@@ -168,6 +168,6 @@ pub async fn revoke_quote(
     .await?
     .ok_or(AppError::NotFound)?;
     Ok(Json(
-        serialize_status(&state, &quoting_status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &quoting_status, auth.account_id).await?,
     ))
 }

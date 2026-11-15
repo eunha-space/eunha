@@ -270,7 +270,7 @@ pub async fn post_status(
     let viewer_ctx = build_viewer_context(&state, auth.account_id, status.id)
         .await
         .ok();
-    let api_status = crate::api::mastodon::status_serialize::build_status_with_app(
+    let mut api_status = crate::api::mastodon::status_serialize::build_status_with_app(
         &state,
         &status,
         &account,
@@ -280,6 +280,8 @@ pub async fn post_status(
         application,
     )
     .await?;
+    // `filtered`, as `REST::StatusSerializer` renders it for `current_user`.
+    super::apply_filters(&state, auth.account_id, &status, &mut api_status).await;
 
     // Record the idempotency key so a retried request replays this status.
     record_idempotency(&state, account.id, idempotency_key.as_deref(), status.id).await;
@@ -1129,10 +1131,11 @@ async fn replay_idempotent(
     let viewer_ctx = build_viewer_context(state, auth.account_id, status.id)
         .await
         .ok();
-    let api_status = crate::api::mastodon::status_serialize::build_status_with_app(
+    let mut api_status = crate::api::mastodon::status_serialize::build_status_with_app(
         state, &status, account, media, None, viewer_ctx, None,
     )
     .await?;
+    super::apply_filters(state, auth.account_id, &status, &mut api_status).await;
     Ok((axum::http::StatusCode::OK, Json(api_status)).into_response())
 }
 

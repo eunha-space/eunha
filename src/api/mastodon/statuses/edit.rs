@@ -279,7 +279,7 @@ pub async fn edit_status(
 
     if !significant {
         return Ok(Json(
-            serialize_status(&state, &status, Some(auth.account_id)).await?,
+            serialize_status_for_viewer(&state, &status, auth.account_id).await?,
         ));
     }
 
@@ -464,7 +464,7 @@ pub async fn edit_status(
     crate::quotes::distribute_update(&state, id, false).await;
 
     let (updated_status, _) = fetch_status_with_account(&state, id).await?;
-    let api_status = serialize_status(&state, &updated_status, Some(auth.account_id)).await?;
+    let api_status = serialize_status_for_viewer(&state, &updated_status, auth.account_id).await?;
 
     if let Err(e) = federate_status_update(&state, id, &account, &updated_status).await {
         tracing::warn!(status_id = id, error = %e, "failed to enqueue ActivityPub status update");

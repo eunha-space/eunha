@@ -868,7 +868,7 @@ pub async fn favourite_status(
     }
 
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -964,7 +964,7 @@ pub async fn unfavourite_status(
 
     let (status, _) = fetch_status_with_account(&state, id).await?;
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1064,9 +1064,10 @@ pub async fn reblog_status(
         let ctx = build_viewer_context(&state, auth.account_id, original_id).await?;
         let media = fetch_status_media(&state, boost.id).await?;
         let reblog = fetch_reblog_data(&state, &boost).await?;
-        return Ok(Json(
-            build_status(&state, &boost, &boost_account, media, reblog, Some(ctx)).await?,
-        ));
+        let mut api_boost =
+            build_status(&state, &boost, &boost_account, media, reblog, Some(ctx)).await?;
+        apply_filters(&state, auth.account_id, &boost, &mut api_boost).await;
+        return Ok(Json(api_boost));
     }
 
     let boost_id = crate::snowflake::next_id();
@@ -1150,7 +1151,11 @@ pub async fn reblog_status(
     let ctx = build_viewer_context(&state, auth.account_id, original_id).await?;
     let media = fetch_status_media(&state, boost.id).await?;
     let reblog = fetch_reblog_data(&state, &boost).await?;
-    let api_boost = build_status(&state, &boost, &boost_account, media, reblog, Some(ctx)).await?;
+    let mut api_boost =
+        build_status(&state, &boost, &boost_account, media, reblog, Some(ctx)).await?;
+    // `filtered`, of the boost and of the post it boosts, as
+    // `REST::StatusSerializer` renders them for `current_user`.
+    apply_filters(&state, auth.account_id, &boost, &mut api_boost).await;
 
     // Fan the boost into followers' home feeds (mirrors the post path) so it
     // appears immediately, not only after a feed repopulate, then stream it
@@ -1259,7 +1264,7 @@ pub async fn unreblog_status(
     }
 
     let (original, _) = fetch_status_with_account(&state, original_id).await?;
-    let mut rendered = serialize_status(&state, &original, Some(auth.account_id)).await?;
+    let mut rendered = serialize_status_for_viewer(&state, &original, auth.account_id).await?;
     if let Some(boost_id) = boost_id {
         // `count = [@reblog.reblogs_count - 1, 0].max`, then `@status.discard`
         // and `RemovalWorker`.
@@ -1267,7 +1272,7 @@ pub async fn unreblog_status(
         crate::remove_status::discard(&state, boost_id).await?;
         crate::remove_status::call(&state, boost_id, crate::remove_status::Options::default())
             .await?;
-        rendered = serialize_status(&state, &original, Some(auth.account_id)).await?;
+        rendered = serialize_status_for_viewer(&state, &original, auth.account_id).await?;
         rendered.reblogs_count = count;
         rendered.reblogged = Some(false);
     }
@@ -1296,7 +1301,7 @@ pub async fn bookmark_status(
 
     let (status, _) = fetch_status_with_account(&state, id).await?;
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1331,7 +1336,7 @@ pub async fn unbookmark_status(
 
     let (status, _) = fetch_status_with_account(&state, id).await?;
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1406,7 +1411,7 @@ pub async fn pin_status(
         federate_pin_change(&state, &account, &status, true).await;
     }
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1439,7 +1444,7 @@ pub async fn unpin_status(
         federate_pin_change(&state, &account, &status, false).await;
     }
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1465,7 +1470,7 @@ pub async fn mute_status(
     .execute(&state.db)
     .await?;
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1490,7 +1495,7 @@ pub async fn unmute_status(
     .execute(&state.db)
     .await?;
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 
@@ -1760,7 +1765,7 @@ pub async fn update_interaction_policy(
         }
     }
     Ok(Json(
-        serialize_status(&state, &status, Some(auth.account_id)).await?,
+        serialize_status_for_viewer(&state, &status, auth.account_id).await?,
     ))
 }
 

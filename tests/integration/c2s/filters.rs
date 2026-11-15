@@ -776,3 +776,113 @@ async fn test_single_status_carries_matching_filters() {
         .unwrap();
     assert_eq!(seen["filtered"], json!([]), "{seen}");
 }
+
+/// What an action on a single status answers with carries the viewer's
+/// matching filters too: `REST::StatusSerializer#filtered`, for any
+/// `current_user`, with or without a `StatusRelationshipsPresenter`.
+#[tokio::test]
+async fn test_status_actions_carry_matching_filters() {
+    let ctx = TestContext::new("filter-actions").await;
+    let filter: Value = ctx
+        .api
+        .post_json(
+            "/api/v2/filters",
+            Some(&ctx.alice_token),
+            &json!({"title": "words", "context": ["home"],
+                    "keywords_attributes": [{"keyword": "actionword"}]}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let status = ctx
+        .api
+        .post_status(&ctx.bob_token, "an actionword here", "public")
+        .await;
+    let id = status["id"].as_str().unwrap();
+    for action in [
+        "favourite",
+        "unfavourite",
+        "bookmark",
+        "unbookmark",
+        "mute",
+        "unmute",
+        "unreblog",
+    ] {
+        let seen: Value = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{id}/{action}"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            seen["filtered"][0]["filter"]["id"], filter["id"],
+            "{action}: {seen}"
+        );
+    }
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{id}/reblog"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    // The boost matches on what it boosts (`status.proper.searchable_text`).
+    assert_eq!(
+        boost["filtered"][0]["filter"]["id"], filter["id"],
+        "{boost}"
+    );
+    assert_eq!(
+        boost["reblog"]["filtered"][0]["filter"]["id"], filter["id"],
+        "{boost}"
+    );
+
+    // Alice's own post, and her edit of it.
+    let own = ctx
+        .api
+        .post_status(&ctx.alice_token, "my actionword", "public")
+        .await;
+    assert_eq!(own["filtered"][0]["filter"]["id"], filter["id"], "{own}");
+    let own_id = own["id"].as_str().unwrap();
+    for action in ["pin", "unpin"] {
+        let seen: Value = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{own_id}/{action}"),
+                Some(&ctx.alice_token),
+                &json!({}),
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(
+            seen["filtered"][0]["filter"]["id"], filter["id"],
+            "{action}: {seen}"
+        );
+    }
+    let edited: Value = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{own_id}"),
+            Some(&ctx.alice_token),
+            &json!({"status": "my actionword, edited"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        edited["filtered"][0]["filter"]["id"], filter["id"],
+        "{edited}"
+    );
+}
