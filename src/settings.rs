@@ -51,10 +51,13 @@ pub fn default(var: &str) -> Value {
         | "captcha_enabled"
         | "preview_sensitive_media"
         | "allow_referrer_origin" => Value::from(false),
-        "local_live_feed_access"
-        | "remote_live_feed_access"
-        | "local_topic_feed_access"
-        | "remote_topic_feed_access" => Value::from("public"),
+        // eunha keeps the federated timeline from visitors unless an
+        // administrator opens it (divergences.toml,
+        // `federated-timeline-signed-in-by-default`).
+        "remote_live_feed_access" => Value::from("authenticated"),
+        "local_live_feed_access" | "local_topic_feed_access" | "remote_topic_feed_access" => {
+            Value::from("public")
+        }
         "landing_page" => Value::from("trends"),
         "backups_retention_period" => Value::from(7),
         _ => Value::Null,
