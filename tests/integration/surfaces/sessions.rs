@@ -133,6 +133,27 @@ async fn test_sessions_are_listed_and_revoked() {
     assert_eq!(foreign.status(), StatusCode::NOT_FOUND);
     assert_eq!(account_page(&ctx, &bob_cookie).await, StatusCode::OK);
 
+    // The web client signing one account out of its switcher leaves another
+    // account's session alone, and ends that account's own.
+    let bob_id = ctx.bob_id.clone();
+    for (account_id, status) in [
+        (&ctx.alice_id, StatusCode::OK),
+        (&bob_id, StatusCode::FOUND),
+    ] {
+        ctx.api
+            .http
+            .post(ctx.api.url("/account/logout"))
+            .header("host", &ctx.api.host)
+            .header("cookie", &bob_cookie)
+            .header("hx-request", "true")
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(format!("account_id={account_id}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(account_page(&ctx, &bob_cookie).await, status);
+    }
+
     // Signing out deactivates the session.
     ctx.api
         .http

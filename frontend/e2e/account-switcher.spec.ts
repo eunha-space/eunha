@@ -22,9 +22,9 @@ test('switching resets the profile and sign-out removes only the selected accoun
     revoked.push(new URLSearchParams(route.request().postData() ?? '').get('token') ?? '')
     return route.fulfill({ json: {} })
   })
-  let loggedOut = 0
+  const loggedOut: string[] = []
   await page.route('**/account/logout', (route) => {
-    loggedOut += 1
+    loggedOut.push(new URLSearchParams(route.request().postData() ?? '').get('account_id') ?? '')
     return route.fulfill({ body: '' })
   })
   await page.reload()
@@ -43,7 +43,7 @@ test('switching resets the profile and sign-out removes only the selected accoun
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('eunha:accounts') ?? '[]').length)).toBe(1)
   // Signed out of the server too, so that signing in asks for a password again.
   expect(revoked).toEqual(['bob-token'])
-  expect(loggedOut).toBe(1)
+  expect(loggedOut).toEqual([bob.id])
 })
 
 test('a legacy standalone token does not sign the browser in', async ({ page }) => {

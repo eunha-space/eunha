@@ -311,10 +311,10 @@ remain shared.
 remaining account, if there is one. As Mastodon's web client does, it also signs
 the browser out of the server: it revokes the current account's token
 (`POST /oauth/revoke`) and ends the account pages' cookie session
-(`POST /account/logout`), so the next **Sign in** asks for an email and
-password again instead of signing straight back in. The cookie session ends
-even when it belongs to another account that stays in the switcher; that
-account's token is its own and keeps working.
+(`POST /account/logout` with the account's `account_id`), so the next
+**Sign in** asks for an email and password again instead of signing straight
+back in. A cookie session that belongs to another account in the switcher is
+left alone: that account is still signed in.
 
 
 Sessions

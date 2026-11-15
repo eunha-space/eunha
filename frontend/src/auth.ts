@@ -85,26 +85,27 @@ export async function logout() {
   // (`DELETE /auth/sign_out`), which ends the session and its token. Without
   // that, the authorization page would still know this browser and sign it
   // straight back in. So revoke this account's token, and end the account
-  // pages' cookie session. Neither may keep the browser signed in when it
-  // fails, as for an account just deleted, whose token is already dead.
+  // pages' cookie session when it is this account's (the switcher may hold
+  // another account, whose session it leaves alone). Neither may keep the
+  // browser signed in when it fails, as for an account just deleted, whose
+  // token is already dead.
+  await fetch('/account/logout', {
+    method: 'POST',
+    headers: { 'HX-Request': 'true' },
+    credentials: 'same-origin',
+    body: new URLSearchParams(id ? { account_id: id } : {}),
+  }).catch(() => {})
   const client = storedClient()
-  await Promise.allSettled([
-    token && client
-      ? fetch('/oauth/revoke', {
-          method: 'POST',
-          body: new URLSearchParams({
-            client_id: client.client_id,
-            ...(client.client_secret ? { client_secret: client.client_secret } : {}),
-            token,
-          }),
-        })
-      : null,
-    fetch('/account/logout', {
+  if (token && client) {
+    await fetch('/oauth/revoke', {
       method: 'POST',
-      headers: { 'HX-Request': 'true' },
-      credentials: 'same-origin',
-    }),
-  ])
+      body: new URLSearchParams({
+        client_id: client.client_id,
+        ...(client.client_secret ? { client_secret: client.client_secret } : {}),
+        token,
+      }),
+    }).catch(() => {})
+  }
 
   localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(
     getSavedAccounts().filter((entry) => entry.account.id !== id),

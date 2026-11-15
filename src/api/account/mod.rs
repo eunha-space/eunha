@@ -625,11 +625,33 @@ struct LogoutForm {
     /// page: where to sign in again and come back to.
     #[serde(rename = "continue")]
     continue_to: Option<String>,
+    /// The account the web client is signing out of, one of several its
+    /// switcher may hold: the session ends only when it is that account's.
+    account_id: Option<i64>,
 }
 
 /// `Warden::Manager.before_logout`: the session deactivated.
 pub async fn logout_post(state: AppState, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    let form: LogoutForm = serde_urlencoded::from_bytes(&body).unwrap_or_default();
+
     if let Some(session_id) = extract_session_token(&headers) {
+        // Signing one account out of the web client's switcher leaves
+        // another account's session alone; it is still signed in.
+        if let Some(account_id) = form.account_id {
+            let owner = sqlx::query_scalar!(
+                r#"SELECT u.account_id FROM session_activations s
+                   JOIN users u ON u.id = s.user_id
+                   WHERE s.session_id = $1"#,
+                session_id,
+            )
+            .fetch_optional(&state.db)
+            .await
+            .ok()
+            .flatten();
+            if owner.is_some_and(|owner| owner != account_id) {
+                return ().into_response();
+            }
+        }
         if let Ok(tokens) = crate::sessions::deactivate(&state.db, &session_id).await {
             crate::sessions::kill_streams(&state, tokens).await;
         }
@@ -638,7 +660,6 @@ pub async fn logout_post(state: AppState, headers: HeaderMap, body: axum::body::
     // `Auth::SessionsController#destroy` with `continue`: signed out, and on
     // to sign in again for the page it came from — the authorization page,
     // which asks a signed-out browser to sign in.
-    let form: LogoutForm = serde_urlencoded::from_bytes(&body).unwrap_or_default();
     if let Some(path) = form
         .continue_to
         .filter(|p| p.starts_with("/oauth/authorize?") && !p.contains('\\'))
