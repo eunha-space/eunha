@@ -15,7 +15,18 @@ import { Maximize2, Minus, X } from 'lucide-react'
 import type { mastodon } from '../masto.ts'
 import { getActiveAccountId, getToken } from '../auth.ts'
 import { Compose } from '@/components/compose.tsx'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { dismiss, isDismissed } from '@/lib/dismissed.ts'
 import { cn } from '@/lib/utils.ts'
 import { mayQuote } from '@/lib/statuses.ts'
 
@@ -28,6 +39,9 @@ type ComposeOptions = {
   messageTo?: mastodon.v1.Account | null
   onPosted?: (status: mastodon.v1.Status) => void
 }
+
+// Mastodon's dismissed_banners id for `CONFIRM_QUIET_QUOTE`.
+const QUIET_POST_HINT = 'quote/quiet_post_hint'
 
 type ComposeModalContextValue = {
   openCompose: (options?: ComposeOptions) => void
@@ -58,6 +72,8 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
   const [closing, setClosing] = useState(false)
   const [onPosted, setOnPosted] =
     useState<((status: mastodon.v1.Status) => void) | null>(null)
+  // A quote of a quiet public post waiting on Mastodon's note about it.
+  const [quietQuote, setQuietQuote] = useState<ComposeOptions | null>(null)
 
   const finishClose = useCallback(() => {
     setOpen(false)
@@ -81,11 +97,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
     closeTimer.current = window.setTimeout(finishClose, 140)
   }, [finishClose])
 
-  const openCompose = useCallback((options?: ComposeOptions) => {
-    if (options?.quoteOf && !mayQuote(options.quoteOf)) {
-      toast.error('You are not authorized to quote this post.')
-      return
-    }
+  const start = useCallback((options?: ComposeOptions) => {
     window.clearTimeout(closeTimer.current)
     setClosing(false)
     setMinimized(false)
@@ -105,6 +117,22 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
     setOpen(true)
   }, [open, dirty, closing, replyTo, quoteOf, messageTo])
 
+  // Mastodon's `quoteComposeByStatus`, in its order: a post the reader may
+  // not quote is refused, and quoting a quiet public post first says what
+  // that does to the quote, until told not to again.
+  const openCompose = useCallback((options?: ComposeOptions) => {
+    const quoted = options?.quoteOf
+    if (quoted && !mayQuote(quoted)) {
+      toast.error('You are not authorized to quote this post.')
+      return
+    }
+    if (quoted?.visibility === 'unlisted' && !isDismissed(QUIET_POST_HINT)) {
+      setQuietQuote(options ?? null)
+      return
+    }
+    start(options)
+  }, [start])
+
   const value = useMemo(() => ({ openCompose }), [openCompose])
   const token = getToken()
   // A reply is a reply even when it is private, matching upstream's
@@ -114,6 +142,39 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
   return (
     <ComposeModalContext.Provider value={value}>
       {children}
+      <AlertDialog
+        open={!!quietQuote}
+        onOpenChange={(next) => {
+          if (!next) setQuietQuote(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Quoting quiet public posts</AlertDialogTitle>
+            <AlertDialogDescription>
+              When quoting a quiet public post, your post will be hidden from trending timelines.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                dismiss(QUIET_POST_HINT)
+                start(quietQuote ?? undefined)
+              }}
+            >
+              Don't remind me again
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setQuietQuote(null)
+                start(quietQuote ?? undefined)
+              }}
+            >
+              Got it
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {open && token
         ? createPortal(
             <section

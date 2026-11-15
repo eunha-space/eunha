@@ -429,3 +429,24 @@ test('a followers-only quote of someone else asks first', async ({ page }) => {
   const dismissed = await page.evaluate(() => localStorage.getItem('eunha:dismissed:quote/private_notify:1'))
   expect(dismissed).toBe('1')
 })
+
+test('quoting a quiet public post says what that does first', async ({ page }) => {
+  await signedIn(page)
+  await openPost(page, status('10', bob, { visibility: 'unlisted', quote_approval: approval('automatic') }))
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await expect(page.getByText('When quoting a quiet public post, your post will be hidden from trending timelines.')).toBeVisible()
+  await page.getByRole('button', { name: 'Got it' }).click()
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await page.getByRole('button', { name: "Don't remind me again" }).click()
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  await page.getByRole('button', { name: 'More', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+  await expect(page.getByText('Quoting quiet public posts')).toHaveCount(0)
+})
