@@ -239,3 +239,45 @@ test('a post without a quote policy for the reader fetches one when the menu ope
   await expect(page.getByRole('menuitem', { name: 'Quote' })).not.toHaveAttribute('aria-disabled', 'true')
   expect(fetches).toBe(2)
 })
+
+test('your own followers-only post can be quoted, and the quote stays with your followers', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/eunha/v1/preferences', (r) => r.fulfill({ json: { default_spoiler_field: false } }))
+  await openPost(page, status('10', alice, { visibility: 'private', quote_approval: approval('automatic', []) }))
+  await page.getByRole('menuitem', { name: 'Quote' }).click()
+  await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Who can see this' })).toContainText('Your followers')
+  let posted: Record<string, unknown> | null = null
+  await page.route('**/api/v1/statuses', async (r) => {
+    posted = r.request().postDataJSON()
+    await r.fulfill({ json: status('11', alice, { visibility: 'private' }) })
+  })
+  await page.getByRole('button', { name: 'Quote', exact: true }).click()
+  await expect.poll(() => posted).toMatchObject({ visibility: 'private', quoted_status_id: '10' })
+})
+
+test('your own followers-only post can be boosted to your followers again', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: status('10', alice, { visibility: 'private' }) }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  let boosted = false
+  await page.route('**/api/v1/statuses/10/reblog', (r) => {
+    boosted = true
+    return r.fulfill({ json: status('12', alice, { reblog: status('10', alice, { visibility: 'private', reblogged: true, reblogs_count: 1 }) }) })
+  })
+  await page.goto('/@alice/10')
+  const boost = page.getByRole('button', { name: 'Boost' })
+  await expect(boost).toHaveAttribute('title', 'Share again with your followers')
+  await boost.click()
+  await expect.poll(() => boosted).toBe(true)
+})
+
+test('someone else’s followers-only post cannot be boosted', async ({ page }) => {
+  await signedIn(page)
+  await page.route('**/api/v1/statuses/10', (r) => r.fulfill({ json: status('10', bob, { visibility: 'private' }) }))
+  await page.route('**/api/v1/statuses/10/context', (r) => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.goto('/@bob/10')
+  const boost = page.getByRole('button', { name: 'Boost' })
+  await expect(boost).toBeDisabled()
+  await expect(boost).toHaveAttribute('title', 'This post cannot be boosted')
+})

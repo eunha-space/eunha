@@ -46,6 +46,8 @@ export function quoteItemState(
   const isLoggedIn = !!meId
   const isPublic = status.visibility === 'public' || status.visibility === 'unlisted'
   const isMine = isLoggedIn && status.account.id === meId
+  // Your own followers-only post is yours to quote, to the same followers.
+  const isMineAndPrivate = isMine && status.visibility === 'private'
   // Absent when the post came over a public or hashtag stream, whose payload
   // was written for no one in particular (see `useStatusStreaming`).
   const approval = status.quoteApproval as mastodon.v1.QuoteApproval | null | undefined
@@ -56,7 +58,7 @@ export function quoteItemState(
   if (!isPublic && !isMine) {
     return { title: 'Quote', meta: 'Private posts cannot be quoted', disabled: true }
   }
-  if ((currentUser === 'automatic' || currentUser === 'manual') && isPublic) {
+  if ((currentUser === 'automatic' || currentUser === 'manual') && (isPublic || isMineAndPrivate)) {
     return { title: 'Quote', disabled: false }
   }
   if (isLoggedIn) {
@@ -69,6 +71,33 @@ export function quoteItemState(
     }
   }
   return { title: 'Quote', disabled: false }
+}
+
+/** What the boost button says, and whether it can be pressed. */
+export interface BoostItemState {
+  title: string
+  meta?: string
+  disabled: boolean
+}
+
+/**
+ * Mastodon's `boostItemState`: public and unlisted posts can be boosted, and
+ * so can your own followers-only post, which shares it again with your
+ * followers; anything else cannot.
+ */
+export function boostItemState(
+  status: mastodon.v1.Status,
+  meId: string | null,
+): BoostItemState {
+  const isPublic = status.visibility === 'public' || status.visibility === 'unlisted'
+  const isPrivateReblog =
+    !!meId && status.account.id === meId && status.visibility === 'private'
+  if (status.reblogged) return { title: 'Unboost', disabled: false }
+  if (isPrivateReblog) {
+    return { title: 'Boost', meta: 'Share again with your followers', disabled: false }
+  }
+  if (!isPublic) return { title: 'Boost', meta: 'This post cannot be boosted', disabled: true }
+  return { title: 'Boost', disabled: false }
 }
 
 /**

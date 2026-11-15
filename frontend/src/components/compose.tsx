@@ -155,10 +155,13 @@ export function Compose({
   const [text, setText] = useState(initialText)
   const [caret, setCaret] = useState(initialText.length)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Mastodon's `quoteCompose`: quoting a followers-only post (only ever your
+  // own) keeps the quote among the same followers.
+  const quoteFloor = quoteOf?.visibility === 'private' ? 'private' : undefined
   const [visibility, setVisibility] = useState<mastodon.v1.StatusVisibility>(() =>
     messageTo !== undefined
       ? 'direct'
-      : morePrivate(replyTo?.visibility, getDefaultVisibility()),
+      : morePrivate(quoteFloor, morePrivate(replyTo?.visibility, getDefaultVisibility())),
   )
   const [quotePolicy, setQuotePolicy] = useState<QuotePolicy>('public')
   // Derived, not stored — picking Direct in the audience menu *is* switching to
@@ -226,7 +229,7 @@ export function Compose({
         if (!cancelled && me) {
           setDefaultSensitive(me.defaultSensitive ?? false)
           if (messageTo === undefined) {
-            setVisibility(morePrivate(replyTo?.visibility, me.defaultVisibility))
+            setVisibility(morePrivate(quoteFloor, morePrivate(replyTo?.visibility, me.defaultVisibility)))
           }
         }
       })
@@ -235,7 +238,7 @@ export function Compose({
     return () => {
       cancelled = true
     }
-  }, [token, messageTo, replyTo?.visibility])
+  }, [token, messageTo, replyTo?.visibility, quoteFloor])
 
   // When a reply is opened, prefill the composer with the conversation's
   // handles (like Mastodon's COMPOSE_REPLY) and park the caret after them so

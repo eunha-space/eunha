@@ -77,7 +77,7 @@ import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
 import { dismissRemoveQuoteHint, RemoveQuoteHint } from '@/components/remove-quote-hint.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
-import { quoteItemState } from '@/lib/statuses.ts'
+import { boostItemState, quoteItemState } from '@/lib/statuses.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
 
 import { useTagFollow } from '../hooks/use-tag-follow.ts'
@@ -175,6 +175,7 @@ function ActionButton({
   activeClass,
   disabled,
   label,
+  title,
   onClick,
 }: {
   icon: ReactNode
@@ -183,6 +184,8 @@ function ActionButton({
   activeClass?: string
   disabled?: boolean
   label: string
+  // A tooltip saying more than the label, where there is more to say.
+  title?: string
   onClick: () => void
 }) {
   return (
@@ -190,6 +193,7 @@ function ActionButton({
       variant="ghost"
       size="sm"
       aria-label={label}
+      title={title}
       disabled={disabled}
       onClick={onClick}
       className={cn('text-muted-foreground gap-1.5', active && activeClass)}
@@ -424,9 +428,9 @@ export function StatusCard({
   const name = status.account.displayName || status.account.username
   const profilePath = `/@${status.account.acct}`
   const threadPath = `/@${status.account.acct}/${status.id}`
-  // Private and direct posts can't be boosted (matches Mastodon's web UI).
-  const notBoostable =
-    status.visibility === 'private' || status.visibility === 'direct'
+  // Public and unlisted posts can be boosted, and your own followers-only
+  // ones, to your followers again (Mastodon's `boostItemState`).
+  const boostItem = boostItemState(status, token ? getMeId() : null)
 
   if (deleted) return null
 
@@ -706,14 +710,14 @@ export function StatusCard({
             label="Reply"
             onClick={() => (onReply ? onReply(status) : navigate(threadPath))}
           />
-          {notBoostable || !token ? (
+          {!token ? (
             <ActionButton
-              icon={notBoostable ? <Lock /> : <Repeat2 />}
+              icon={<Repeat2 />}
               count={status.reblogsCount}
               active={status.reblogged ?? false}
               activeClass="text-primary"
               disabled
-              label={notBoostable ? 'Boosting not allowed' : 'Boost'}
+              label="Boost"
               onClick={() => {}}
             />
           ) : (
@@ -741,9 +745,16 @@ export function StatusCard({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
                 <DropdownMenuItem
+                  disabled={boostItem.disabled}
                   onClick={() => act(() => setReblog(token, status.id, !status.reblogged))}
                 >
-                  <Repeat2 /> {status.reblogged ? 'Unboost' : 'Boost'}
+                  {boostItem.disabled ? <Lock /> : <Repeat2 />}
+                  <span className="flex flex-col">
+                    {boostItem.title}
+                    {boostItem.meta && (
+                      <span className="text-muted-foreground text-xs">{boostItem.meta}</span>
+                    )}
+                  </span>
                 </DropdownMenuItem>
                 {canQuote && (
                   <DropdownMenuItem

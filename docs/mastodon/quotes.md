@@ -23,7 +23,8 @@ about the `Quote`, as `LocalNotificationWorker` writes it.
 
 The web client's Quote item, in a post's menu, can be chosen only when the
 post's `quote_approval.current_user` is `automatic` or `manual` and the post
-is public or unlisted; otherwise it is disabled and says why (“Private posts
+is public or unlisted, or is your own followers-only post, which it quotes
+to your followers alone; otherwise it is disabled and says why (“Private posts
 cannot be quoted”, “Only followers can quote this post”, or “You are not
 allowed to quote this post”), as Mastodon's boost menu does. Posts from the
 public and hashtag streams carry a policy written for no one, which the web
