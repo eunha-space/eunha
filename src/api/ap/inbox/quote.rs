@@ -69,11 +69,26 @@ pub(super) struct QuoteFields<'a> {
     pub object: Option<&'a Value>,
     /// `quote_approval_uri`, less one we could not fetch or that is ours.
     pub approval_uri: Option<&'a str>,
+    /// `quote_approval_uri` is neither a string nor `nil` (an inlined stamp,
+    /// say), on which `unsupported_uri_scheme?` raises calling
+    /// `start_with?`: the `Create` or `Update` fails there.
+    pub approval_unreadable: bool,
 }
 
 const QUOTE_KEYS: [&str; 4] = ["quote", "_misskey_quote", "quoteUrl", "quoteUri"];
 
 impl<'a> QuoteFields<'a> {
+    /// The error Mastodon raises reading `object`'s stamp, if it does.
+    pub fn unreadable(object: &Value, local_domain: &str) -> Option<crate::error::AppError> {
+        QuoteFields::parse(object, local_domain)
+            .filter(|fields| fields.approval_unreadable)
+            .map(|_| {
+                crate::error::AppError::Internal(anyhow::anyhow!(
+                    "NoMethodError: quoteAuthorization is neither a string nor nil"
+                ))
+            })
+    }
+
     /// `None` unless the post quotes (`quote?`).
     pub fn parse(object: &'a Value, local_domain: &str) -> Option<Self> {
         if !QUOTE_KEYS.iter().any(|k| present(object.get(*k))) {
@@ -89,9 +104,12 @@ impl<'a> QuoteFields<'a> {
         let approval_uri = first(object.get("quoteAuthorization"))
             .and_then(value_or_id)
             .filter(|u| !unsupported_uri_scheme(Some(u)) && !local_url(u, local_domain));
+        let approval_unreadable = first(object.get("quoteAuthorization"))
+            .is_some_and(|stamp| !matches!(stamp, Value::Null | Value::String(_)));
         Some(Self {
             uri,
             deleted,
+            approval_unreadable,
             legacy: !object.as_object().is_some_and(|o| o.contains_key("quote")),
             object: first(quote).filter(|q| q.is_object()),
             approval_uri,
@@ -211,6 +229,9 @@ pub(super) async fn update_quote(
             if quoted_uri != uri || quoted_local {
                 return Ok(false);
             }
+        }
+        if let Some(error) = QuoteFields::unreadable(object, state.instance.web_domain()) {
+            return Err(error);
         }
         let mut saved = Saved::default();
         let quote =

@@ -1723,3 +1723,52 @@ async fn test_a_stamp_is_kept_by_its_scheme_and_its_host_and_port() {
     assert!(resp.status().is_success(), "{}", resp.status());
     assert_eq!(quote_state(&r.ctx, ours).await, 0);
 }
+
+async fn queued_activities(ctx: &TestContext) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::ProcessingWorker'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// A stamp inlined as an object is one `unsupported_uri_scheme?` raises
+/// on: a `Create` fails before the status is created, and an edit before
+/// any of it is kept, each to be tried again.
+#[tokio::test]
+async fn test_an_inlined_stamp_fails_the_activity() {
+    let r = Requested::new("quote-inlined-stamp").await;
+    let stamp = json!({
+        "id": format!("{}/stamps/1", r.carol_uri),
+        "type": "QuoteAuthorization",
+    });
+    let mut create = r.create(1);
+    create["object"]["quoteAuthorization"] = stamp.clone();
+    r.send(&create).await;
+    let created: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE uri = $1")
+        .bind(format!("{}/statuses/1", r.carol_uri))
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(created, 0);
+    assert_eq!(queued_activities(&r.ctx).await, 1);
+
+    let mut create = r.create(2);
+    create["object"]["published"] = json!("2026-01-01T00:00:00Z");
+    r.send(&create).await;
+    let quoting = r.status(2).await;
+    r.send(&r.update(
+        2,
+        "2026-01-02T00:00:00Z",
+        json!({"content": "edited", "quote": r.original_uri, "quoteAuthorization": [stamp]}),
+    ))
+    .await;
+    let text: String = sqlx::query_scalar("SELECT text FROM statuses WHERE id = $1")
+        .bind(quoting)
+        .fetch_one(&r.ctx.db)
+        .await
+        .unwrap();
+    assert_eq!(text, "carol quotes");
+    assert_eq!(queued_activities(&r.ctx).await, 2);
+}

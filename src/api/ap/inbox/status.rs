@@ -812,6 +812,16 @@ pub(super) async fn handle_update(
                 return implicit_status_update(state, activity, object, note_uri, quote_policy)
                     .await;
             }
+            // `update_quote!` raises on a stamp it cannot read, inside the
+            // transaction the whole edit is made in: nothing of it is kept,
+            // and the activity is tried again.
+            if previous.is_some() {
+                if let Some(error) =
+                    super::quote::QuoteFields::unreadable(object, state.instance.web_domain())
+                {
+                    return Err(error);
+                }
+            }
             // `update_poll!` saving a `Question` with no option raises
             // `RecordInvalid` inside the edit's transaction, and none of the
             // edit is kept.

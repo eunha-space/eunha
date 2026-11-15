@@ -464,6 +464,13 @@ async fn create_locked(
     // `StatusParser#language`.
     let language = super::status_parser::language(object);
 
+    // `process_quote`: a stamp Mastodon cannot read fails the activity
+    // before the status is created, to be tried again.
+    if let Some(error) = super::quote::QuoteFields::unreadable(object, state.instance.web_domain())
+    {
+        return Err(error);
+    }
+
     // `process_poll`: a `Question` with no option is a poll that is not valid
     // (`validates :options, presence: true`), which the status saves with it,
     // so `Status.create!` raises `RecordInvalid` and the status is not taken.
