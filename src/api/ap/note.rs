@@ -33,12 +33,15 @@ pub fn note_context() -> Value {
             "Hashtag": "as:Hashtag",
             "Emoji": "toot:Emoji",
             "focalPoint": { "@container": "@list", "@id": "toot:focalPoint" },
-            "fep": "https://w3id.org/fep/044f#",
-            // Mastodon's `quotes` context extension.
-            "quote": { "@id": "fep:quote", "@type": "@id" },
+            // Mastodon's `quotes` context extension, its IRIs written out
+            // in full as `ContextHelper` writes them.
+            "quote": { "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" },
             "quoteUri": "http://fedibird.com/ns#quoteUri",
             "_misskey_quote": "https://misskey-hub.net/ns#_misskey_quote",
-            "quoteAuthorization": { "@id": "fep:quoteAuthorization", "@type": "@id" },
+            "quoteAuthorization": {
+                "@id": "https://w3id.org/fep/044f#quoteAuthorization",
+                "@type": "@id"
+            },
             // FEP-7888 / GoToSocial interaction policy terms, so the
             // `interactionPolicy` we emit below survives JSON-LD expansion.
             "gts": "https://gotosocial.org/ns#",
@@ -914,5 +917,27 @@ mod tests {
         assert_eq!(iso8601_seconds(&json!(12)).as_deref(), Some("PT12S"));
         assert_eq!(iso8601_seconds(&json!(0.0)).as_deref(), Some("PT0S"));
         assert_eq!(iso8601_seconds(&json!("x")), None);
+    }
+
+    /// `ContextHelper`'s `quotes` extension, word for word: full IRIs, no
+    /// prefix of its own.
+    #[test]
+    fn the_quote_terms_are_written_as_mastodon_writes_them() {
+        let context = note_context();
+        let terms = &context[1];
+        assert!(terms.get("fep").is_none());
+        assert_eq!(
+            terms["quote"],
+            json!({ "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" })
+        );
+        assert_eq!(
+            terms["quoteAuthorization"],
+            json!({ "@id": "https://w3id.org/fep/044f#quoteAuthorization", "@type": "@id" })
+        );
+        assert_eq!(terms["quoteUri"], "http://fedibird.com/ns#quoteUri");
+        assert_eq!(
+            terms["_misskey_quote"],
+            "https://misskey-hub.net/ns#_misskey_quote"
+        );
     }
 }

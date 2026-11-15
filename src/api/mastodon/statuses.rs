@@ -2388,7 +2388,7 @@ mod inline_quote_tests {
         );
         assert_eq!(
             terms["quote"],
-            json!({ "@id": "fep:quote", "@type": "@id" })
+            json!({ "@id": "https://w3id.org/fep/044f#quote", "@type": "@id" })
         );
         assert_eq!(terms["Hashtag"], "as:Hashtag");
         assert_eq!(terms["sensitive"], "as:sensitive");
