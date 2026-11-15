@@ -151,7 +151,13 @@ pub async fn build_note(
                   s.quote_approval_policy,
                   a.username, a.uri AS account_uri, a.id_scheme,
                   qr.id AS "quote_id?",
-                  quoted_s.uri AS "quote_uri?"
+                  quoted_s.id AS "quoted_id?",
+                  quoted_s.uri AS "quoted_uri?",
+                  quoted_s.reblog_of_id AS "quoted_reblog_of_id?",
+                  quoted_a.id AS "quoted_account_id?",
+                  quoted_a.domain AS "quoted_domain?",
+                  quoted_a.username AS "quoted_username?",
+                  quoted_a.id_scheme AS "quoted_id_scheme?"
            FROM statuses s
            JOIN accounts a ON a.id = s.account_id
            -- `quote?`: a quote in whatever state. A quoted post that is gone
@@ -159,6 +165,7 @@ pub async fn build_note(
            -- `TagManager#approval_uri_for` names it.
            LEFT JOIN quotes qr ON qr.status_id = s.id
            LEFT JOIN statuses quoted_s ON quoted_s.id = qr.quoted_status_id AND quoted_s.deleted_at IS NULL
+           LEFT JOIN accounts quoted_a ON quoted_a.id = quoted_s.account_id
            WHERE s.id = $1 AND s.deleted_at IS NULL AND a.domain IS NULL
              AND s.reblog_of_id IS NULL"#,
         status_id,
@@ -497,11 +504,32 @@ pub async fn build_note(
     // is gone), `_misskey_quote` and `quoteUri` for one that is there, and
     // `quoteAuthorization` once there is a stamp to name.
     if let Some(quote_id) = s.quote_id {
-        match s.quote_uri.clone().filter(|u| !u.is_empty()) {
+        // `TagManager#uri_for(object.quote.quoted_status)`: a local post's
+        // computed under its author's id scheme, never its stored column; a
+        // remote one's as it is stored.
+        let quoted_uri = match (s.quoted_id, s.quoted_account_id) {
+            (Some(quoted_id), Some(quoted_account_id)) if s.quoted_domain.is_none() => {
+                let base = crate::federation::tag::status_uri(
+                    domain,
+                    quoted_account_id,
+                    s.quoted_id_scheme,
+                    s.quoted_username.as_deref().unwrap_or_default(),
+                    quoted_id,
+                );
+                Some(json!(if s.quoted_reblog_of_id.is_some() {
+                    format!("{base}/activity")
+                } else {
+                    base
+                }))
+            }
+            (Some(_), _) => Some(json!(s.quoted_uri)),
+            _ => None,
+        };
+        match quoted_uri {
             Some(q) => {
-                note["quote"] = json!(q);
-                note["_misskey_quote"] = json!(q);
-                note["quoteUri"] = json!(q);
+                note["quote"] = q.clone();
+                note["_misskey_quote"] = q.clone();
+                note["quoteUri"] = q;
             }
             None => note["quote"] = json!({ "type": "Tombstone" }),
         }

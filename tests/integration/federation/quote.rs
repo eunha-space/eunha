@@ -1308,3 +1308,44 @@ async fn test_a_stamp_delete_is_forwarded_to_the_boosters_followers() {
     assert_eq!(forwarded.len(), 1, "{forwarded:?}");
     assert_eq!(forwarded[0]["id"], delete["id"]);
 }
+
+/// A local quote of a local post names it as `TagManager#uri_for` does: by
+/// the URI computed under its author's id scheme, never the stored `uri`
+/// column (empty for an imported post, or stale).
+#[tokio::test]
+async fn test_a_local_quote_names_its_post_by_its_computed_uri() {
+    let ctx = TestContext::new("quote-note-local-uri").await;
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "quote me", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    sqlx::query("UPDATE statuses SET uri = 'https://stale.invalid/x' WHERE id = $1")
+        .bind(original_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let note_path = quote["uri"]
+        .as_str()
+        .unwrap()
+        .strip_prefix(&format!("https://{}", ctx.domain))
+        .unwrap()
+        .to_owned();
+    let note: Value = ctx.api.ap_get(&note_path, None).await.json().await.unwrap();
+    let expected = original["uri"].as_str().unwrap();
+    assert_eq!(note["quote"].as_str(), Some(expected), "{note}");
+    assert_eq!(note["quoteUri"].as_str(), Some(expected), "{note}");
+    assert_eq!(note["_misskey_quote"].as_str(), Some(expected), "{note}");
+}
