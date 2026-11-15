@@ -155,6 +155,17 @@ export function setDefaultPostLanguage(token: string, language: string) {
   return restClient(token).v1.accounts.updateCredentials({ source: { language } })
 }
 
+/**
+ * Mastodon's "Who can quote" posting default (`default_quote_policy`), which
+ * the composer starts each post's quote policy at.
+ */
+export function setDefaultQuotePolicy(token: string, policy: QuotePolicy) {
+  return restClient(token).v1.accounts.updateCredentials({
+    // masto.js does not model `source[quote_policy]`.
+    source: { quotePolicy: policy } as { language?: string },
+  })
+}
+
 export function getCurrentAccount(token: string): Promise<mastodon.v1.AccountCredentials> {
   return restClient(token).v1.accounts.verifyCredentials()
 }

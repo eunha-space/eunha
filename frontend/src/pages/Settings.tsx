@@ -10,12 +10,17 @@ import {
   setOwnEmailSubscriptions,
   type OwnEmailSubscriptions,
 } from '../eunha-api.ts'
-import { getCurrentAccount, setDefaultPostLanguage } from '../api.ts'
+import {
+  getCurrentAccount,
+  setDefaultPostLanguage,
+  setDefaultQuotePolicy,
+  type QuotePolicy,
+} from '../api.ts'
 import { BrowserPushSettings } from '@/components/browser-push-settings.tsx'
 import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { beginLogin, getToken, logout } from '../auth.ts'
 import { isAdvancedLayout, setAdvancedLayout } from '../lib/panes.ts'
-import { clearMe, getMeAccount } from '../me.ts'
+import { clearMe, getMeAccount, loadMe } from '../me.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { EmailSettings } from '@/components/email-settings.tsx'
 import { MailPreferences } from '@/components/mail-preferences.tsx'
@@ -247,6 +252,83 @@ function PostingLanguageSettings({ token }: { token: string }) {
   )
 }
 
+// `statuses.quote_policies.*`, in the order Mastodon's `UserSettings` lists
+// `default_quote_policy`'s values.
+const QUOTE_POLICIES: [QuotePolicy, string][] = [
+  ['public', 'Anyone'],
+  ['followers', 'Followers only'],
+  ['nobody', 'Just me'],
+]
+
+/**
+ * Mastodon's "Who can quote" on its posting defaults page. As there, it is
+ * disabled while posts default to followers-only, which no one else may
+ * quote, and a quiet public default carries its hint
+ * (`simple_form.hints.defaults.setting_default_quote_policy_*`).
+ */
+function QuotePolicySettings({ token }: { token: string }) {
+  const [account, setAccount] = useState<{ policy: QuotePolicy; privacy: string }>()
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getCurrentAccount(token).then((me) => {
+      if (active) setAccount({ policy: quotePolicyOf(me), privacy: me.source.privacy ?? 'public' })
+    }).catch(() => {})
+    return () => { active = false }
+  }, [token])
+
+  if (!account) return null
+
+  const hint = account.privacy === 'private'
+    ? "Followers-only posts authored on Mastodon can't be quoted by others."
+    : account.privacy === 'unlisted'
+      ? 'When people quote you, their post will also be hidden from trending timelines.'
+      : null
+
+  return (
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">Who can quote</h2>
+      <Select
+        items={QUOTE_POLICIES.map(([value, label]) => ({ value, label }))}
+        value={account.policy}
+        disabled={saving || account.privacy === 'private'}
+        onValueChange={async (value) => {
+          if (typeof value !== 'string') return
+          setSaving(true)
+          try {
+            const me = await setDefaultQuotePolicy(token, value as QuotePolicy)
+            setAccount({ policy: quotePolicyOf(me), privacy: me.source.privacy ?? 'public' })
+            // The composer reads the default from the cached account.
+            await loadMe(token)
+          } catch {
+            toast.error('Could not save who can quote')
+          } finally {
+            setSaving(false)
+          }
+        }}
+      >
+        <SelectTrigger className="w-full" aria-label="Who can quote">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {QUOTE_POLICIES.map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
+    </section>
+  )
+}
+
+function quotePolicyOf(me: { source: object }): QuotePolicy {
+  const policy = (me.source as { quotePolicy?: unknown }).quotePolicy
+  return policy === 'followers' || policy === 'nobody' ? policy : 'public'
+}
+
 export default function Settings() {
   const { palette, setPalette } = useTheme()
   const token = getToken()
@@ -300,6 +382,8 @@ export default function Settings() {
           <TimelinePreferences token={token} />
 
           <PostingLanguageSettings token={token} />
+
+          <QuotePolicySettings token={token} />
 
           <section className="space-y-2 rounded-lg border p-4">
             <h2 className="font-semibold">Collections</h2>

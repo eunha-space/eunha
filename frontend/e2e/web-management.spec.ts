@@ -31,6 +31,48 @@ test('default post language is saved to the account credentials', async ({ page 
   await expect(picker).toHaveText('Korean')
 })
 
+test('who can quote is saved to the account credentials and starts the composer', async ({ page }) => {
+  let saved: string | null = null
+  await page.route('**/api/v1/accounts/verify_credentials', (route) =>
+    route.fulfill({ json: {
+      id: '1', acct: 'alice', username: 'alice', display_name: 'Alice', emojis: [],
+      source: { privacy: 'unlisted', language: 'en', quote_policy: saved ?? 'public' },
+    } }),
+  )
+  await page.route('**/api/v1/accounts/update_credentials', (route) => {
+    saved = route.request().postData()?.match(/name="source\[quote_policy\]"\r\n\r\n(\w+)/)?.[1] ?? null
+    return route.fulfill({ json: {
+      id: '1', acct: 'alice', username: 'alice', display_name: 'Alice', emojis: [],
+      source: { privacy: 'unlisted', language: 'en', quote_policy: saved },
+    } })
+  })
+  await page.goto('/settings')
+  const picker = page.getByRole('combobox', { name: 'Who can quote' })
+  await expect(picker).toContainText('Anyone')
+  // A quiet public default carries Mastodon's hint.
+  await expect(page.getByText('their post will also be hidden from trending timelines')).toBeVisible()
+  await picker.click()
+  await page.getByRole('option', { name: 'Followers only' }).click()
+  await expect(picker).toContainText('Followers only')
+  expect(saved).toBe('followers')
+  // The cached account the composer starts from is refreshed.
+  await expect.poll(() => page.evaluate(() =>
+    JSON.parse(localStorage.getItem('eunha:me-account') ?? '{}').defaultQuotePolicy,
+  )).toBe('followers')
+})
+
+test('who can quote is disabled while posts default to followers-only', async ({ page }) => {
+  await page.route('**/api/v1/accounts/verify_credentials', (route) =>
+    route.fulfill({ json: {
+      id: '1', acct: 'alice', username: 'alice', display_name: 'Alice', emojis: [],
+      source: { privacy: 'private', language: 'en', quote_policy: 'nobody' },
+    } }),
+  )
+  await page.goto('/settings')
+  await expect(page.getByRole('combobox', { name: 'Who can quote' })).toBeDisabled()
+  await expect(page.getByText("Followers-only posts authored on Mastodon can't be quoted by others.")).toBeVisible()
+})
+
 test('a keyword filter is created with the selected contexts and action', async ({ page }) => {
   let saved: Record<string, unknown> | null = null
   await page.route('**/api/v2/filters', (route) => {

@@ -649,6 +649,11 @@ Boosts in timelines](#boosts-in-timelines)).
 `users.settings`; eunha used to write `web.default_sensitive`, and before
 that `sensitive`, `privacy`, `language` and `quote_policy` for the other
 posting defaults, which it still reads when Mastodon's key is missing.
+The settings page sets the posting language and “Who can quote”
+(`source[quote_policy]`), which the composer starts each post's quote policy
+at. As on Mastodon's posting defaults page, “Who can quote” is disabled while
+posts default to followers-only, and a quiet public default carries
+Mastodon's hint that quotes of it stay out of trends.
 `GET /api/v1/preferences` gives as the posting language the one chosen,
 else the member's interface language, else the request's
 (`preferred_posting_language`).
