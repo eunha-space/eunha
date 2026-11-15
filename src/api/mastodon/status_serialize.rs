@@ -157,16 +157,50 @@ pub async fn batch_reblog_data(
     Ok(result)
 }
 
+/// `REST::StatusSerializer#quote` for every status built here and the post
+/// each one boosts (`belongs_to :reblog, serializer: REST::StatusSerializer`
+/// renders the boosted post whole, its quote included), as `viewer_id` sees
+/// them. Called by [`hydrate_status_stats`], so every endpoint that renders
+/// statuses carries their quotes.
+async fn attach_quotes(
+    state: &AppState,
+    statuses: &mut [&mut super::types::Status],
+    viewer_id: Option<i64>,
+) {
+    let mut ids: Vec<i64> = Vec::new();
+    for s in statuses.iter() {
+        ids.extend(s.id.parse::<i64>().ok());
+        if let Some(rb) = s.reblog.as_deref() {
+            ids.extend(rb.id.parse::<i64>().ok());
+        }
+    }
+    if ids.is_empty() {
+        return;
+    }
+    let Ok(quotes) = batch_quote_data(state, &ids, viewer_id).await else {
+        return;
+    };
+    let quote_of = |s: &super::types::Status| {
+        s.id.parse::<i64>()
+            .ok()
+            .and_then(|id| quotes.get(&id).cloned())
+    };
+    for s in statuses.iter_mut() {
+        s.quote = quote_of(s);
+        if let Some(rb) = s.reblog.as_deref_mut() {
+            rb.quote = quote_of(rb);
+        }
+    }
+}
+
 /// Batch-fetch quoted statuses for a list of statuses. Returns a map from
 /// quoting status ID → fully-built API `Status` (without the quote's own quote).
 pub async fn batch_quote_data(
     state: &AppState,
-    statuses: &[crate::db::models::Status],
+    status_ids: &[i64],
     viewer_id: Option<i64>,
 ) -> AppResult<std::collections::HashMap<i64, super::types::QuoteInfo>> {
     use std::collections::{HashMap, HashSet};
-
-    let status_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
 
     // The quotes these statuses make, as `REST::StatusSerializer#quote` shows
     // them: `object.quote if object.quote&.acceptable?`, accepted or not
@@ -174,7 +208,7 @@ pub async fn batch_quote_data(
     let quote_rows = sqlx::query!(
         r#"SELECT status_id, quoted_status_id, state FROM quotes
            WHERE status_id = ANY($1::bigint[]) AND (state = 1 OR NOT legacy)"#,
-        &status_ids,
+        status_ids,
     )
     .fetch_all(&state.db)
     .await
@@ -390,11 +424,11 @@ pub async fn batch_quote_data(
     // else filtered as the viewer sees the quoted post, and carries it unless
     // the viewer may not see it.
     let mut result: HashMap<i64, super::types::QuoteInfo> = HashMap::new();
-    for s in statuses {
-        let Some(&db_state) = quote_states.get(&s.id) else {
+    for &status_id in status_ids {
+        let Some(&db_state) = quote_states.get(&status_id) else {
             continue;
         };
-        let quoted_id = quote_of.get(&s.id).copied();
+        let quoted_id = quote_of.get(&status_id).copied();
         let quoted = quoted_id.and_then(|qid| qs_map.get(&qid));
         let (effective_state, quoted_status) =
             if db_state != crate::db::models::quote_state::ACCEPTED {
@@ -413,7 +447,7 @@ pub async fn batch_quote_data(
                 ("deleted".to_string(), None)
             };
         result.insert(
-            s.id,
+            status_id,
             super::types::QuoteInfo {
                 state: effective_state,
                 quoted_status: quoted_status.map(Box::new),
@@ -761,14 +795,6 @@ pub async fn build_status_with_app(
     api.emojis = status_emojis;
     api.poll = fetch_status_poll(state, id, viewer_account_id).await?;
     api.card = fetch_status_card(state, id, viewer_account_id).await;
-    // Populate quoted status if present (check quotes table)
-    {
-        let quote_statuses = vec![s.clone()];
-        let qmap = batch_quote_data(state, &quote_statuses, viewer_account_id).await?;
-        if let Some(qi) = qmap.into_values().next() {
-            api.quote = Some(qi);
-        }
-    }
     // The boosted status keeps its own attribution, which is the one a reader
     // cares about: the boost itself was made by a client, the post was written
     // by one.
@@ -876,6 +902,7 @@ pub async fn hydrate_status_stats<'a>(
 ) {
     let viewer = viewer.into();
     let mut refs: Vec<&mut super::types::Status> = statuses.into_iter().collect();
+    attach_quotes(state, &mut refs, viewer).await;
     let mut account_ids: Vec<i64> = Vec::new();
     let mut status_ids: Vec<i64> = Vec::new();
     let mut collect = |s: &super::types::Status| {

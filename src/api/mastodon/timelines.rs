@@ -16,9 +16,8 @@ use super::{
     accounts::{batch_account_emojis, batch_account_roles},
     convert::status_from_db,
     status_serialize::{
-        batch_quote_data, batch_reblog_data, batch_status_cards, batch_status_emojis,
-        batch_status_media, batch_status_mentions, batch_status_polls, batch_statuses_tags,
-        hydrate_status_stats,
+        batch_reblog_data, batch_status_cards, batch_status_emojis, batch_status_media,
+        batch_status_mentions, batch_status_polls, batch_statuses_tags, hydrate_status_stats,
     },
     types::{PaginationParams, Status},
 };
@@ -899,7 +898,6 @@ async fn build_status_list(
     let all_status_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
     let media_map = batch_status_media(state, &all_status_ids).await?;
     let reblog_map = batch_reblog_data(state, &statuses).await?;
-    let quote_map = batch_quote_data(state, &statuses, viewer_id).await?;
     let reblog_ids: Vec<i64> = reblog_map.values().map(|(rs, _, _)| rs.id).collect();
     let mut enrich_ids = all_status_ids.clone();
     enrich_ids.extend_from_slice(&reblog_ids);
@@ -969,7 +967,6 @@ async fn build_status_list(
         api.emojis = emojis_map.get(&s.id).cloned().unwrap_or_default();
         api.poll = polls_map.get(&s.id).cloned();
         api.card = cards_map.get(&s.id).cloned();
-        api.quote = quote_map.get(&s.id).cloned();
         if let Some(ref mut rb) = api.reblog {
             let rid: i64 = rb.id.parse().unwrap_or(0);
             let rb_id: i64 = rb.account.id.parse().unwrap_or(0);

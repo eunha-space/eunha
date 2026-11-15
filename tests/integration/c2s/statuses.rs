@@ -8279,3 +8279,95 @@ async fn test_a_scheduled_quote_keeps_its_quote_and_policy() {
             .unwrap();
     assert_eq!(posted, 0);
 }
+
+/// A boost of a quote post carries the quote: `belongs_to :reblog` renders
+/// the boosted post with `REST::StatusSerializer`, `quote` included, in the
+/// reblog response, `GET /api/v1/statuses/:id`, timelines and an account's
+/// statuses alike.
+#[tokio::test]
+async fn test_boosted_quote_post_keeps_its_quote() {
+    let ctx = TestContext::new("quote-boosted").await;
+
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "quoted original", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    // Carol follows alice; the first read fills her feed, and the boost
+    // arrives in it by fan-out.
+    let (_, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    ctx.api.follow(&carol_token, &ctx.alice_id).await;
+    ctx.api.home_timeline(&carol_token).await;
+
+    let boost: Value = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{quote_id}/reblog"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let boost_id = boost["id"].as_str().unwrap();
+    let check = |s: &Value, what: &str| {
+        assert_eq!(s["id"].as_str(), Some(boost_id), "{what}: {s}");
+        assert_eq!(
+            s["reblog"]["quote"]["state"].as_str(),
+            Some("accepted"),
+            "{what}: {s}"
+        );
+        assert_eq!(
+            s["reblog"]["quote"]["quoted_status"]["id"].as_str(),
+            Some(original_id),
+            "{what}: {s}"
+        );
+    };
+    check(&boost, "reblog response");
+
+    let fetched: Value = ctx
+        .api
+        .get(&format!("/api/v1/statuses/{boost_id}"), None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    check(&fetched, "GET /api/v1/statuses/:id");
+
+    let account_statuses: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}/statuses", ctx.alice_id),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let boosted = account_statuses
+        .iter()
+        .find(|s| s["id"].as_str() == Some(boost_id))
+        .expect("the boost in alice's statuses");
+    check(boosted, "account statuses");
+
+    let home = ctx.api.home_timeline(&carol_token).await;
+    let boosted = home
+        .iter()
+        .find(|s| s["id"].as_str() == Some(boost_id))
+        .expect("the boost on carol's home timeline");
+    check(boosted, "home timeline");
+}

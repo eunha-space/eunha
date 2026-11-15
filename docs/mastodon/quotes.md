@@ -110,6 +110,19 @@ sends it: on a delivery queue of its own, Mastodon's `pull`, taken only when
 the others have nothing due, and tried nine times rather than seventeen.
 
 
+How a quote is shown
+--------------------
+
+A status's `quote` is rendered as `REST::StatusSerializer#quote` renders it,
+for the viewer asking, wherever the status appears: on its own, as the post a
+boost carries, in a notification, or in any list of statuses. A legacy quote
+that was never accepted is left out. A quote not accepted shows its state
+alone; an accepted one is `deleted` when the quoted post is gone, and
+otherwise is filtered as `StatusFilter#filter_state_for_quote` has it for the
+viewer (`unauthorized`, `blocked_domain`, `blocked_account`, `muted_account`)
+and carries the quoted post unless it is `unauthorized`.
+
+
 What still differs
 ------------------
 

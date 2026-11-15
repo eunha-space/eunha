@@ -2513,3 +2513,96 @@ async fn test_group_accounts_page_by_notification() {
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(resp.json::<Vec<Value>>().await.unwrap().is_empty());
 }
+
+/// A notification's status carries its quote, rendered by
+/// `REST::StatusSerializer` like any other, in both notification APIs and
+/// in the favourites list.
+#[tokio::test]
+async fn test_notification_status_carries_its_quote() {
+    let ctx = TestContext::new("notif-quote").await;
+
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "the quoted post", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{quote_id}/favourite"),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let quoted = |s: &Value| {
+        s["quote"]["quoted_status"]["id"]
+            .as_str()
+            .map(str::to_owned)
+    };
+
+    let v1: Vec<Value> = ctx
+        .api
+        .get("/api/v1/notifications", Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let favourite = v1
+        .iter()
+        .find(|n| n["type"] == "favourite")
+        .expect("a favourite notification");
+    assert_eq!(quoted(&favourite["status"]).as_deref(), Some(original_id));
+
+    let single: Value = ctx
+        .api
+        .get(
+            &format!(
+                "/api/v1/notifications/{}",
+                favourite["id"].as_str().unwrap()
+            ),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(quoted(&single["status"]).as_deref(), Some(original_id));
+
+    let v2: Value = ctx
+        .api
+        .get("/api/v2/notifications", Some(&ctx.bob_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let status = v2["statuses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"].as_str() == Some(quote_id))
+        .expect("the quote post among the v2 statuses");
+    assert_eq!(quoted(status).as_deref(), Some(original_id));
+
+    let favourites: Vec<Value> = ctx
+        .api
+        .get("/api/v1/favourites", Some(&ctx.alice_token))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(quoted(&favourites[0]).as_deref(), Some(original_id));
+}
