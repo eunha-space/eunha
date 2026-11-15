@@ -563,3 +563,12 @@ test('in a timeline, a quoted post’s link card is its address', async ({ page 
   await expect(quote.getByRole('link', { name: 'https://news.example/story' })).toBeVisible()
   await expect(quote.getByTestId('preview-card')).toHaveCount(0)
 })
+
+test('a quoted post’s own quote of someone muted says so, and can be named anyway', async ({ page }) => {
+  await page.route('**/api/v1/statuses/30', (r) => r.fulfill({ json: status('30', carol) }))
+  await setup(page, status('20', bob, { quote: { state: 'muted_account', quoted_status_id: '30' } }))
+  const quote = page.getByTestId('quoted-post')
+  await expect(quote.getByText("This post is hidden because you've muted @carol.")).toBeVisible()
+  await quote.getByRole('button', { name: 'Show anyway' }).click()
+  await expect(quote.getByText('Quoted a post by @carol')).toBeVisible()
+})

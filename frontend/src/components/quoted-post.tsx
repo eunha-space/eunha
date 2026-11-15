@@ -238,9 +238,17 @@ export function QuotedStatus({
 // in which case it says so as a quote would.
 function NestedQuote({ quote, token }: { quote: Quote; token?: string }) {
   const quoted = useQuotedStatus(quote, token)
+  const [revealed, setRevealed] = useState(false)
   // Nothing to name yet while its post is fetched.
-  if (quote.state === 'accepted' && quoted === undefined) return null
-  if (quote.state !== 'accepted' || !quoted) return <QuotePlaceholder quote={quote} />
+  if (quoted === undefined) return null
+  // One by someone the reader blocked or muted says so, as the quote would.
+  const hiddenMessage = quoted && hiddenByReader(quote, quoted.account)
+  if (hiddenMessage && !revealed) {
+    return <QuotePlaceholder message={hiddenMessage} onShow={() => setRevealed(true)} />
+  }
+  if ((quote.state !== 'accepted' && !hiddenMessage) || !quoted) {
+    return <QuotePlaceholder quote={quote} />
+  }
   return (
     <p className="text-muted-foreground mt-1 text-xs">
       Quoted a post by @{quoted.account.acct}
