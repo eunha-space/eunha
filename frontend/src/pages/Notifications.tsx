@@ -46,6 +46,8 @@ function describe(type: string): { icon: ReactNode; verb: string } {
       return { icon: <Bell className="size-4" />, verb: 'posted' }
     case 'update':
       return { icon: <Pencil className="size-4" />, verb: 'edited a post' }
+    case 'quoted_update':
+      return { icon: <Pencil className="size-4" />, verb: 'edited a post you have quoted' }
     case 'poll':
       return { icon: <Bell className="size-4" />, verb: 'ran a poll that ended' }
     case 'admin.sign_up':

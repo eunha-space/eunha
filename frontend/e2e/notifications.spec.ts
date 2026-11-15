@@ -61,3 +61,26 @@ test('notifications show what they held last while reloading', async ({ page }) 
   release()
   await expect(page.getByText('No notifications yet.')).toBeVisible()
 })
+
+// Mastodon's `notification.quoted_update`.
+test('a quoted post’s edit is named as one', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
+    localStorage.setItem('eunha:active-account', '1')
+  })
+  await page.route('**/api/v1/markers', r => r.fulfill({ json: {} }))
+  await page.route('**/api/v1/timelines/**', r => r.fulfill({ json: [] }))
+  await page.route('**/api/v1/notifications**', r => r.fulfill({ json: [{
+    id: '43', type: 'quoted_update', created_at: '2026-01-01T00:00:00.000Z', account: bob,
+    status: {
+      id: '9', account: bob, content: '<p>Edited words</p>', created_at: '2026-01-01T00:00:00.000Z',
+      sensitive: false, spoiler_text: '', visibility: 'public', language: 'en', uri: '', url: '',
+      replies_count: 0, reblogs_count: 0, favourites_count: 0, edited_at: '2026-01-02T00:00:00.000Z',
+      media_attachments: [], mentions: [], tags: [], emojis: [], reblog: null, card: null, poll: null,
+    },
+  }] }))
+  await page.route('**/api/v1/notifications/unread_count**', r => r.fulfill({ json: { count: 0 } }))
+  await page.goto('/notifications')
+  await expect(page.getByText('edited a post you have quoted')).toBeVisible()
+  await expect(page.getByText('quoted_update')).toHaveCount(0)
+})
