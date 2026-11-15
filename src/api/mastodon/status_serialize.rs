@@ -404,81 +404,29 @@ pub async fn batch_quote_data(
         .cloned()
         .collect();
 
-    let account_ids: Vec<i64> = quoted_statuses
-        .iter()
-        .map(|s| s.account_id)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let accounts = if !account_ids.is_empty() {
-        sqlx::query_as!(
-            Account,
-            "SELECT * FROM accounts WHERE id = ANY($1::bigint[])",
-            &account_ids,
-        )
-        .fetch_all(&state.db)
-        .await?
-    } else {
-        vec![]
+    // `REST::ShallowStatusSerializer` is a `REST::StatusSerializer`: the
+    // quoted posts are rendered whole, for the viewer, with what
+    // `StatusRelationshipsPresenter` gives them (their flags and `filtered`);
+    // `hydrate_status_stats` adds their counts as it does the quoting posts'.
+    let mut built =
+        super::timelines::build_status_list_unhydrated(state, &quoted_statuses, viewer_id).await?;
+    let filters = match viewer_id {
+        Some(vid) => {
+            super::timelines::compute_filter_results(&state.db, vid, &quoted_statuses).await
+        }
+        None => HashMap::new(),
     };
-    let account_map: HashMap<i64, Account> = accounts.into_iter().map(|a| (a.id, a)).collect();
-
-    let qs_ids: Vec<i64> = quoted_statuses.iter().map(|s| s.id).collect();
-    let (media_map, tags_map, mentions_map, emojis_map, polls_map, cards_map, ctxs) =
-        if !qs_ids.is_empty() {
-            let media = batch_status_media(state, &qs_ids).await?;
-            let tags = batch_statuses_tags(state, &qs_ids).await?;
-            let mentions = batch_status_mentions(state, &qs_ids).await?;
-            let emojis = batch_status_emojis(state, &quoted_statuses).await?;
-            let polls = batch_status_polls(state, &qs_ids, viewer_id).await?;
-            let cards = batch_status_cards(state, &qs_ids, viewer_id).await?;
-            let ctxs = if let Some(vid) = viewer_id {
-                super::statuses::batch_viewer_contexts(state, vid, &qs_ids).await?
-            } else {
-                HashMap::new()
-            };
-            (media, tags, mentions, emojis, polls, cards, ctxs)
-        } else {
-            (
-                HashMap::new(),
-                HashMap::new(),
-                HashMap::new(),
-                HashMap::new(),
-                HashMap::new(),
-                HashMap::new(),
-                HashMap::new(),
-            )
-        };
 
     // The quoted posts' own quotes, as `REST::ShallowQuoteSerializer` has
     // them, under the same rules for the same viewer.
+    let qs_ids: Vec<i64> = quoted_statuses.iter().map(|s| s.id).collect();
     let nested = resolve_quotes(state, &qs_ids, viewer_id).await?;
 
-    // Build a map from quoted status id → API Status
     let mut qs_map: HashMap<i64, super::types::Status> = HashMap::new();
-    for qs in &quoted_statuses {
-        let Some(account) = account_map.get(&qs.account_id) else {
-            continue;
-        };
-        let media = media_map.get(&qs.id).cloned().unwrap_or_default();
-        let mentions = mentions_map.get(&qs.id).cloned().unwrap_or_default();
-        let ctx = ctxs.get(&qs.id).cloned();
-        let mut api = super::convert::status_from_db(
-            &state.urls,
-            qs,
-            account,
-            media,
-            None,
-            ctx,
-            &mentions,
-            &[],
-        );
-        api.tags = tags_map.get(&qs.id).cloned().unwrap_or_default();
-        api.mentions = mentions;
-        api.emojis = emojis_map.get(&qs.id).cloned().unwrap_or_default();
-        api.poll = polls_map.get(&qs.id).cloned();
-        api.card = cards_map.get(&qs.id).cloned();
+    for (qs, mut api) in quoted_statuses.iter().zip(built.drain(..)) {
+        if let Some(serde_json::Value::Array(found)) = filters.get(&qs.id) {
+            api.filtered = Some(found.clone());
+        }
         api.quote = nested.get(&qs.id).map(|r| r.shallow(false));
         qs_map.insert(qs.id, api);
     }
@@ -960,10 +908,7 @@ pub async fn hydrate_status_stats<'a>(
         }
     };
     for s in &refs {
-        collect(s);
-        if let Some(rb) = s.reblog.as_deref() {
-            collect(rb);
-        }
+        visit(s, &mut collect);
     }
     if status_ids.is_empty() {
         return;
@@ -981,7 +926,7 @@ pub async fn hydrate_status_stats<'a>(
         None
     };
 
-    let apply = |s: &mut super::types::Status| {
+    let mut apply = |s: &mut super::types::Status| {
         if let Ok(aid) = s.account.id.parse::<i64>() {
             s.account.email_subscriptions = offering.as_ref().map(|o| o.contains(&aid));
             if let Some(&value) = noindex.get(&aid) {
@@ -1001,30 +946,17 @@ pub async fn hydrate_status_stats<'a>(
                 s.quotes_count = quotes;
             }
         }
+        // `tagged_collections`.
+        if let Some(collections) =
+            s.id.parse::<i64>()
+                .ok()
+                .and_then(|sid| tagged_collections.get(&sid))
+        {
+            s.tagged_collections = collections.clone();
+        }
     };
     for s in refs.iter_mut() {
-        apply(s);
-        if let Some(rb) = s.reblog.as_deref_mut() {
-            apply(rb);
-        }
-    }
-    // `tagged_collections`.
-    if !tagged_collections.is_empty() {
-        for s in refs.iter_mut() {
-            let s = &mut **s;
-            if let Ok(sid) = s.id.parse::<i64>() {
-                if let Some(collections) = tagged_collections.get(&sid).cloned() {
-                    s.tagged_collections = collections;
-                }
-            }
-            if let Some(rb) = s.reblog.as_deref_mut() {
-                if let Ok(sid) = rb.id.parse::<i64>() {
-                    if let Some(collections) = tagged_collections.get(&sid).cloned() {
-                        rb.tagged_collections = collections;
-                    }
-                }
-            }
-        }
+        visit_mut(s, &mut apply);
     }
 
     // What `status_content_format` and `account_bio_format` need the
@@ -1032,13 +964,52 @@ pub async fn hydrate_status_stats<'a>(
     super::formatting::apply_quote_fallbacks(state, &mut refs).await;
     let mut accounts: Vec<&mut super::types::Account> = Vec::new();
     for s in refs.iter_mut() {
-        let s = &mut **s;
-        accounts.push(&mut s.account);
-        if let Some(rb) = s.reblog.as_deref_mut() {
-            accounts.push(&mut rb.account);
-        }
+        accounts_of(s, &mut accounts);
     }
     super::formatting::link_profile_mentions(state, accounts).await;
+}
+
+/// `s`, the post it boosts, and the posts their quotes embed.
+fn visit(s: &super::types::Status, f: &mut impl FnMut(&super::types::Status)) {
+    f(s);
+    if let Some(rb) = s.reblog.as_deref() {
+        visit(rb, f);
+    }
+    if let Some(q) = s.quote.as_ref().and_then(|q| q.quoted_status.as_deref()) {
+        visit(q, f);
+    }
+}
+
+/// [`visit`], mutably.
+fn visit_mut(s: &mut super::types::Status, f: &mut impl FnMut(&mut super::types::Status)) {
+    f(s);
+    if let Some(rb) = s.reblog.as_deref_mut() {
+        visit_mut(rb, f);
+    }
+    if let Some(q) = s
+        .quote
+        .as_mut()
+        .and_then(|q| q.quoted_status.as_deref_mut())
+    {
+        visit_mut(q, f);
+    }
+}
+
+/// The accounts of `s` and of every post [`visit`] reaches from it.
+fn accounts_of<'a>(s: &'a mut super::types::Status, out: &mut Vec<&'a mut super::types::Account>) {
+    let super::types::Status {
+        account,
+        reblog,
+        quote,
+        ..
+    } = s;
+    out.push(account);
+    if let Some(rb) = reblog.as_deref_mut() {
+        accounts_of(rb, out);
+    }
+    if let Some(q) = quote.as_mut().and_then(|q| q.quoted_status.as_deref_mut()) {
+        accounts_of(q, out);
+    }
 }
 
 /// Look up an already-cached preview card for a status. Never does network I/O.

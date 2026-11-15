@@ -8478,3 +8478,103 @@ async fn test_nested_quote_follows_the_quote_rules() {
         json!({"state": "deleted", "quoted_status_id": null})
     );
 }
+
+/// The post a quote embeds is rendered whole, as `REST::ShallowStatusSerializer`
+/// (a `REST::StatusSerializer`) renders it for the viewer: its counts, its
+/// author's counts, its application, and the viewer's flags and matching
+/// filters, in a single status and in a timeline alike.
+#[tokio::test]
+async fn test_quoted_post_is_rendered_whole() {
+    let ctx = TestContext::new("quote-hydrated").await;
+
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "a post about kittens", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/statuses/{original_id}/favourite"),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = ctx
+        .api
+        .post_json(
+            "/api/v2/filters",
+            Some(&ctx.bob_token),
+            &json!({
+                "title": "No kittens",
+                "context": ["home"],
+                "keywords_attributes": [{"keyword": "kittens"}]
+            }),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+
+    let check = |quoted: &Value, what: &str| {
+        assert_eq!(quoted["id"].as_str(), Some(original_id), "{what}: {quoted}");
+        assert_eq!(quoted["favourites_count"], 1, "{what}: {quoted}");
+        assert_eq!(quoted["quotes_count"], 1, "{what}: {quoted}");
+        assert_eq!(quoted["favourited"], true, "{what}: {quoted}");
+        assert_eq!(quoted["account"]["statuses_count"], 1, "{what}: {quoted}");
+        assert_eq!(
+            quoted["application"], original["application"],
+            "{what}: {quoted}"
+        );
+        assert_eq!(
+            quoted["filtered"][0]["filter"]["title"], "No kittens",
+            "{what}: {quoted}"
+        );
+        assert_eq!(
+            quoted["filtered"][0]["keyword_matches"],
+            json!(["kittens"]),
+            "{what}: {quoted}"
+        );
+    };
+    let single: Value = ctx
+        .api
+        .get(
+            &format!("/api/v1/statuses/{quote_id}"),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    check(
+        &single["quote"]["quoted_status"],
+        "GET /api/v1/statuses/:id",
+    );
+
+    let statuses: Vec<Value> = ctx
+        .api
+        .get(
+            &format!("/api/v1/accounts/{}/statuses", ctx.bob_id),
+            Some(&ctx.bob_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let listed = statuses
+        .iter()
+        .find(|s| s["id"].as_str() == Some(quote_id))
+        .expect("the quote in bob's statuses");
+    check(&listed["quote"]["quoted_status"], "account statuses");
+}

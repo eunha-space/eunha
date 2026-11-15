@@ -863,6 +863,20 @@ async fn build_status_list(
     statuses: Vec<DbStatus>,
     viewer_id: Option<i64>,
 ) -> AppResult<Vec<Status>> {
+    let mut result = build_status_list_unhydrated(state, &statuses, viewer_id).await?;
+    hydrate_status_stats(state, result.iter_mut(), viewer_id).await;
+    Ok(result)
+}
+
+/// The statuses as the API renders them for `viewer_id`, each with what
+/// is its own (media, mentions, tags, emojis, poll, card, application and
+/// the viewer's flags), before [`hydrate_status_stats`] adds the counts and
+/// quotes. The quoted posts a quote embeds are built here too.
+pub(crate) async fn build_status_list_unhydrated(
+    state: &AppState,
+    statuses: &[DbStatus],
+    viewer_id: Option<i64>,
+) -> AppResult<Vec<Status>> {
     // For reblogs, check viewer context against the original status.
     let effective_ids: Vec<i64> = statuses
         .iter()
@@ -897,7 +911,7 @@ async fn build_status_list(
 
     let all_status_ids: Vec<i64> = statuses.iter().map(|s| s.id).collect();
     let media_map = batch_status_media(state, &all_status_ids).await?;
-    let reblog_map = batch_reblog_data(state, &statuses).await?;
+    let reblog_map = batch_reblog_data(state, statuses).await?;
     let reblog_ids: Vec<i64> = reblog_map.values().map(|(rs, _, _)| rs.id).collect();
     let mut enrich_ids = all_status_ids.clone();
     enrich_ids.extend_from_slice(&reblog_ids);
@@ -928,7 +942,7 @@ async fn build_status_list(
     let account_roles_map = batch_account_roles(state, &all_accounts_for_emoji).await;
 
     let mut result = Vec::with_capacity(statuses.len());
-    for s in &statuses {
+    for s in statuses {
         let account = account_map.get(&s.account_id).ok_or(AppError::NotFound)?;
         let media = media_map.get(&s.id).cloned().unwrap_or_default();
         let reblog = reblog_map.get(&s.id).cloned();
@@ -981,7 +995,6 @@ async fn build_status_list(
         }
         result.push(api);
     }
-    hydrate_status_stats(state, result.iter_mut(), viewer_id).await;
     Ok(result)
 }
 
