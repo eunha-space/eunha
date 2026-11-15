@@ -334,7 +334,7 @@ function CompactBody({
       {html.trim() && (
         <EmojiHtml
           // Clamped in the composer, as Mastodon's preview is; whole elsewhere.
-          className={cn('text-foreground/90 mt-1 text-sm [&_a]:underline', !linked && 'line-clamp-6')}
+          className={cn('rich-text text-foreground/90 mt-1 text-sm [&_a]:underline', !linked && 'line-clamp-6')}
           html={html}
           emojis={status.emojis}
         />
@@ -485,7 +485,7 @@ export function QuotedPost({
       {variant === 'full' && expanded && (
         <>
           <EmojiHtml
-            className="text-foreground/90 mt-1 text-sm [&_a]:underline"
+            className="rich-text text-foreground/90 mt-1 text-sm [&_a]:underline"
             html={status.quote ? stripQuoteFallback(status.content) : status.content}
             emojis={status.emojis}
           />

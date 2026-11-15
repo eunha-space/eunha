@@ -318,6 +318,61 @@
   html[data-layout='advanced'] .sidebar-frame {
     left: var(--adv-left, 1rem);
   }
+
+  /* Server-sanitized HTML: a post, a bio, an announcement. Preflight strips
+     the margins and markers off everything `MASTODON_STRICT` lets through, so
+     a list arrived as bare lines and paragraphs ran together. These put back
+     Mastodon's own `.status__content` rules for those elements, with the gap
+     scaled to the smaller type. */
+  .rich-text {
+    overflow-wrap: break-word;
+
+    & :is(p, pre, blockquote, ul, ol) {
+      margin-bottom: 1em;
+    }
+
+    & :is(p, pre, blockquote, ul, ol):last-child {
+      margin-bottom: 0;
+    }
+
+    & blockquote {
+      padding-inline-start: 10px;
+      border-inline-start: 3px solid var(--muted-foreground);
+      color: var(--muted-foreground);
+    }
+
+    & :is(ul, ol) {
+      margin-inline-start: 2em;
+
+      & p {
+        margin: 0;
+      }
+    }
+
+    & ul {
+      list-style-type: disc;
+    }
+
+    & ol {
+      list-style-type: decimal;
+    }
+
+    & :is(b, strong) {
+      font-weight: 700;
+    }
+
+    & :is(i, em) {
+      font-style: italic;
+    }
+
+    & :is(code, pre) {
+      font-family: var(--font-mono);
+    }
+
+    & pre {
+      white-space: pre-wrap;
+    }
+  }
 }
 
 /* `TextFormatter.shortened_link` writes a URL as three spans: the scheme in

@@ -1204,7 +1204,7 @@ export default function Profile() {
           )}
           {account.note && (
             <EmojiHtml
-              className="mt-3 text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary [&_a]:decoration-2 [&_a]:underline-offset-2"
+              className="rich-text mt-3 text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_a]:decoration-primary [&_a]:decoration-2 [&_a]:underline-offset-2"
               html={account.note}
               emojis={account.emojis}
             />

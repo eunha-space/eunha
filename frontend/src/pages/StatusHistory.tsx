@@ -35,7 +35,7 @@ function Version({
         </AnimateEmoji>
       )}
       <EmojiHtml
-        className="status-content text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
+        className="status-content rich-text text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
         html={edit.content}
         emojis={edit.emojis}
       />

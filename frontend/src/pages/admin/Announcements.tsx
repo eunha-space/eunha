@@ -252,7 +252,7 @@ export default function Announcements() {
                 )}
               </div>
               <div
-                className="text-sm break-words [&_a]:text-primary [&_a]:underline"
+                className="rich-text text-sm [&_a]:text-primary [&_a]:underline"
                 dangerouslySetInnerHTML={{ __html: a.content }}
               />
               <div className="flex flex-wrap gap-2">

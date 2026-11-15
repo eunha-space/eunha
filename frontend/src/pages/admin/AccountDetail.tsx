@@ -121,7 +121,7 @@ export default function AccountDetail() {
 
           {pub.note && (
             <div
-              className="text-sm [&_a]:text-primary [&_a]:underline"
+              className="rich-text text-sm [&_a]:text-primary [&_a]:underline"
               dangerouslySetInnerHTML={{ __html: pub.note }}
             />
           )}

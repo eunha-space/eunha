@@ -313,7 +313,7 @@ function AnnouncementItem({
         )}
       </p>
       <EmojiHtml
-        className="announcement-content mt-1 text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline [&_p+p]:mt-2"
+        className="announcement-content rich-text mt-1 text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
         html={announcement.content}
         emojis={announcement.emojis}
       />

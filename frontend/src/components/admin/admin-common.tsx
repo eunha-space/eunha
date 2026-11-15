@@ -214,7 +214,7 @@ export function AdminStatus({ status }: { status: Status }) {
         <p className="text-sm font-medium">CW: {s.spoiler_text}</p>
       )}
       <div
-        className="text-sm break-words [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
+        className="rich-text text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
         dangerouslySetInnerHTML={{ __html: s.content }}
       />
       {s.media_attachments.length > 0 && (

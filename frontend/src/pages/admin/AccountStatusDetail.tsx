@@ -49,7 +49,7 @@ export default function AccountStatusDetail() {
                     <p className="text-sm font-medium">CW: {edit.spoiler_text}</p>
                   )}
                   <div
-                    className="text-sm break-words [&_a]:text-primary [&_a]:underline"
+                    className="rich-text text-sm [&_a]:text-primary [&_a]:underline"
                     dangerouslySetInnerHTML={{ __html: edit.content }}
                   />
                 </article>
