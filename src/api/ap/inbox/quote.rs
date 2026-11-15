@@ -15,7 +15,23 @@ use crate::quotes::Quote;
 use crate::{error::AppResult, state::AppState};
 
 use super::{fetch_remote_status_prefetched, resolve_or_fetch_remote_account, same_host};
-use crate::federation::json_ld_helper::{first_of_value, value_or_id};
+use crate::federation::json_ld_helper::{first_of_value, unsupported_uri_scheme, value_or_id};
+
+/// `TagManager#local_url?`: whether `url`'s host, and its port unless it is
+/// the scheme's own, is the web domain.
+fn local_url(url: &str, web_domain: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let domain = match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    };
+    domain.eq_ignore_ascii_case(web_domain.trim_end_matches('/'))
+}
 
 /// `value_or_id(value)`, or `""` when there is none.
 fn uri_of(value: Option<&Value>) -> &str {
@@ -72,15 +88,7 @@ impl<'a> QuoteFields<'a> {
         // `unsupported_uri_scheme?` or `TagManager#local_url?`.
         let approval_uri = first(object.get("quoteAuthorization"))
             .and_then(value_or_id)
-            .filter(|u| {
-                let Ok(url) = url::Url::parse(u) else {
-                    return false;
-                };
-                matches!(url.scheme(), "http" | "https")
-                    && !url
-                        .host_str()
-                        .is_some_and(|h| h.eq_ignore_ascii_case(local_domain))
-            });
+            .filter(|u| !unsupported_uri_scheme(Some(u)) && !local_url(u, local_domain));
         Some(Self {
             uri,
             deleted,
@@ -995,10 +1003,10 @@ pub(super) async fn handle_quote_answer(
     }
 
     let approval_uri = first(activity.get("result")).and_then(value_or_id);
-    let Some(approval_uri) = approval_uri.filter(|u| {
-        url::Url::parse(u).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
-            && same_host(u, actor_uri)
-    }) else {
+    // `unsupported_uri_scheme?(approval_uri) || non_matching_uri_hosts?(…)`.
+    let Some(approval_uri) =
+        approval_uri.filter(|u| !unsupported_uri_scheme(Some(u)) && same_host(u, actor_uri))
+    else {
         return Ok(true);
     };
     if quote.state != quote_state::PENDING {

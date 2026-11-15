@@ -1647,3 +1647,79 @@ async fn test_an_unreachable_quoted_post_without_a_stamp_is_not_retried() {
     .unwrap();
     assert_eq!(retries, 0);
 }
+
+async fn quote_retries(ctx: &TestContext) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM eunha.jobs WHERE kind = 'ActivityPub::RefetchAndVerifyQuoteWorker'",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// A stamp is kept as `unsupported_uri_scheme?` and `TagManager#local_url?`
+/// tell it: by how its string starts, case and all, and by its host with
+/// its port. One kept is fetched, and here, unanswered, tried again later.
+#[tokio::test]
+async fn test_a_stamp_is_kept_by_its_scheme_and_its_host_and_port() {
+    let r = Requested::new("quote-stamp-scheme-port").await;
+    let (dave_id, dave_uri, dave_key) = seed_remote_with_key(&r.ctx, "dave", "dave.invalid").await;
+    let daves = format!("{dave_uri}/statuses/7");
+    let dave_post = seed_remote_status(&r.ctx.db, dave_id, &daves).await;
+
+    // `HTTPS://` does not start with `https://`: no stamp, nothing fetched.
+    let mut create = r.create(1);
+    create["object"]["quote"] = json!(daves);
+    create["object"]["quoteAuthorization"] = json!(format!("HTTPS://dave.invalid/stamps/1"));
+    r.send(&create).await;
+    assert_eq!(quote_retries(&r.ctx).await, 0);
+
+    // Our host on another port is not ours: kept, and fetched.
+    let mut create = r.create(2);
+    create["object"]["quote"] = json!(daves);
+    create["object"]["quoteAuthorization"] =
+        json!(format!("https://{}:8443/stamps/1", r.ctx.domain));
+    r.send(&create).await;
+    assert_eq!(quote_retries(&r.ctx).await, 1);
+
+    // An Accept's `result` is held to the same scheme test.
+    let ours: Value = r
+        .ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&r.ctx.alice_token),
+            &json!({"status": "alice quotes dave", "quoted_status_id": dave_post.to_string(), "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let ours: i64 = ours["id"].as_str().unwrap().parse().unwrap();
+    let request_id: String =
+        sqlx::query_scalar("SELECT activity_uri FROM quotes WHERE status_id = $1")
+            .bind(ours)
+            .fetch_one(&r.ctx.db)
+            .await
+            .unwrap();
+    let accept = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{dave_uri}#accepts/1"),
+        "type": "Accept",
+        "actor": dave_uri,
+        "object": request_id,
+        "result": "HTTPS://dave.invalid/users/dave/quote_authorizations/1",
+    });
+    let resp = r
+        .ctx
+        .api
+        .post_signed(
+            "/inbox",
+            &accept,
+            &format!("{dave_uri}#main-key"),
+            &dave_key,
+        )
+        .await;
+    assert!(resp.status().is_success(), "{}", resp.status());
+    assert_eq!(quote_state(&r.ctx, ours).await, 0);
+}
