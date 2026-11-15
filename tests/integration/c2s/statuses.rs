@@ -8578,3 +8578,83 @@ async fn test_quoted_post_is_rendered_whole() {
         .expect("the quote in bob's statuses");
     check(&listed["quote"]["quoted_status"], "account statuses");
 }
+
+/// A version in a post's edit history carries its quote, as
+/// `StatusEditSerializer` renders it: the post's quote for a version that
+/// names it, with the quote fallback in a local version's content, and a
+/// pending one for a version naming a quote since replaced.
+#[tokio::test]
+async fn test_edit_history_carries_the_quote() {
+    let ctx = TestContext::new("quote-history").await;
+
+    let original = ctx
+        .api
+        .post_status(&ctx.alice_token, "the quoted post", "public")
+        .await;
+    let original_id = original["id"].as_str().unwrap();
+    let quote: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes", "quoted_status_id": original_id, "visibility": "public"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let quote_id = quote["id"].as_str().unwrap();
+    let resp = ctx
+        .api
+        .put_json(
+            &format!("/api/v1/statuses/{quote_id}"),
+            Some(&ctx.bob_token),
+            &json!({"status": "bob quotes, edited", "quoted_status_id": original_id}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let history_path = format!("/api/v1/statuses/{quote_id}/history");
+    let history = || async {
+        let body: Vec<Value> = ctx.api.get(&history_path, None).await.json().await.unwrap();
+        body
+    };
+    let versions = history().await;
+    assert_eq!(versions.len(), 2, "{versions:?}");
+    for version in &versions {
+        assert_eq!(version["quote"]["state"], "accepted", "{version}");
+        assert_eq!(
+            version["quote"]["quoted_status"]["id"].as_str(),
+            Some(original_id),
+            "{version}"
+        );
+        assert!(
+            version["content"]
+                .as_str()
+                .unwrap()
+                .starts_with(r#"<p class="quote-inline">RE: "#),
+            "{version}"
+        );
+    }
+
+    // A version naming a quote the post no longer has.
+    sqlx::query(
+        "UPDATE status_edits SET quote_id = quote_id + 1000
+         WHERE id = (SELECT min(id) FROM status_edits WHERE status_id = $1)",
+    )
+    .bind(quote_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    let versions = history().await;
+    assert_eq!(
+        versions[0]["quote"],
+        json!({"state": "pending", "quoted_status": null})
+    );
+    assert!(
+        !versions[0]["content"].as_str().unwrap().contains("RE: "),
+        "{}",
+        versions[0]
+    );
+    assert_eq!(versions[1]["quote"]["state"], "accepted");
+}

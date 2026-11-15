@@ -706,8 +706,9 @@ pub struct StatusEdit {
     /// not `null`, for a version without one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub poll: Option<serde_json::Value>,
+    /// `has_one :quote, if: -> { object.quote_id.present? }`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quote: Option<serde_json::Value>,
+    pub quote: Option<QuoteInfo>,
 }
 
 // ── Instance V1 ────────────────────────────────────────────────────────────

@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT status_id, quoted_status_id, state FROM quotes\n           WHERE status_id = ANY($1::bigint[]) AND (state = 1 OR NOT legacy)",
+  "query": "SELECT id, status_id, quoted_status_id, state, legacy FROM quotes\n           WHERE status_id = ANY($1::bigint[])",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "status_id",
         "type_info": "Int8",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "quoted_status_id",
         "type_info": "Int8",
         "origin": {
@@ -26,13 +37,24 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "state",
         "type_info": "Int4",
         "origin": {
           "Table": {
             "table": "quotes",
             "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "legacy",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "legacy"
           }
         }
       }
@@ -44,9 +66,11 @@
     },
     "nullable": [
       false,
+      false,
       true,
+      false,
       false
     ]
   },
-  "hash": "38c06c8dfad0854a3551f8c9d2fd2fcef83e5c8e5cce9198de2998131e366566"
+  "hash": "e978ad1826e5f33ae6e8cef6e7d8b63e83f4503166890f18849b5ba3a9bb64aa"
 }

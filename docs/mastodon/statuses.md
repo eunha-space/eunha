@@ -76,6 +76,11 @@ edit that changes nothing records nothing and leaves `edited_at` alone.
 `GET /api/v1/statuses/:id/history` serves exactly those rows, oldest first,
 each with the account that made it. A post never edited has no rows, and its
 history is the one version built on the spot, stamped with its `created_at`.
+A version that quoted a post carries a `quote`, as `StatusEditSerializer` has
+it: the post's quote, rendered for the reader as a post's is, when the
+version names it, and a bare `pending` one when it names a quote the post has
+since replaced. A local version naming the post's quote has the same “RE:”
+fallback in its content as the post.
 The web client's history page shows them newest first, each with its content
 warning, its text, its poll's options as that version had them (without
 counts, as Mastodon's history modal shows them), and its media.

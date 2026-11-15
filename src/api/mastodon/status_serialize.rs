@@ -200,6 +200,8 @@ async fn attach_quotes(
 /// What `REST::BaseQuoteSerializer` reads of one status's quote, for one
 /// viewer.
 struct ResolvedQuote {
+    /// `quotes.id`.
+    id: i64,
     /// `quotes.state`.
     state: i32,
     /// `object.quoted_status`, under `Status`'s `default_scope { kept }`:
@@ -245,26 +247,51 @@ impl ResolvedQuote {
     }
 }
 
-/// The quotes `status_ids` make that `REST::StatusSerializer#quote` shows
-/// (`object.quote if object.quote&.acceptable?`: accepted, or not legacy),
-/// each with its quoted post and how `viewer_id` sees it.
+/// How a quote is rendered.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct QuoteRendering {
+    /// `REST::StatusSerializer#quote`'s `object.quote&.acceptable?`: a
+    /// legacy quote never accepted is left out. `StatusEditSerializer`
+    /// renders the status's quote whatever it is.
+    pub acceptable_only: bool,
+    /// `instance_options[:source_requested]`.
+    pub source_requested: bool,
+}
+
+impl QuoteRendering {
+    /// `REST::StatusSerializer`'s, as almost everything renders a status.
+    pub const STATUS: Self = Self {
+        acceptable_only: true,
+        source_requested: false,
+    };
+}
+
+/// The quotes `status_ids` make, each with its quoted post and how
+/// `viewer_id` sees it. With `acceptable_only`, those
+/// `REST::StatusSerializer#quote` shows (`object.quote if
+/// object.quote&.acceptable?`: accepted, or not legacy).
 async fn resolve_quotes(
     state: &AppState,
     status_ids: &[i64],
     viewer_id: Option<i64>,
+    acceptable_only: bool,
 ) -> AppResult<std::collections::HashMap<i64, ResolvedQuote>> {
     use std::collections::{HashMap, HashSet};
 
     if status_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let quote_rows = sqlx::query!(
-        r#"SELECT status_id, quoted_status_id, state FROM quotes
-           WHERE status_id = ANY($1::bigint[]) AND (state = 1 OR NOT legacy)"#,
+    let mut quote_rows = sqlx::query!(
+        r#"SELECT id, status_id, quoted_status_id, state, legacy FROM quotes
+           WHERE status_id = ANY($1::bigint[])"#,
         status_ids,
     )
     .fetch_all(&state.db)
     .await?;
+    // `Quote#acceptable?`.
+    if acceptable_only {
+        quote_rows.retain(|r| r.state == crate::db::models::quote_state::ACCEPTED || !r.legacy);
+    }
     if quote_rows.is_empty() {
         return Ok(HashMap::new());
     }
@@ -371,6 +398,7 @@ async fn resolve_quotes(
             (
                 r.status_id,
                 ResolvedQuote {
+                    id: r.id,
                     state: r.state,
                     quoted,
                     filter,
@@ -389,9 +417,28 @@ pub async fn batch_quote_data(
     status_ids: &[i64],
     viewer_id: Option<i64>,
 ) -> AppResult<std::collections::HashMap<i64, super::types::QuoteInfo>> {
+    Ok(
+        render_quotes(state, status_ids, viewer_id, QuoteRendering::STATUS)
+            .await?
+            .into_iter()
+            .map(|(status_id, (_, quote))| (status_id, quote))
+            .collect(),
+    )
+}
+
+/// [`batch_quote_data`] rendered as `how` says, each quote with its id. The
+/// posts the quotes embed are not yet hydrated: [`hydrate_status_stats`]
+/// does that for the statuses carrying them, or [`hydrate_without_quotes`]
+/// for a caller rendering them elsewhere.
+pub(crate) async fn render_quotes(
+    state: &AppState,
+    status_ids: &[i64],
+    viewer_id: Option<i64>,
+    how: QuoteRendering,
+) -> AppResult<std::collections::HashMap<i64, (i64, super::types::QuoteInfo)>> {
     use std::collections::{HashMap, HashSet};
 
-    let resolved = resolve_quotes(state, status_ids, viewer_id).await?;
+    let resolved = resolve_quotes(state, status_ids, viewer_id, how.acceptable_only).await?;
     if resolved.is_empty() {
         return Ok(HashMap::new());
     }
@@ -399,7 +446,7 @@ pub async fn batch_quote_data(
     let mut seen = HashSet::new();
     let quoted_statuses: Vec<crate::db::models::Status> = resolved
         .values()
-        .filter_map(|r| r.shown(false))
+        .filter_map(|r| r.shown(how.source_requested))
         .filter(|q| seen.insert(q.id))
         .cloned()
         .collect();
@@ -420,7 +467,7 @@ pub async fn batch_quote_data(
     // The quoted posts' own quotes, as `REST::ShallowQuoteSerializer` has
     // them, under the same rules for the same viewer.
     let qs_ids: Vec<i64> = quoted_statuses.iter().map(|s| s.id).collect();
-    let nested = resolve_quotes(state, &qs_ids, viewer_id).await?;
+    let nested = resolve_quotes(state, &qs_ids, viewer_id, true).await?;
 
     let mut qs_map: HashMap<i64, super::types::Status> = HashMap::new();
     for (qs, mut api) in quoted_statuses.iter().zip(built.drain(..)) {
@@ -435,18 +482,21 @@ pub async fn batch_quote_data(
         .into_iter()
         .map(|(status_id, r)| {
             let quoted_status = r
-                .shown(false)
+                .shown(how.source_requested)
                 .and_then(|q| qs_map.get(&q.id))
                 .cloned()
                 .map(Box::new);
             (
                 status_id,
-                super::types::QuoteInfo {
-                    state: r.state(),
-                    quoted_status,
-                    quoted_status_id: None,
-                    shallow: false,
-                },
+                (
+                    r.id,
+                    super::types::QuoteInfo {
+                        state: r.state(),
+                        quoted_status,
+                        quoted_status_id: None,
+                        shallow: false,
+                    },
+                ),
             )
         })
         .collect())
@@ -897,6 +947,16 @@ pub async fn hydrate_status_stats<'a>(
     let viewer = viewer.into();
     let mut refs: Vec<&mut super::types::Status> = statuses.into_iter().collect();
     attach_quotes(state, &mut refs, viewer).await;
+    hydrate_without_quotes(state, refs, viewer).await;
+}
+
+/// [`hydrate_status_stats`] for statuses whose quotes are already attached,
+/// or that are to carry none: everything but looking the quotes up.
+pub(crate) async fn hydrate_without_quotes(
+    state: &AppState,
+    mut refs: Vec<&mut super::types::Status>,
+    viewer: Option<i64>,
+) {
     let mut account_ids: Vec<i64> = Vec::new();
     let mut status_ids: Vec<i64> = Vec::new();
     let mut collect = |s: &super::types::Status| {

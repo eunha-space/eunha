@@ -506,17 +506,18 @@ pub async fn get_status_history(
         }
     }
 
-    Ok(Json(status_edits(&state, &status).await?))
+    Ok(Json(status_edits(&state, &status, viewer_id).await?))
 }
 
 /// `HistoriesController#status_edits`: the post's `status_edits` rows,
 /// oldest first (`ordered`, by id), the last one the post as it is; or, for
 /// a post never edited, a snapshot of it built on the spot at its
 /// `edited_at || created_at`. Each rendered as `REST::StatusEditSerializer`
-/// does, with the account that made that version.
+/// does, with the account that made that version, for `viewer_id`.
 pub(crate) async fn status_edits(
     state: &AppState,
     status: &DbStatus,
+    viewer_id: Option<i64>,
 ) -> AppResult<Vec<StatusEdit>> {
     let id = status.id;
     let author = sqlx::query_as!(
@@ -568,9 +569,47 @@ pub(crate) async fn status_edits(
     // A `StatusEdit` does not respond to `active_mentions`, so the only
     // account preloaded for its mentions is the author's, and a mention of
     // anyone else stays text.
+    //
+    // `StatusEdit#quote` is the post's quote when the version names it, so
+    // `status_content_format` gives a local version that does the same quote
+    // fallback ("RE: …") as the post.
     let urls = state.urls.clone();
-    let render = |text: &str| -> String {
-        crate::api::mastodon::formatting::status_content(&urls, text, &author, &[])
+    let quote_url = crate::api::mastodon::formatting::quote_fallback_urls(state, &[id])
+        .await
+        .remove(&id);
+    // `StatusEditSerializer#quote`: `object.status.quote` for a version that
+    // names it, rendered by `REST::QuoteSerializer` for the viewer, whatever
+    // its state; a pending one for a version naming a quote since replaced.
+    let mut current_quote = crate::api::mastodon::status_serialize::render_quotes(
+        state,
+        &[id],
+        viewer_id,
+        crate::api::mastodon::status_serialize::QuoteRendering {
+            acceptable_only: false,
+            source_requested: false,
+        },
+    )
+    .await?
+    .remove(&id);
+    if let Some(quoted) = current_quote
+        .as_mut()
+        .and_then(|(_, q)| q.quoted_status.as_deref_mut())
+    {
+        crate::api::mastodon::status_serialize::hydrate_without_quotes(
+            state,
+            vec![quoted],
+            viewer_id,
+        )
+        .await;
+    }
+    let current_quote_id = current_quote.as_ref().map(|(qid, _)| *qid);
+    let render = |text: &str, quote_id: Option<i64>| -> String {
+        let content = crate::api::mastodon::formatting::status_content(&urls, text, &author, &[]);
+        if quote_id.is_some() && quote_id == current_quote_id {
+            crate::formatter::text::add_quote_fallback(content, quote_url.as_deref())
+        } else {
+            content
+        }
     };
 
     // `has_one :account`: whoever made each version — the author, or the
@@ -649,7 +688,7 @@ pub(crate) async fn status_edits(
                 })
             });
             StatusEdit {
-                content: render(&e.text),
+                content: render(&e.text, e.quote_id),
                 spoiler_text: e.spoiler_text.clone(),
                 sensitive: e.sensitive.unwrap_or(false),
                 created_at: crate::api::mastodon::convert::mastodon_date(e.created_at),
@@ -660,7 +699,16 @@ pub(crate) async fn status_edits(
                 ),
                 emojis: vec![],
                 poll,
-                quote: None,
+                quote: e.quote_id.map(|quote_id| match &current_quote {
+                    Some((current, quote)) if *current == quote_id => quote.clone(),
+                    // `Quote.new(state: :pending)`.
+                    _ => crate::api::mastodon::types::QuoteInfo {
+                        state: "pending".to_owned(),
+                        quoted_status: None,
+                        quoted_status_id: None,
+                        shallow: false,
+                    },
+                }),
             }
         })
         .collect())

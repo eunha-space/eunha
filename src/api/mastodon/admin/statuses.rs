@@ -173,7 +173,8 @@ pub async fn get_admin_account_status(
             .await
             .is_ok();
     authorize(acting.can(&[flag::MANAGE_REPORTS, flag::MANAGE_USERS]) && eligible)?;
-    let edits = super::super::statuses::status_edits(&state, &status).await?;
+    let edits =
+        super::super::statuses::status_edits(&state, &status, Some(auth.account_id)).await?;
     let status = super::report_statuses(&state, &[id], None)
         .await?
         .pop()
