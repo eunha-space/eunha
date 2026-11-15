@@ -55,7 +55,9 @@ the quoted post is fetched if need be, a self-quote is accepted, and a
 `QuoteAuthorization` on its author's host naming both posts. A stamp that is
 gone rejects the quote. A quote of a local post waits for its `QuoteRequest`,
 which is accepted when the requester may quote the post and the quoting post's
-quote names it, and answered at the requester's own inbox. An edit that
+quote names it, and answered at the requester's own inbox; a requester
+with no inbox, or an author with no key, is not answered, but the quote is
+accepted all the same. An edit that
 changes the quoted post replaces the quote, and a changed stamp sends it back
 to pending.
 

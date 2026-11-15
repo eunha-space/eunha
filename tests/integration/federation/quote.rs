@@ -1349,3 +1349,121 @@ async fn test_a_local_quote_names_its_post_by_its_computed_uri() {
     assert_eq!(note["quoteUri"].as_str(), Some(expected), "{note}");
     assert_eq!(note["_misskey_quote"].as_str(), Some(expected), "{note}");
 }
+
+/// A local post, by alice with a key, and the remote carol: a Create of
+/// carol's post quoting it and the QuoteRequest for it, ready to send.
+struct Requested {
+    ctx: TestContext,
+    alice_id: i64,
+    original_uri: String,
+    carol_uri: String,
+    carol_key: String,
+}
+
+impl Requested {
+    async fn new(label: &str) -> Self {
+        let ctx = TestContext::new(label).await;
+        let alice_id: i64 = ctx.alice_id.parse().unwrap();
+        give_key(&ctx, alice_id).await;
+        let (_, carol_uri, carol_key) = seed_remote_with_key(&ctx, "carol", "carol.invalid").await;
+        let original = ctx
+            .api
+            .post_status(&ctx.alice_token, "quote me", "public")
+            .await;
+        let original_uri: String = sqlx::query_scalar("SELECT uri FROM statuses WHERE id = $1")
+            .bind(original["id"].as_str().unwrap().parse::<i64>().unwrap())
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+        Self {
+            ctx,
+            alice_id,
+            original_uri,
+            carol_uri,
+            carol_key,
+        }
+    }
+
+    async fn send(&self, activity: &Value) {
+        let resp = self
+            .ctx
+            .api
+            .post_signed(
+                "/inbox",
+                activity,
+                &format!("{}#main-key", self.carol_uri),
+                &self.carol_key,
+            )
+            .await;
+        assert!(resp.status().is_success(), "{}", resp.status());
+    }
+
+    /// Carol's post `n`, quoting alice's, as she creates it: addressed to
+    /// alice, so that it is taken in.
+    fn create(&self, n: u32) -> Value {
+        let carol = &self.carol_uri;
+        let alice = format!("https://{}/users/alice", self.ctx.domain);
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{carol}/statuses/{n}/activity"),
+            "type": "Create",
+            "actor": carol,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [alice],
+            "object": {
+                "id": format!("{carol}/statuses/{n}"),
+                "type": "Note",
+                "attributedTo": carol,
+                "to": ["https://www.w3.org/ns/activitystreams#Public"],
+                "cc": [alice],
+                "content": "carol quotes",
+                "quote": self.original_uri,
+            },
+        })
+    }
+
+    fn request(&self, instrument: &str) -> Value {
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{}/quote_requests/1", self.carol_uri),
+            "type": "QuoteRequest",
+            "actor": self.carol_uri,
+            "object": self.original_uri,
+            "instrument": instrument,
+        })
+    }
+
+    async fn status(&self, n: u32) -> i64 {
+        sqlx::query_scalar("SELECT id FROM statuses WHERE uri = $1")
+            .bind(format!("{}/statuses/{n}", self.carol_uri))
+            .fetch_one(&self.ctx.db)
+            .await
+            .unwrap()
+    }
+}
+
+/// `QuoteRequest#accept_quote_request!` accepts, notifies and distributes
+/// whether or not the Accept can be delivered: a quoter with no inbox is
+/// quoted all the same.
+#[tokio::test]
+async fn test_a_quote_request_is_accepted_when_its_answer_cannot_be_sent() {
+    let r = Requested::new("quote-request-no-inbox").await;
+    sqlx::query("UPDATE accounts SET inbox_url = '' WHERE uri = $1")
+        .bind(&r.carol_uri)
+        .execute(&r.ctx.db)
+        .await
+        .unwrap();
+    r.send(&r.create(1)).await;
+    let quoting = r.status(1).await;
+    r.send(&r.request(&format!("{}/statuses/1", r.carol_uri)))
+        .await;
+    assert_eq!(quote_state(&r.ctx, quoting).await, 1);
+    let notified: i64 = sqlx::query_scalar(
+        r#"SELECT count(*) FROM notifications WHERE account_id = $1 AND "type" = 'quote'"#,
+    )
+    .bind(r.alice_id)
+    .fetch_one(&r.ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(notified, 1);
+}

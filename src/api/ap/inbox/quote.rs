@@ -726,13 +726,13 @@ pub(super) async fn handle_quote_request(
             relation.followed_by_author,
         ) != quote_policy::ForAccount::Denied;
 
-    if !crate::federation::keypair::has_signing_key(state, quoted.account_id)
-        .await
-        .unwrap_or(false)
-        || quoter.inbox_url.is_empty()
-    {
-        return Ok(());
-    }
+    // `ActivityPub::DeliveryWorker` cannot deliver without the quoter's
+    // inbox or the author's key; the answer is not sent then, but the
+    // quote is taken all the same.
+    let deliverable = !quoter.inbox_url.is_empty()
+        && crate::federation::keypair::has_signing_key(state, quoted.account_id)
+            .await
+            .unwrap_or(false);
 
     if !allowed {
         // `reject_quote_request!`, about a quote never saved:
@@ -748,6 +748,9 @@ pub(super) async fn handle_quote_request(
         });
         if instrument_uri.is_empty() {
             reject["object"]["instrument"] = Value::Null;
+        }
+        if !deliverable {
+            return Ok(());
         }
         if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
             state,
@@ -845,15 +848,17 @@ pub(super) async fn handle_quote_request(
         ),
         "result": result,
     });
-    if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
-        state,
-        accept,
-        vec![quoter.inbox_url],
-        key_id,
-    )
-    .await
-    {
-        tracing::warn!(error = %e, "failed to enqueue quote Accept");
+    if deliverable {
+        if let Err(e) = crate::federation::delivery::deliver_to_inboxes(
+            state,
+            accept,
+            vec![quoter.inbox_url],
+            key_id,
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "failed to enqueue quote Accept");
+        }
     }
 
     // `LocalNotificationWorker`, then `DistributionWorker` with
