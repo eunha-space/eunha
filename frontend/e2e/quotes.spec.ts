@@ -92,3 +92,17 @@ test('a quoted post’s own quote is only named, and takes no card', async ({ pa
   await expect(quote.getByTestId('preview-card')).toHaveCount(0)
   await expect(page.getByTestId('quoted-post')).toHaveCount(1)
 })
+
+test('a quoted post’s own quote, sent shallow, is fetched to be named', async ({ page }) => {
+  await page.route('**/api/v1/statuses/30', (r) => r.fulfill({ json: status('30', carol) }))
+  await setup(page, status('20', bob, { quote: { state: 'accepted', quoted_status_id: '30' } }))
+  const quote = page.getByTestId('quoted-post')
+  await expect(quote.getByText('Quoted a post by @carol')).toBeVisible()
+  await expect(quote.getByText('Post unavailable')).toHaveCount(0)
+})
+
+test('a quoted post’s own quote that cannot be fetched is unavailable', async ({ page }) => {
+  await page.route('**/api/v1/statuses/30', (r) => r.fulfill({ status: 404, json: { error: 'Record not found' } }))
+  await setup(page, status('20', bob, { quote: { state: 'accepted', quoted_status_id: '30' } }))
+  await expect(page.getByTestId('quoted-post').getByText('Post unavailable')).toBeVisible()
+})

@@ -1,7 +1,8 @@
-import { useState, type MouseEvent } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import type { mastodon } from '../masto.ts'
+import { getStatus } from '../api.ts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
@@ -33,6 +34,29 @@ function quotedStatusOf(quote: Quote): mastodon.v1.Status | null {
   return 'quotedStatus' in quote ? (quote.quotedStatus ?? null) : null
 }
 
+// The post a quote names. A quote is sent with its post inside it only at the
+// top: the quoted post's own quote comes shallow, naming its post by id
+// (`quoted_status_id`), as Mastodon's `ShallowQuoteSerializer` sends it, and
+// is fetched the way Mastodon's `QuotedStatus` fetches a quote it has not
+// got. `undefined` while that is under way, `null` when there is none.
+function useQuotedStatus(quote: Quote, token?: string): mastodon.v1.Status | null | undefined {
+  const embedded = quotedStatusOf(quote)
+  const id = 'quotedStatusId' in quote ? (quote.quotedStatusId ?? null) : null
+  const wanted = !embedded && !!id && quote.state !== 'deleted'
+  const [fetched, setFetched] = useState<{ id: string; status: mastodon.v1.Status | null }>()
+  useEffect(() => {
+    if (!wanted || !id) return
+    let active = true
+    getStatus(id, token || undefined)
+      .then((status) => { if (active) setFetched({ id, status }) })
+      .catch(() => { if (active) setFetched({ id, status: null }) })
+    return () => { active = false }
+  }, [wanted, id, token])
+  if (embedded) return embedded
+  if (!wanted) return null
+  return fetched?.id === id ? fetched.status : undefined
+}
+
 function QuotePlaceholder({ quote }: { quote: Quote }) {
   return (
     <div className="text-muted-foreground rounded-md border px-3 py-2 text-xs">
@@ -53,8 +77,10 @@ export function QuotedStatus({ quote, token }: { quote: Quote; token?: string })
 // Mastodon's `MAX_QUOTE_POSTS_NESTING_LEVEL` is 1: a quoted post's own quote is
 // not drawn again, only named (`NestedQuoteLink`), unless it is unavailable,
 // in which case it says so as a quote would.
-function NestedQuote({ quote }: { quote: Quote }) {
-  const quoted = quotedStatusOf(quote)
+function NestedQuote({ quote, token }: { quote: Quote; token?: string }) {
+  const quoted = useQuotedStatus(quote, token)
+  // Nothing to name yet while its post is fetched.
+  if (quote.state === 'accepted' && quoted === undefined) return null
   if (quote.state !== 'accepted' || !quoted) return <QuotePlaceholder quote={quote} />
   return (
     <p className="text-muted-foreground mt-1 text-xs">
@@ -171,7 +197,7 @@ export function QuotedPost({
               sensitive={status.sensitive}
             />
           )}
-          {status.quote && <NestedQuote quote={status.quote} />}
+          {status.quote && <NestedQuote quote={status.quote} token={token} />}
         </>
       )}
     </div>
