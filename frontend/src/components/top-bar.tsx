@@ -90,7 +90,6 @@ const messages = defineMessages({
   feeds: { id: 'eunha.navigation.feeds', defaultMessage: 'Feeds' },
   you: { id: 'eunha.navigation.you', defaultMessage: 'You' },
   newPost: { id: 'tabs_bar.publish', defaultMessage: 'New post' },
-  compose: { id: 'mastodon.user_mailer.welcome.post_action', defaultMessage: 'Compose' },
   poweredBy: { id: 'eunha.navigation.powered_by', defaultMessage: 'powered by eunha' },
   openMenu: { id: 'eunha.navigation.open_menu', defaultMessage: 'Open menu' },
   unread: { id: 'notifications.unread_with_count', defaultMessage: '{count} unread' },
@@ -704,22 +703,6 @@ function MobileHeader({
   )
 }
 
-function ComposeButton({ token }: { token: string | null }) {
-  const { openCompose } = useComposeModal()
-  const intl = useIntl()
-  if (!token) return null
-  return (
-    <button
-      type="button"
-      aria-label={intl.formatMessage(messages.compose)}
-      className="bg-primary text-primary-foreground hover:bg-primary/90 fixed right-4 bottom-4 z-40 flex size-13 items-center justify-center rounded-full shadow-lg sm:right-6 sm:bottom-6"
-      onClick={() => openCompose()}
-    >
-      <PenLine className="size-5" />
-    </button>
-  )
-}
-
 function TopBarInner({
   token,
   title,
@@ -752,7 +735,6 @@ function TopBarInner({
         title={title}
         registrationsOpen={registrationsOpen}
       />
-      <ComposeButton token={token} />
       {/* Below `xl` the Sidebar renders as a Sheet drawer; above it the
           DesktopRail handles navigation, so skip the component's own rail. */}
       {isMobile && (

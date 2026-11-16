@@ -1867,7 +1867,6 @@
   "mastodon.user_mailer.warning.title.mark_statuses_as_sensitive": "Posts marked as sensitive",
   "mastodon.user_mailer.warning.title.sensitive": "Account marked as sensitive",
   "mastodon.user_mailer.warning.title.silence": "Account limited",
-  "mastodon.user_mailer.welcome.post_action": "Compose",
   "mastodon.user_mailer.welcome.sign_in_action": "Sign in",
   "mastodon.webauthn_credentials.add": "Add new security key",
   "mastodon.webauthn_credentials.create.error": "There was a problem adding your security key. Please try again.",

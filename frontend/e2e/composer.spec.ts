@@ -221,10 +221,11 @@ test('the warning preference opens the field and the composer keeps its draft ac
   })
 })
 
-test('the corner button opens a post directly', async ({ page }) => {
+test('the sidebar button opens a post directly, with no corner button', async ({ page }) => {
   await signedIn(page)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Compose' }).click()
+  await expect(page.getByRole('button', { name: 'Compose' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
 
   await expect(page.getByRole('heading', { name: 'New post' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Publish' })).toBeVisible()
