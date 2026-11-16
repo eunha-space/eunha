@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
+import { useOpenRegistrations } from '../../hooks/use-open-registrations.ts'
 
 const FILTERS = { get all() { return t({ id: 'notifications.filter.all', defaultMessage: 'All' }) }, get available() { return t({ id: 'mastodon.admin.invites.filter.available', defaultMessage: 'Available' }) }, get expired() { return t({ id: 'filter_modal.select_filter.expired', defaultMessage: 'Expired' }) } }
 
@@ -32,6 +33,7 @@ const FILTERS = { get all() { return t({ id: 'notifications.filter.all', default
  */
 export default function AdminInvites() {
   const token = getToken()
+  const openRegistrations = useOpenRegistrations()
   const [pending, setPending] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<keyof typeof FILTERS>('all')
   const [page, setPage] = useState(1)
@@ -84,10 +86,10 @@ export default function AdminInvites() {
     >
       <InviteGrantForm onGranted={() => { load(); setGranted((n) => n + 1) }} />
       <InviteGrantHistory refresh={granted} />
-      <div className="mb-3 flex gap-3">
+      {openRegistrations !== true && <div className="mb-3 flex gap-3">
         <Button render={<Link to="/invites" />}>{t({ id: 'eunha.admin.admin_invites.create_invite', defaultMessage: 'Create invite' })}</Button>
         <Button variant="outline" render={<Link to="/invite-tree" />}>{t({ id: 'eunha.admin.admin_invites.invite_tree', defaultMessage: 'Invite tree' })}</Button>
-      </div>
+      </div>}
       <AdminError error={error} />
       {invites === null && !error && <RowsSkeleton action />}
       {invites?.length === 0 && <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.admin_invites.no_invites', defaultMessage: 'No invites.' })}</p>}

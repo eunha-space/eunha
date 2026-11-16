@@ -9,6 +9,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { AccountRow } from '@/components/account-row.tsx'
 import { TextSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
+import { useOpenRegistrations } from '../hooks/use-open-registrations.ts'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -26,6 +27,7 @@ export default function About() {
   const [instance, setInstance] = useState<mastodon.v2.Instance | null>(null)
   const [host, setHost] = useState<HostingProvider | null>(null)
   const token = getToken()
+  const openRegistrations = useOpenRegistrations()
 
   useEffect(() => {
     getInstance().then(setInstance).catch(() => {})
@@ -159,7 +161,7 @@ export default function About() {
           </a>
         </Section>
 
-        {token && (
+        {token && openRegistrations !== true && (
           <Section title={t({ id: 'mastodon.admin.invites.title', defaultMessage: 'Invites' })}>
             <div className="flex flex-col gap-1">
               {/* Shown to every member: not everyone may create an invite, but

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { Copy, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/select.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
 import { currentLocale, t } from '@/i18n.tsx'
+import { useOpenRegistrations } from '../hooks/use-open-registrations.ts'
 
 const MAX_USES = {
   get '0'() { return t({ id: 'eunha.invites.unlimited_uses', defaultMessage: 'Unlimited uses' }) },
@@ -146,7 +147,7 @@ function JoinedThrough({ invite }: { invite: Invite }) {
   )
 }
 
-export default function Invites() {
+function InvitesPage() {
   const token = getToken()
   const [invites, setInvites] = useState<Invite[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -556,4 +557,11 @@ export default function Invites() {
       )}
     </div>
   )
+}
+
+// With open registrations the page is hidden, and its address goes home.
+export default function Invites() {
+  const openRegistrations = useOpenRegistrations()
+  if (openRegistrations) return <Navigate to="/" replace />
+  return <InvitesPage />
 }

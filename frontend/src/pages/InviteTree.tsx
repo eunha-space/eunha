@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronRight, UserRound } from 'lucide-react'
 
 import { getInviteTree, nestInviteTree, type InviteNode, type InviteTree } from '../eunha-api.ts'
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
 import { currentLocale, t } from '@/i18n.tsx'
+import { useOpenRegistrations } from '../hooks/use-open-registrations.ts'
 
 const ROOT_REASONS = {
   get no_recorded_inviter() { return t({ id: 'eunha.invite_tree.no_inviter_recorded', defaultMessage: 'No inviter recorded' }) },
@@ -151,7 +152,7 @@ function TreeNode(props: NodeProps) {
   )
 }
 
-export default function InviteTree() {
+function InviteTreePage() {
   const token = getToken()
   const me = getSavedAccounts().find(account => account.token === token)?.account.id
   // The view, the search and the member in focus live in the URL, so a link
@@ -322,4 +323,11 @@ export default function InviteTree() {
       </>}
     </div>
   )
+}
+
+// With open registrations the page is hidden, and its address goes home.
+export default function InviteTree() {
+  const openRegistrations = useOpenRegistrations()
+  if (openRegistrations) return <Navigate to="/" replace />
+  return <InviteTreePage />
 }

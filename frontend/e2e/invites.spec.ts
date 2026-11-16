@@ -228,6 +228,21 @@ test('visitors do not see invite navigation', async ({ page }) => {
 })
 
 
+test('open registrations hide the invite pages and their links', async ({ page }) => {
+  await signIn(page)
+  await page.route('**/api/v2/instance', r => r.fulfill({ json: {
+    ...instance, registrations: { enabled: true, approval_required: false, reason_required: false },
+  } }))
+  await page.route('**/api/v1/invites', r => r.fulfill({ json: [invite] }))
+  await page.goto('/about')
+  await expect(page.getByRole('heading', { name: 'Example' }).first()).toBeVisible()
+  await expect(page.getByRole('link', { name: /Invite people|Your invites|invite tree/ })).toHaveCount(0)
+  await page.goto('/invites')
+  await expect(page).toHaveURL(/\/$/)
+  await page.goto('/invite-tree')
+  await expect(page).toHaveURL(/\/$/)
+})
+
 test('member sharing preserves grant batches and copying does not consume links', async ({ page, context }, testInfo) => {
   await signIn(page, 0)
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])

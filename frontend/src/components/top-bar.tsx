@@ -42,6 +42,7 @@ import { ModeToggle, ThemeMenuPill } from '@/components/mode-toggle.tsx'
 import { LanguageButton, LanguageSubmenu } from '@/components/language-menu.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { useAvailableInvites } from '../hooks/use-available-invites.ts'
+import { useOpenRegistrations } from '../hooks/use-open-registrations.ts'
 import { useUnreadNotifications } from '../hooks/use-unread-notifications.ts'
 import {
   Sidebar,
@@ -186,6 +187,7 @@ function useNavGroups(
 ): NavGroup[] {
   const intl = useIntl()
   const t = intl.formatMessage
+  const openRegistrations = useOpenRegistrations()
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds. eunha also links home and local timelines, which were a
   // tab strip inside the column — a leftover
@@ -256,7 +258,9 @@ function useNavGroups(
       label: t(messages.you),
       items: [
         { to: '/bookmarks', icon: Bookmark, label: t(messages.saved) },
-        ...(invites.hasAvailable || moderation.length > 0 ? [{
+        // With open registrations an invite admits no one who could not sign
+        // up anyway, so the entry goes, for staff too.
+        ...(openRegistrations !== true && (invites.hasAvailable || moderation.length > 0) ? [{
           to: '/invites', icon: Ticket,
           label: t(messages.invitePeople), inviteCount: invites.count,
         }] : []),

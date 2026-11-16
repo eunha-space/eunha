@@ -198,6 +198,14 @@ local expiry also removes links from the count. Navigation and failed refreshes
 retain the last successfully loaded availability for the signed-in account,
 so the entry does not disappear while checking again.
 
+When registrations are open — anyone may sign up and no approval is needed —
+an invite admits no one who could not join anyway, so the web client hides
+**Invite people** for everyone, staff included, along with the About page's
+invite links and the administration page's links to the invite pages;
+`/invites` and `/invite-tree` go to the home timeline. The invites API and the
+administration page's invite list stay as they are. An instance that requires
+approval keeps them, since an invite admits its holder without one.
+
 **Your invites** leads with the available links and a Copy invite link action.
 When all available links are single-use it says how many people they admit;
 otherwise it reports links and the selected link’s remaining uses. Members who
