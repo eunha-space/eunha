@@ -1152,5 +1152,6 @@
   "server_banner.active_users_title": "활성 사용자",
   "status.quote.nested.title": "{author} 님의 게시물",
   "status.quote_error.filtered_details": "“{filters}” 필터 때문에 숨겨짐",
-  "status.version_history": "수정 내역"
+  "status.version_history": "수정 내역",
+  "tabs_bar.saved": "북마크"
 }

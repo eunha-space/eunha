@@ -45,7 +45,7 @@ test('the account menu switches the interface language and saves it to the accou
   await page.getByRole('menuitemradio', { name: '한국어' }).click()
 
   await expect(rail.getByRole('link', { name: '홈' })).toBeVisible()
-  await expect(rail.getByRole('link', { name: '저장됨' })).toBeVisible()
+  await expect(rail.getByRole('link', { name: '북마크' })).toBeVisible()
   await expect(rail.getByRole('button', { name: '새 게시물' })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
   expect(saved).toEqual([{ locale: 'ko' }])
