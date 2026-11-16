@@ -189,7 +189,7 @@ The tasks:
 | `ip_cleanup_scheduler`                         | daily, at a random 03:00–05:59        | daily, at the instance's own time in 03:00–05:59 UTC            |
 | `pghero_scheduler`                             | daily at 00:00                        | not run: eunha has no PgHero                                    |
 | `instance_refresh_scheduler`                   | on the hour                           | on the hour, UTC                                                |
-| `accounts_statuses_cleanup_scheduler`          | every minute                          | the same                                                        |
+| `accounts_statuses_cleanup_scheduler`          | every minute                          | every minute while any account has a policy                     |
 | `suspended_user_cleanup_scheduler`             | every minute                          | when the next deletion request falls due; one process at a time |
 | `software_update_check_scheduler`              | every 30 minutes                      | at start, then every 30 minutes, once for the whole process     |
 | `auto_close_registrations_scheduler`           | every hour                            | the same                                                        |
@@ -200,10 +200,24 @@ The tasks:
 | `server_checks_scheduler`                      | every 15 minutes                      | the same                                                        |
 
 A self-destructing instance runs `self_destruct_scheduler`, every minute, and
-nothing else, as Mastodon replaces its schedule with it. The announcements
-`ScheduledStatusesScheduler` publishes and unpublishes are looked at every
-minute (`eunha_scheduled_announcements`). Failed deliveries a week old are
-pruned every hour, as eunha's own task.
+nothing else, as Mastodon replaces its schedule with it. Announcements are
+published when their `scheduled_at` comes and unpublished when their `ends_at`
+passes (`eunha_scheduled_announcements`), which in Mastodon
+`ScheduledStatusesScheduler` and the jobs it queues do. Failed deliveries a
+week old are pruned every hour, as eunha's own task.
+
+Two of those wake less often than Mastodon's do, because a task that wakes
+every minute keeps a database connection open for most of every minute, and
+on a host of mostly idle tenants that is most of what a tenant costs:
+
+ -  `accounts_statuses_cleanup_scheduler` runs every minute only while some
+    account has an enabled automated post deletion policy. With none, it looks
+    again every `queue_idle_poll_seconds`, or as soon as a policy is saved
+    here; a policy saved by another process sharing the database is taken up
+    at that poll.
+ -  The announcements' schedule sleeps until the next `scheduled_at` or
+    `ends_at`, and is woken when an announcement is created, changed or
+    published.
 
 When each task last ran, and whether one is running:
 

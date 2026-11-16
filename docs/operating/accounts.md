@@ -904,7 +904,8 @@ polls, posts with media, and posts with at least `min_favs` favourites or
 page for it yet; a policy saved by Mastodon on the same database is carried
 out all the same.
 
-Every minute, Mastodon's `AccountsStatusesCleanupScheduler` deletes up to five
+Every minute while any member has a policy enabled, Mastodon's
+`AccountsStatusesCleanupScheduler` deletes up to five
 posts per job thread (`[workers] job_workers × job_concurrency`), at most 300,
 and at most five of one member's at a time, going round the members from where
 it stopped last time and then back to those who still had posts to delete. It

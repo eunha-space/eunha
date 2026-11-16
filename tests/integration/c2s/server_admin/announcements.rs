@@ -184,3 +184,67 @@ async fn test_announcements() {
         .collect();
     assert_eq!(actions, ["create", "create", "update", "destroy"]);
 }
+
+/// The schedule sleeps until an unpublished announcement's `scheduled_at` or a
+/// published one's `ends_at`, whichever comes first, and has nothing to wake
+/// for when neither is set.
+#[tokio::test]
+async fn test_next_announcement_due() {
+    let ctx = TestContext::new("srv-announcements-due").await;
+    give_role(&ctx, &ctx.bob_id, 10, MANAGE_ANNOUNCEMENTS).await;
+    let due = || async { eunha::announcements::next_due(&ctx.state).await.unwrap() };
+    assert_eq!(
+        due().await,
+        None,
+        "with no announcements there is nothing to wake for"
+    );
+
+    let at = |minutes: i64| (chrono::Utc::now() + chrono::Duration::minutes(minutes)).to_rfc3339();
+    json_ok(
+        ctx.api
+            .post_json(
+                "/api/v1/admin/announcements",
+                Some(&ctx.bob_token),
+                &json!({"text": "No end"}),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(
+        due().await,
+        None,
+        "a published announcement with no end is never due"
+    );
+
+    json_ok(
+        ctx.api
+            .post_json(
+                "/api/v1/admin/announcements",
+                Some(&ctx.bob_token),
+                &json!({"text": "Later", "scheduled_at": at(30)}),
+            )
+            .await,
+    )
+    .await;
+    let seconds = due().await.expect("a scheduled announcement is waiting");
+    assert!(
+        (1790.0..=1800.0).contains(&seconds),
+        "due in 30 minutes, not {seconds}s"
+    );
+
+    json_ok(
+        ctx.api
+            .post_json(
+                "/api/v1/admin/announcements",
+                Some(&ctx.bob_token),
+                &json!({"text": "Ending", "starts_at": at(0), "ends_at": at(10)}),
+            )
+            .await,
+    )
+    .await;
+    let seconds = due().await.expect("an announcement is ending");
+    assert!(
+        (590.0..=600.0).contains(&seconds),
+        "ends in 10 minutes, not {seconds}s"
+    );
+}

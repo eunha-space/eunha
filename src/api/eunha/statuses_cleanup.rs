@@ -299,6 +299,10 @@ pub async fn update(
     if old.widened_by(&new) {
         statuses_cleanup::forget_last_inspected(&state, account_id).await;
     }
+    if new.enabled {
+        // The scheduler sleeps while no account has a policy.
+        state.queues.statuses_cleanup.notify_one();
+    }
     Ok(Json(new).into_response())
 }
 

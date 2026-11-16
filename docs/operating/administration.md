@@ -335,8 +335,8 @@ either.
     approval under `postpone_confirmation_emails`
     (`PendingAccountsNotificationScheduler`); see
     [Server settings](#server-settings).
- -  Every minute, the posts that members' automated deletion policies say
-    should go are deleted; see
+ -  Every minute while any member has one enabled, the posts that members'
+    automated deletion policies say should go are deleted; see
     [accounts](./accounts.md#automated-post-deletion).
 
 

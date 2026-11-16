@@ -195,6 +195,23 @@ pub async fn publish_reaction(state: &AppState, id: i64, name: &str) -> anyhow::
     Ok(())
 }
 
+/// Seconds until the schedule next has something to do — an unpublished
+/// announcement's `scheduled_at`, or a published one's `ends_at` — or `None`
+/// when there is nothing. Against the database's clock, which
+/// [`run_schedule_once`] uses too.
+pub async fn next_due(state: &AppState) -> anyhow::Result<Option<f64>> {
+    Ok(sqlx::query_scalar::<_, Option<f64>>(
+        r#"SELECT EXTRACT(EPOCH FROM LEAST(
+                    min(scheduled_at::timestamptz)
+                      FILTER (WHERE NOT published AND scheduled_at IS NOT NULL),
+                    min(ends_at::timestamptz) FILTER (WHERE published AND ends_at IS NOT NULL)
+                  ) - now())::float8
+           FROM announcements"#,
+    )
+    .fetch_one(&state.db)
+    .await?)
+}
+
 /// One pass of the schedule: publish what is due, unpublish what has ended.
 pub async fn run_schedule_once(state: &AppState) -> anyhow::Result<()> {
     let due = sqlx::query_scalar!(

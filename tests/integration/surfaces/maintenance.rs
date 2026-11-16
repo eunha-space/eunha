@@ -103,11 +103,15 @@ async fn statuses_cleanup_deletes_what_the_policy_does_not_keep() {
     assert!(!deleted(&ctx, pinned).await);
 }
 
-/// A disabled policy deletes nothing.
+/// A disabled policy deletes nothing, and gives the scheduler no reason to
+/// wake every minute; an enabled one does.
 #[tokio::test]
 async fn a_disabled_policy_deletes_nothing() {
     let ctx = TestContext::new("statuses-cleanup-off").await;
     let alice: i64 = ctx.alice_id.parse().unwrap();
+    assert!(!eunha::statuses_cleanup::any_enabled(&ctx.state)
+        .await
+        .unwrap());
     let old = id_days_ago(30, 1);
     insert_status(&ctx, alice, old, 0).await;
     sqlx::query(
@@ -117,8 +121,22 @@ async fn a_disabled_policy_deletes_nothing() {
     .execute(&ctx.db)
     .await
     .unwrap();
+    assert!(!eunha::statuses_cleanup::any_enabled(&ctx.state)
+        .await
+        .unwrap());
     eunha::statuses_cleanup::perform(&ctx.state).await.unwrap();
     assert!(!deleted(&ctx, old).await);
+
+    sqlx::query(
+        "UPDATE account_statuses_cleanup_policies SET enabled = true WHERE account_id = $1",
+    )
+    .bind(alice)
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    assert!(eunha::statuses_cleanup::any_enabled(&ctx.state)
+        .await
+        .unwrap());
 }
 
 /// What is kept of people's addresses is forgotten after a year.

@@ -338,6 +338,16 @@ async fn latency(state: &AppState, queue: &str) -> anyhow::Result<f64> {
     Ok(latency.unwrap_or(0.0))
 }
 
+/// Whether any account has an enabled policy, without which a run has nothing
+/// to do and the scheduler sleeps rather than waking every minute.
+pub async fn any_enabled(state: &AppState) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM account_statuses_cleanup_policies WHERE enabled)",
+    )
+    .fetch_one(&state.db)
+    .await?)
+}
+
 /// `under_load?`.
 pub async fn under_load(state: &AppState) -> anyhow::Result<bool> {
     for (queue, max_latency) in LOAD_LATENCY_THRESHOLDS {

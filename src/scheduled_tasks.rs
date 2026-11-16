@@ -98,6 +98,9 @@ pub enum Runs {
     /// is when the jobs Mastodon's scheduler queues with `perform_at` run;
     /// each pass is still held to one process at a time by [`exclusive`].
     WhenDue,
+    /// On the entry's schedule while there is anything for it to do, and
+    /// asleep otherwise until told there may be, or until the idle poll.
+    WhileNeeded,
     /// Once for the whole process, not per instance.
     ForTheProcess,
     /// Not at all; the divergence of this id says why.
@@ -176,8 +179,12 @@ pub const INSTANCE_REFRESH: Task = task(
         hour: None,
     },
 );
-pub const ACCOUNTS_STATUSES_CLEANUP: Task =
-    task("accounts_statuses_cleanup_scheduler", every(minutes(1)));
+/// Every minute, but only while some account has an enabled policy.
+pub const ACCOUNTS_STATUSES_CLEANUP: Task = Task {
+    name: "accounts_statuses_cleanup_scheduler",
+    schedule: every(minutes(1)),
+    runs: Runs::WhileNeeded,
+};
 pub const SUSPENDED_USER_CLEANUP: Task = Task {
     name: "suspended_user_cleanup_scheduler",
     schedule: every(minutes(1)),
@@ -240,9 +247,13 @@ pub const SIDEKIQ_YML: [Task; 19] = [
 pub const SELF_DESTRUCT: Task = task("self_destruct_scheduler", every(minutes(1)));
 
 /// The announcements `ScheduledStatusesScheduler` publishes and unpublishes.
-/// Mastodon queues a publication for its `scheduled_at`; eunha looks every
-/// minute.
-pub const SCHEDULED_ANNOUNCEMENTS: Task = task("eunha_scheduled_announcements", every(minutes(1)));
+/// Mastodon queues a publication for its `scheduled_at`; eunha wakes when the
+/// next `scheduled_at` or `ends_at` comes, and when an announcement changes.
+pub const SCHEDULED_ANNOUNCEMENTS: Task = Task {
+    name: "eunha_scheduled_announcements",
+    schedule: every(minutes(1)),
+    runs: Runs::WhenDue,
+};
 
 // ── Cron entries on the wall clock ─────────────────────────────────────────
 

@@ -166,15 +166,7 @@ fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
         until_stopped(
             state,
             "account statuses cleanup",
-            run(
-                state.clone(),
-                &tasks::ACCOUNTS_STATUSES_CLEANUP,
-                |state| async move {
-                    if let Err(error) = crate::statuses_cleanup::perform(&state).await {
-                        tracing::error!(%error, "account statuses cleanup failed");
-                    }
-                },
-            ),
+            run_statuses_cleanup(state.clone()),
         ),
         until_stopped(
             state,
@@ -229,15 +221,7 @@ fn schedules(state: &AppState) -> Vec<JoinHandle<()>> {
         until_stopped(
             state,
             "announcement schedule",
-            run(
-                state.clone(),
-                &tasks::SCHEDULED_ANNOUNCEMENTS,
-                |state| async move {
-                    if let Err(error) = crate::announcements::run_schedule_once(&state).await {
-                        tracing::error!(%error, "announcement schedule failed");
-                    }
-                },
-            ),
+            run_scheduled_announcements(state.clone()),
         ),
         until_stopped(
             state,
@@ -348,6 +332,11 @@ pub struct QueueWakes {
     pub backups: tokio::sync::Notify,
     /// A scheduled status was created or moved.
     pub scheduled_statuses: tokio::sync::Notify,
+    /// An announcement was created, changed or published, so one may now fall
+    /// due, or end, sooner.
+    pub announcements: tokio::sync::Notify,
+    /// An account's automated post deletion policy was saved.
+    pub statuses_cleanup: tokio::sync::Notify,
 }
 
 /// How long a queue loop sleeps after finding nothing: `floor` at first,
@@ -912,6 +901,99 @@ async fn next_deletion_request_due(state: &AppState) -> anyhow::Result<Option<f6
         let due = created_at + crate::delete_account::DELAY_TO_DELETION;
         (due - chrono::Utc::now().naive_utc()).num_milliseconds() as f64 / 1000.0
     }))
+}
+
+// ── Automated post deletion ───────────────────────────────────────────────
+
+/// `AccountsStatusesCleanupScheduler`'s `every: '1m'`, kept while there is
+/// anything for it to do: some account has an enabled policy. Otherwise it
+/// sleeps for the idle poll, or until a policy is saved here.
+///
+/// Mastodon's scheduler wakes every minute whatever the policies, and so did
+/// eunha's until it was found holding an idle tenant's connections: with the
+/// announcements, two tasks a minute that each took a connection kept one open
+/// for 40 seconds of every minute, so a tenant nobody used held 1.6 of its
+/// two. Most instances have no policy at all. A policy saved by another
+/// process sharing the database, which this one is not told about, is taken
+/// up at the next idle poll, minutes rather than the weeks a policy's minimum
+/// age is measured in.
+async fn run_statuses_cleanup(state: AppState) {
+    use crate::scheduled_tasks::{self as tasks, Slot};
+    const EVERY: Duration = Duration::from_secs(60);
+    let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
+    while !state.stop.is_cancelled() {
+        let needed = crate::statuses_cleanup::any_enabled(&state)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(%error, "could not tell whether any account has a post deletion policy");
+                true
+            });
+        if !needed {
+            sleep_or_wake(
+                &state.queues.statuses_cleanup,
+                &state.stop,
+                jittered(ceiling, rand::random()),
+            )
+            .await;
+            continue;
+        }
+        let run = tasks::attempt(
+            &state.db,
+            tasks::ACCOUNTS_STATUSES_CLEANUP.name,
+            Slot::Every(EVERY),
+            async {
+                if let Err(error) = crate::statuses_cleanup::perform(&state).await {
+                    tracing::error!(%error, "account statuses cleanup failed");
+                }
+            },
+        )
+        .await;
+        if let Err(error) = run {
+            tracing::error!(task = tasks::ACCOUNTS_STATUSES_CLEANUP.name, %error, "could not take a scheduled task's lease");
+        }
+        rest(&state.stop, EVERY).await;
+    }
+}
+
+// ── Scheduled announcements ───────────────────────────────────────────────
+
+/// Publish announcements when their `scheduled_at` comes and unpublish them
+/// when their `ends_at` passes, sleeping until the next of those rather than
+/// looking every minute, which kept an idle tenant's connections open (see
+/// [`run_statuses_cleanup`]). Woken when an announcement is created, changed
+/// or published.
+async fn run_scheduled_announcements(state: AppState) {
+    let ceiling = state.config.workers.sanitized().timed_task_idle_poll();
+    while !state.stop.is_cancelled() {
+        let mut ran = Ok(());
+        crate::scheduled_tasks::exclusive(
+            &state,
+            &crate::scheduled_tasks::SCHEDULED_ANNOUNCEMENTS,
+            async {
+                ran = crate::announcements::run_schedule_once(&state).await;
+            },
+        )
+        .await;
+        let floor = match ran {
+            Ok(()) => TIMED_TASK_FLOOR,
+            Err(error) => {
+                tracing::error!(%error, "announcement schedule failed");
+                TIMED_TASK_FAILURE_FLOOR
+            }
+        };
+        let due = crate::announcements::next_due(&state)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(%error, "could not find when the next announcement is due");
+                None
+            });
+        sleep_or_wake(
+            &state.queues.announcements,
+            &state.stop,
+            timed_task_nap(due, floor, ceiling, rand::random()),
+        )
+        .await;
+    }
 }
 
 /// `MAX_DELETIONS_PER_JOB`

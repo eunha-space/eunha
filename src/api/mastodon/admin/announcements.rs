@@ -266,6 +266,8 @@ pub async fn create_admin_announcement(
     .await?;
     action_log::log(&mut *tx, auth.account_id, "create", &target(&row)).await?;
     tx.commit().await?;
+    // The schedule sleeps until the next announcement it knows of is due.
+    state.queues.announcements.notify_one();
     if row.published {
         crate::announcements::publish_later(&state, row.id).await;
     }
@@ -303,6 +305,8 @@ pub async fn update_admin_announcement(
     .await?;
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
+    // The schedule sleeps until the next announcement it knows of is due.
+    state.queues.announcements.notify_one();
     if row.published {
         crate::announcements::publish_later(&state, row.id).await;
     }
@@ -332,6 +336,8 @@ pub async fn publish_admin_announcement(
     .await?;
     action_log::log(&mut *tx, auth.account_id, "update", &target(&row)).await?;
     tx.commit().await?;
+    // The schedule sleeps until the next announcement it knows of is due.
+    state.queues.announcements.notify_one();
     crate::announcements::publish_later(&state, id).await;
     Ok(Json(row.into_api(&state.urls)))
 }
