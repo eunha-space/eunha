@@ -21,22 +21,23 @@ import {
 import { SectionSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import type { MessageDescriptor } from 'react-intl'
+import { defineMessage } from 'react-intl'
 
 // `simple_form.labels.notification_emails.*`, in the order Mastodon's
 // notifications page lists them.
 const NOTIFICATION_EMAILS: [string, MessageDescriptor][] = [
-  ['follow', { id: 'mastodon.simple_form.labels.notification_emails.follow', defaultMessage: 'Someone followed you' }],
+  ['follow', defineMessage({ id: 'mastodon.simple_form.labels.notification_emails.follow', defaultMessage: 'Someone followed you' })],
   [
     'follow_request',
-    { id: 'mastodon.simple_form.labels.notification_emails.follow_request', defaultMessage: 'Someone requested to follow you' },
+    defineMessage({ id: 'mastodon.simple_form.labels.notification_emails.follow_request', defaultMessage: 'Someone requested to follow you' }),
   ],
-  ['reblog', { id: 'mastodon.simple_form.labels.notification_emails.reblog', defaultMessage: 'Someone boosted your post' }],
+  ['reblog', defineMessage({ id: 'mastodon.simple_form.labels.notification_emails.reblog', defaultMessage: 'Someone boosted your post' })],
   [
     'favourite',
-    { id: 'mastodon.simple_form.labels.notification_emails.favourite', defaultMessage: 'Someone favourited your post' },
+    defineMessage({ id: 'mastodon.simple_form.labels.notification_emails.favourite', defaultMessage: 'Someone favourited your post' }),
   ],
-  ['mention', { id: 'mastodon.simple_form.labels.notification_emails.mention', defaultMessage: 'Someone mentioned you' }],
-  ['quote', { id: 'mastodon.simple_form.labels.notification_emails.quote', defaultMessage: 'Someone quoted you' }],
+  ['mention', defineMessage({ id: 'mastodon.simple_form.labels.notification_emails.mention', defaultMessage: 'Someone mentioned you' })],
+  ['quote', defineMessage({ id: 'mastodon.simple_form.labels.notification_emails.quote', defaultMessage: 'Someone quoted you' })],
 ]
 
 /**

@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
 import { currentLocale, t } from '@/i18n.tsx'
+import { defineMessage } from 'react-intl'
 
 const date = (value: string | null) => (value ? new Date(value).toLocaleString(currentLocale()) : '')
 const day = (value: string) => new Date(value).toLocaleDateString(currentLocale())
@@ -194,8 +195,8 @@ function AuthenticationHistory({ token }: { token: string }) {
                 <li key={item.id} className="p-2">
                   {t(
                     item.success
-                      ? { id: 'eunha.sessions_settings.successful_sign_in', defaultMessage: 'Successful sign-in with {method} from {ip}' }
-                      : { id: 'eunha.sessions_settings.failed_sign_in', defaultMessage: 'Failed sign-in attempt with {method} from {ip}' },
+                      ? defineMessage({ id: 'eunha.sessions_settings.successful_sign_in', defaultMessage: 'Successful sign-in with {method} from {ip}' })
+                      : defineMessage({ id: 'eunha.sessions_settings.failed_sign_in', defaultMessage: 'Failed sign-in attempt with {method} from {ip}' }),
                     { method, ip: item.ip ?? t({ id: 'eunha.sessions_settings.an_unknown_address', defaultMessage: 'an unknown address' }) },
                   )}{' '}
                   <span className="text-muted-foreground">

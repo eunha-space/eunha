@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import type { MessageDescriptor } from 'react-intl'
+import { defineMessage } from 'react-intl'
 
 // `statuses_cleanup.min_age`, by `ALLOWED_MIN_STATUS_AGE`.
 const AGES = [
@@ -43,12 +44,12 @@ type KeepField =
   | 'keep_media'
 
 const EXCEPTIONS: [KeepField, MessageDescriptor][] = [
-  ['keep_pinned', { id: 'mastodon.statuses_cleanup.keep_pinned', defaultMessage: 'Keep pinned posts' }],
-  ['keep_direct', { id: 'mastodon.statuses_cleanup.keep_direct', defaultMessage: 'Keep direct messages' }],
-  ['keep_self_fav', { id: 'mastodon.statuses_cleanup.keep_self_fav', defaultMessage: 'Keep posts you favorited' }],
-  ['keep_self_bookmark', { id: 'mastodon.statuses_cleanup.keep_self_bookmark', defaultMessage: 'Keep posts you bookmarked' }],
-  ['keep_polls', { id: 'mastodon.statuses_cleanup.keep_polls', defaultMessage: 'Keep polls' }],
-  ['keep_media', { id: 'mastodon.statuses_cleanup.keep_media', defaultMessage: 'Keep posts with media attachments' }],
+  ['keep_pinned', defineMessage({ id: 'mastodon.statuses_cleanup.keep_pinned', defaultMessage: 'Keep pinned posts' })],
+  ['keep_direct', defineMessage({ id: 'mastodon.statuses_cleanup.keep_direct', defaultMessage: 'Keep direct messages' })],
+  ['keep_self_fav', defineMessage({ id: 'mastodon.statuses_cleanup.keep_self_fav', defaultMessage: 'Keep posts you favorited' })],
+  ['keep_self_bookmark', defineMessage({ id: 'mastodon.statuses_cleanup.keep_self_bookmark', defaultMessage: 'Keep posts you bookmarked' })],
+  ['keep_polls', defineMessage({ id: 'mastodon.statuses_cleanup.keep_polls', defaultMessage: 'Keep polls' })],
+  ['keep_media', defineMessage({ id: 'mastodon.statuses_cleanup.keep_media', defaultMessage: 'Keep posts with media attachments' })],
 ]
 
 /**

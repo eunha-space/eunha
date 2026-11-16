@@ -49,15 +49,15 @@ import {
 } from '@/components/ui/alert-dialog.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
-import { FormattedMessage } from 'react-intl'
+import { FormattedMessage, defineMessage } from 'react-intl'
 import type { MessageDescriptor } from 'react-intl'
 
 // Mastodon's `deletes.warning.*`, shown before the challenge.
 const WARNINGS: MessageDescriptor[] = [
-  { id: 'mastodon.deletes.warning.irreversible', defaultMessage: 'You will not be able to restore or reactivate your account' },
-  { id: 'mastodon.deletes.warning.username_unavailable', defaultMessage: 'Your username will remain unavailable' },
-  { id: 'mastodon.deletes.warning.data_removal', defaultMessage: 'Your posts and other data will be permanently removed' },
-  { id: 'mastodon.deletes.warning.caches', defaultMessage: 'Content that has been cached by other servers may persist' },
+  defineMessage({ id: 'mastodon.deletes.warning.irreversible', defaultMessage: 'You will not be able to restore or reactivate your account' }),
+  defineMessage({ id: 'mastodon.deletes.warning.username_unavailable', defaultMessage: 'Your username will remain unavailable' }),
+  defineMessage({ id: 'mastodon.deletes.warning.data_removal', defaultMessage: 'Your posts and other data will be permanently removed' }),
+  defineMessage({ id: 'mastodon.deletes.warning.caches', defaultMessage: 'Content that has been cached by other servers may persist' }),
 ]
 
 function DeleteAccount({ token }: { token: string }) {
@@ -260,9 +260,9 @@ function PostingLanguageSettings({ token }: { token: string }) {
 // `statuses.quote_policies.*`, in the order Mastodon's `UserSettings` lists
 // `default_quote_policy`'s values.
 const QUOTE_POLICIES: [QuotePolicy, MessageDescriptor][] = [
-  ['public', { id: 'mastodon.statuses.quote_policies.public', defaultMessage: 'Anyone' }],
-  ['followers', { id: 'mastodon.statuses.quote_policies.followers', defaultMessage: 'Followers only' }],
-  ['nobody', { id: 'mastodon.statuses.quote_policies.nobody', defaultMessage: 'Just me' }],
+  ['public', defineMessage({ id: 'mastodon.statuses.quote_policies.public', defaultMessage: 'Anyone' })],
+  ['followers', defineMessage({ id: 'mastodon.statuses.quote_policies.followers', defaultMessage: 'Followers only' })],
+  ['nobody', defineMessage({ id: 'mastodon.statuses.quote_policies.nobody', defaultMessage: 'Just me' })],
 ]
 
 /**

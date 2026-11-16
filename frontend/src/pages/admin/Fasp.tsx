@@ -25,8 +25,9 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
+import { defineMessage } from 'react-intl'
 
-const TITLE = { id: 'mastodon.admin.fasp.providers.title', defaultMessage: 'Fediverse Auxiliary Service Providers' }
+const TITLE = defineMessage({ id: 'mastodon.admin.fasp.providers.title', defaultMessage: 'Fediverse Auxiliary Service Providers' })
 
 /** `admin/fasp/shared/_links`: providers, and the debug callbacks. */
 const SUB = [

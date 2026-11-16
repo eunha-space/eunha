@@ -16,12 +16,13 @@ import {
 import { SectionSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import type { MessageDescriptor } from 'react-intl'
+import { defineMessage } from 'react-intl'
 
 // `simple_form.labels.defaults.setting_display_media_*`.
 const DISPLAY_MEDIA: [Preferences['display_media'], MessageDescriptor][] = [
-  ['default', { id: 'eunha.timeline_preferences.display_media_default', defaultMessage: 'Hide media marked as sensitive' }],
-  ['show_all', { id: 'eunha.timeline_preferences.display_media_show_all', defaultMessage: 'Always show media' }],
-  ['hide_all', { id: 'eunha.timeline_preferences.display_media_hide_all', defaultMessage: 'Always hide media' }],
+  ['default', defineMessage({ id: 'eunha.timeline_preferences.display_media_default', defaultMessage: 'Hide media marked as sensitive' })],
+  ['show_all', defineMessage({ id: 'eunha.timeline_preferences.display_media_show_all', defaultMessage: 'Always show media' })],
+  ['hide_all', defineMessage({ id: 'eunha.timeline_preferences.display_media_hide_all', defaultMessage: 'Always hide media' })],
 ]
 
 /**

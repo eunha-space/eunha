@@ -16,16 +16,17 @@ import { Button } from '@/components/ui/button.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import type { MessageDescriptor } from 'react-intl'
+import { defineMessage } from 'react-intl'
 
 /** `admin.server_checks.categories`, in the order the page lists them. */
 const CATEGORIES: [ServerCheckCategory, MessageDescriptor][] = [
-  ['critical', { id: 'mastodon.admin.server_checks.categories.critical.title', defaultMessage: 'Critical' }],
-  ['warning', { id: 'mastodon.admin.server_checks.categories.warning.title', defaultMessage: 'Warnings' }],
-  ['suggestion', { id: 'mastodon.admin.server_checks.categories.suggestion.title', defaultMessage: 'Suggestions' }],
-  ['error', { id: 'mastodon.admin.server_checks.categories.error.title', defaultMessage: 'Errors' }],
-  ['unprocessed', { id: 'mastodon.admin.server_checks.categories.unprocessed.title', defaultMessage: 'Unprocessed' }],
-  ['completed', { id: 'mastodon.admin.server_checks.categories.completed.title', defaultMessage: 'Completed' }],
-  ['ignored', { id: 'mastodon.admin.server_checks.categories.ignored.title', defaultMessage: 'Ignored' }],
+  ['critical', defineMessage({ id: 'mastodon.admin.server_checks.categories.critical.title', defaultMessage: 'Critical' })],
+  ['warning', defineMessage({ id: 'mastodon.admin.server_checks.categories.warning.title', defaultMessage: 'Warnings' })],
+  ['suggestion', defineMessage({ id: 'mastodon.admin.server_checks.categories.suggestion.title', defaultMessage: 'Suggestions' })],
+  ['error', defineMessage({ id: 'mastodon.admin.server_checks.categories.error.title', defaultMessage: 'Errors' })],
+  ['unprocessed', defineMessage({ id: 'mastodon.admin.server_checks.categories.unprocessed.title', defaultMessage: 'Unprocessed' })],
+  ['completed', defineMessage({ id: 'mastodon.admin.server_checks.categories.completed.title', defaultMessage: 'Completed' })],
+  ['ignored', defineMessage({ id: 'mastodon.admin.server_checks.categories.ignored.title', defaultMessage: 'Ignored' })],
 ]
 
 /** `Admin::ServerChecksController#index`. */

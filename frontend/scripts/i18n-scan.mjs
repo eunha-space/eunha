@@ -96,6 +96,19 @@ function atModuleLevel(node) {
   return true
 }
 
+function isBareDescriptor(node, sf) {
+  const names = node.properties.map((p) => (p.name ? p.name.getText(sf) : ''))
+  if (!names.includes('id') || !names.includes('defaultMessage')) return false
+  let parent = node.parent
+  // A member of `defineMessages({ … })`.
+  if (ts.isPropertyAssignment(parent) && ts.isObjectLiteralExpression(parent.parent)) {
+    const call = parent.parent.parent
+    if (ts.isCallExpression(call) && calleeName(call.expression) === 'defineMessages') return false
+  }
+  if (ts.isAsExpression(parent) || ts.isSatisfiesExpression?.(parent)) parent = parent.parent
+  return !(ts.isCallExpression(parent) && /^(t|.*\.formatMessage|defineMessage|formatMessage)$/.test(calleeName(parent.expression)))
+}
+
 export function scan(path) {
   const text = readFileSync(path, 'utf8')
   if (/i18n-ignore-file/.test(text.slice(0, 500))) return []
@@ -181,11 +194,27 @@ export function scan(path) {
         const callee = ts.isCallExpression(parent) ? calleeName(parent.expression) : ''
         if (!NOT_TEXT_CALLS.test(callee)) add(node, 'template', node.getText(sf))
       }
+    } else if (ts.isObjectLiteralExpression(node) && isBareDescriptor(node, sf)) {
+      // `i18n:extract` only finds descriptors given to `t`, `defineMessage(s)`
+      // or `formatMessage`; one written bare never reaches the catalogs.
+      add(node, 'bare-descriptor', node.getText(sf).slice(0, 80))
     } else if (ts.isCallExpression(node)) {
       const callee = calleeName(node.expression)
       // Text made when the module loads stays in the language it loaded in.
       if (callee === 't' && atModuleLevel(node)) add(node, 'module-t', node.getText(sf).slice(0, 80))
-      if (/^(t|.*\.formatMessage|defineMessages|defineMessage)$/.test(callee)) return
+      if (/^(t|.*\.formatMessage|defineMessages|defineMessage)$/.test(callee)) {
+        // A descriptor chosen inside the call (`t(ok ? a : b)`) is not found
+        // by the extractor either.
+        const first = node.arguments[0]
+        if (first && !ts.isObjectLiteralExpression(first)) {
+          const find = (n) => {
+            if (ts.isObjectLiteralExpression(n) && isBareDescriptor(n, sf)) add(n, 'bare-descriptor', n.getText(sf).slice(0, 80))
+            else ts.forEachChild(n, find)
+          }
+          find(first)
+        }
+        return
+      }
       if (/^console\./.test(callee)) return
     } else if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
       const tag = (ts.isJsxElement(node) ? node.openingElement : node).tagName.getText(sf)

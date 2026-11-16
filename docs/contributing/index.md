@@ -99,6 +99,8 @@ that a translation can reorder it. Counts take an ICU plural, and markup in a
 sentence is a rich-text tag (`<strong>…</strong>`) or a value. Text made when
 a module loads would not follow a change of language, so a list of labels
 beside a component holds descriptors or getters and calls `t` when it renders.
+A descriptor not written inside a `t` call is wrapped in `defineMessage`, or
+`i18n:extract` does not find it.
 Dates and numbers are formatted in `currentLocale()`.
 
 Where a message means what one of Mastodon's means, it takes Mastodon's id, so

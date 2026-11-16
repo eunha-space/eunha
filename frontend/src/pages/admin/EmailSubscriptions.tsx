@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea.tsx'
 import { CardsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import type { MessageDescriptor } from 'react-intl'
+import { defineMessage } from 'react-intl'
 
 // Mastodon's `email_subscriptions.*` badge labels.
 const STATUS_LABEL: Record<EmailSubscriptionStatus, string> = {
@@ -43,10 +44,10 @@ export function EmailSubscriptionStatusBadge({ status }: { status: EmailSubscrip
 
 // `admin.email_subscriptions.setups.show.list`.
 const IMPORTANT: MessageDescriptor[] = [
-  { id: 'mastodon.admin.email_subscriptions.setups.show.list.1_permission_explanation', defaultMessage: 'When this feature is enabled, accounts with the designated permissions can add an email collection form to their profiles.' },
-  { id: 'mastodon.admin.email_subscriptions.setups.show.list.2_feature_explanation', defaultMessage: 'When visitors sign up on an account’s profile page and confirm their subscription, they’ll begin to receive email updates when the account creates new public posts.' },
-  { id: 'mastodon.admin.email_subscriptions.setups.show.list.3_privacy_policy_warning', defaultMessage: 'Server admins will have access to PII (email addresses) collected. As such, the privacy policy and Terms of Service for the server must be updated before using this feature.' },
-  { id: 'mastodon.admin.email_subscriptions.setups.show.list.4_cost_warning', defaultMessage: 'Emails may incur a fee depending on hosting setup. Discuss with your hosting provider before enabling, as this feature could drastically increase the amount of emails sent from your server.' },
+  defineMessage({ id: 'mastodon.admin.email_subscriptions.setups.show.list.1_permission_explanation', defaultMessage: 'When this feature is enabled, accounts with the designated permissions can add an email collection form to their profiles.' }),
+  defineMessage({ id: 'mastodon.admin.email_subscriptions.setups.show.list.2_feature_explanation', defaultMessage: 'When visitors sign up on an account’s profile page and confirm their subscription, they’ll begin to receive email updates when the account creates new public posts.' }),
+  defineMessage({ id: 'mastodon.admin.email_subscriptions.setups.show.list.3_privacy_policy_warning', defaultMessage: 'Server admins will have access to PII (email addresses) collected. As such, the privacy policy and Terms of Service for the server must be updated before using this feature.' }),
+  defineMessage({ id: 'mastodon.admin.email_subscriptions.setups.show.list.4_cost_warning', defaultMessage: 'Emails may incur a fee depending on hosting setup. Discuss with your hosting provider before enabling, as this feature could drastically increase the amount of emails sent from your server.' }),
 ]
 
 function Setup({

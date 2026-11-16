@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
+import { defineMessage } from 'react-intl'
 
 /** `UserRole::Flags::CATEGORIES`, each privilege with its label and hint,
  *  as Mastodon's `admin.roles` messages. */
@@ -33,153 +34,153 @@ const CATEGORIES: {
   privileges: [Permission, MessageDescriptor, MessageDescriptor][]
 }[] = [
   {
-    title: { id: 'mastodon.admin.roles.categories.invites', defaultMessage: 'Invites' },
+    title: defineMessage({ id: 'mastodon.admin.roles.categories.invites', defaultMessage: 'Invites' }),
     privileges: [
       [
         'invite_users',
-        { id: 'mastodon.admin.roles.privileges.invite_users', defaultMessage: 'Invite Users' },
-        { id: 'mastodon.admin.roles.privileges.invite_users_description', defaultMessage: 'Allows users to invite new people to the server' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.invite_users', defaultMessage: 'Invite Users' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.invite_users_description', defaultMessage: 'Allows users to invite new people to the server' }),
       ],
       [
         'invite_bypass_approval',
-        { id: 'mastodon.admin.roles.privileges.invite_bypass_approval', defaultMessage: 'Invite Users without review' },
-        { id: 'mastodon.admin.roles.privileges.invite_bypass_approval_description', defaultMessage: 'Allows people invited to the server by these users to bypass moderation approval' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.invite_bypass_approval', defaultMessage: 'Invite Users without review' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.invite_bypass_approval_description', defaultMessage: 'Allows people invited to the server by these users to bypass moderation approval' }),
       ],
     ],
   },
   {
-    title: { id: 'mastodon.admin.roles.categories.email', defaultMessage: 'Email' },
+    title: defineMessage({ id: 'mastodon.admin.roles.categories.email', defaultMessage: 'Email' }),
     privileges: [
       [
         'manage_email_subscriptions',
-        { id: 'mastodon.admin.roles.privileges.manage_email_subscriptions', defaultMessage: 'Manage Email Subscriptions' },
-        { id: 'mastodon.admin.roles.privileges.manage_email_subscriptions_description', defaultMessage: 'Allow users with this permission to enable the email newsletter feature for their account' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_email_subscriptions', defaultMessage: 'Manage Email Subscriptions' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_email_subscriptions_description', defaultMessage: 'Allow users with this permission to enable the email newsletter feature for their account' }),
       ],
     ],
   },
   {
-    title: { id: 'mastodon.admin.roles.categories.moderation', defaultMessage: 'Moderation' },
+    title: defineMessage({ id: 'mastodon.admin.roles.categories.moderation', defaultMessage: 'Moderation' }),
     privileges: [
       [
         'view_dashboard',
-        { id: 'mastodon.admin.roles.privileges.view_dashboard', defaultMessage: 'View Dashboard' },
-        { id: 'mastodon.admin.roles.privileges.view_dashboard_description', defaultMessage: 'Allows users to access the dashboard and various metrics' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_dashboard', defaultMessage: 'View Dashboard' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_dashboard_description', defaultMessage: 'Allows users to access the dashboard and various metrics' }),
       ],
       [
         'view_audit_log',
-        { id: 'mastodon.admin.roles.privileges.view_audit_log', defaultMessage: 'View Audit Log' },
-        { id: 'mastodon.admin.roles.privileges.view_audit_log_description', defaultMessage: 'Allows users to see a history of administrative actions on the server' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_audit_log', defaultMessage: 'View Audit Log' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_audit_log_description', defaultMessage: 'Allows users to see a history of administrative actions on the server' }),
       ],
       [
         'manage_users',
-        { id: 'mastodon.admin.roles.privileges.manage_users', defaultMessage: 'Manage Users' },
-        { id: 'mastodon.admin.roles.privileges.manage_users_description', defaultMessage: 'Allows users to view other users\' details and perform moderation actions against them' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_users', defaultMessage: 'Manage Users' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_users_description', defaultMessage: 'Allows users to view other users\' details and perform moderation actions against them' }),
       ],
       [
         'manage_user_access',
-        { id: 'mastodon.admin.roles.privileges.manage_user_access', defaultMessage: 'Manage User Access' },
-        { id: 'mastodon.admin.roles.privileges.manage_user_access_description', defaultMessage: 'Allows users to disable other users\' two-factor authentication, change their email address, and reset their password' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_user_access', defaultMessage: 'Manage User Access' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_user_access_description', defaultMessage: 'Allows users to disable other users\' two-factor authentication, change their email address, and reset their password' }),
       ],
       [
         'delete_user_data',
-        { id: 'mastodon.admin.roles.privileges.delete_user_data', defaultMessage: 'Delete User Data' },
-        { id: 'mastodon.admin.roles.privileges.delete_user_data_description', defaultMessage: 'Allows users to delete other users\' data without delay' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.delete_user_data', defaultMessage: 'Delete User Data' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.delete_user_data_description', defaultMessage: 'Allows users to delete other users\' data without delay' }),
       ],
       [
         'manage_reports',
-        { id: 'mastodon.admin.roles.privileges.manage_reports', defaultMessage: 'Manage Reports' },
-        { id: 'mastodon.admin.roles.privileges.manage_reports_description', defaultMessage: 'Allows users to review reports and perform moderation actions against them' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_reports', defaultMessage: 'Manage Reports' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_reports_description', defaultMessage: 'Allows users to review reports and perform moderation actions against them' }),
       ],
       [
         'manage_appeals',
-        { id: 'mastodon.admin.roles.privileges.manage_appeals', defaultMessage: 'Manage Appeals' },
-        { id: 'mastodon.admin.roles.privileges.manage_appeals_description', defaultMessage: 'Allows users to review appeals against moderation actions' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_appeals', defaultMessage: 'Manage Appeals' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_appeals_description', defaultMessage: 'Allows users to review appeals against moderation actions' }),
       ],
       [
         'manage_federation',
-        { id: 'mastodon.admin.roles.privileges.manage_federation', defaultMessage: 'Manage Federation' },
-        { id: 'mastodon.admin.roles.privileges.manage_federation_description', defaultMessage: 'Allows users to block or allow federation with other domains, and control deliverability' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_federation', defaultMessage: 'Manage Federation' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_federation_description', defaultMessage: 'Allows users to block or allow federation with other domains, and control deliverability' }),
       ],
       [
         'manage_blocks',
-        { id: 'mastodon.admin.roles.privileges.manage_blocks', defaultMessage: 'Manage Blocks' },
-        { id: 'mastodon.admin.roles.privileges.manage_blocks_description', defaultMessage: 'Allows users to block email providers and IP addresses' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_blocks', defaultMessage: 'Manage Blocks' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_blocks_description', defaultMessage: 'Allows users to block email providers and IP addresses' }),
       ],
       [
         'manage_taxonomies',
-        { id: 'mastodon.admin.roles.privileges.manage_taxonomies', defaultMessage: 'Manage Taxonomies' },
-        { id: 'mastodon.admin.roles.privileges.manage_taxonomies_description', defaultMessage: 'Allows users to review trending content and update hashtag settings' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_taxonomies', defaultMessage: 'Manage Taxonomies' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_taxonomies_description', defaultMessage: 'Allows users to review trending content and update hashtag settings' }),
       ],
       [
         'manage_invites',
-        { id: 'mastodon.admin.roles.privileges.manage_invites', defaultMessage: 'Manage Invites' },
-        { id: 'mastodon.admin.roles.privileges.manage_invites_description', defaultMessage: 'Allows users to browse and deactivate invite links' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_invites', defaultMessage: 'Manage Invites' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_invites_description', defaultMessage: 'Allows users to browse and deactivate invite links' }),
       ],
       [
         'view_feeds',
-        { id: 'mastodon.admin.roles.privileges.view_feeds', defaultMessage: 'View live and topic feeds' },
-        { id: 'mastodon.admin.roles.privileges.view_feeds_description', defaultMessage: 'Allows users to access the live and topic feeds regardless of server settings' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_feeds', defaultMessage: 'View live and topic feeds' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_feeds_description', defaultMessage: 'Allows users to access the live and topic feeds regardless of server settings' }),
       ],
     ],
   },
   {
-    title: { id: 'mastodon.admin.roles.categories.administration', defaultMessage: 'Administration' },
+    title: defineMessage({ id: 'mastodon.admin.roles.categories.administration', defaultMessage: 'Administration' }),
     privileges: [
       [
         'manage_settings',
-        { id: 'mastodon.admin.roles.privileges.manage_settings', defaultMessage: 'Manage Settings' },
-        { id: 'mastodon.admin.roles.privileges.manage_settings_description', defaultMessage: 'Allows users to change site settings' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_settings', defaultMessage: 'Manage Settings' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_settings_description', defaultMessage: 'Allows users to change site settings' }),
       ],
       [
         'manage_rules',
-        { id: 'mastodon.admin.roles.privileges.manage_rules', defaultMessage: 'Manage Rules' },
-        { id: 'mastodon.admin.roles.privileges.manage_rules_description', defaultMessage: 'Allows users to change server rules' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_rules', defaultMessage: 'Manage Rules' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_rules_description', defaultMessage: 'Allows users to change server rules' }),
       ],
       [
         'manage_roles',
-        { id: 'mastodon.admin.roles.privileges.manage_roles', defaultMessage: 'Manage Roles' },
-        { id: 'mastodon.admin.roles.privileges.manage_roles_description', defaultMessage: 'Allows users to manage and assign roles below theirs' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_roles', defaultMessage: 'Manage Roles' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_roles_description', defaultMessage: 'Allows users to manage and assign roles below theirs' }),
       ],
       [
         'manage_webhooks',
-        { id: 'mastodon.admin.roles.privileges.manage_webhooks', defaultMessage: 'Manage Webhooks' },
-        { id: 'mastodon.admin.roles.privileges.manage_webhooks_description', defaultMessage: 'Allows users to set up webhooks for administrative events' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_webhooks', defaultMessage: 'Manage Webhooks' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_webhooks_description', defaultMessage: 'Allows users to set up webhooks for administrative events' }),
       ],
       [
         'manage_custom_emojis',
-        { id: 'mastodon.admin.roles.privileges.manage_custom_emojis', defaultMessage: 'Manage Custom Emojis' },
-        { id: 'mastodon.admin.roles.privileges.manage_custom_emojis_description', defaultMessage: 'Allows users to manage custom emojis on the server' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_custom_emojis', defaultMessage: 'Manage Custom Emojis' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_custom_emojis_description', defaultMessage: 'Allows users to manage custom emojis on the server' }),
       ],
       [
         'manage_announcements',
-        { id: 'mastodon.admin.roles.privileges.manage_announcements', defaultMessage: 'Manage Announcements' },
-        { id: 'mastodon.admin.roles.privileges.manage_announcements_description', defaultMessage: 'Allows users to manage announcements on the server' },
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_announcements', defaultMessage: 'Manage Announcements' }),
+        defineMessage({ id: 'mastodon.admin.roles.privileges.manage_announcements_description', defaultMessage: 'Allows users to manage announcements on the server' }),
       ],
     ],
   },
   {
-    title: { id: 'mastodon.admin.roles.categories.devops', defaultMessage: 'DevOps' },
+    title: defineMessage({ id: 'mastodon.admin.roles.categories.devops', defaultMessage: 'DevOps' }),
     privileges: [
       [
         'view_devops',
-        { id: 'mastodon.admin.roles.privileges.view_devops', defaultMessage: 'DevOps' },
-        {
+        defineMessage({ id: 'mastodon.admin.roles.privileges.view_devops', defaultMessage: 'DevOps' }),
+        defineMessage({
           id: 'mastodon.admin.roles.privileges.view_devops_description',
           defaultMessage: 'Allows users to access Sidekiq and pgHero dashboards',
-        },
+        }),
       ],
     ],
   },
   {
-    title: { id: 'mastodon.admin.roles.categories.special', defaultMessage: 'Special' },
+    title: defineMessage({ id: 'mastodon.admin.roles.categories.special', defaultMessage: 'Special' }),
     privileges: [
       [
         'administrator',
-        { id: 'mastodon.admin.roles.privileges.administrator', defaultMessage: 'Administrator' },
-        {
+        defineMessage({ id: 'mastodon.admin.roles.privileges.administrator', defaultMessage: 'Administrator' }),
+        defineMessage({
           id: 'mastodon.admin.roles.privileges.administrator_description',
           defaultMessage: 'Users with this permission will bypass every permission',
-        },
+        }),
       ],
     ],
   },
