@@ -628,8 +628,8 @@ Followed hashtags
 
    - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-The web navigation's *Followed hashtags* page lists the tags a member follows.
-Each tag links to its timeline and can be unfollowed from the list. The list
+The web navigation's *Hashtags* page, under **Feeds**, lists the tags a member
+follows. Each tag links to its timeline and can be unfollowed from the list. The list
 follows the pagination links from `GET /api/v1/followed_tags`.
 
 Boosts in timelines](#boosts-in-timelines)).
