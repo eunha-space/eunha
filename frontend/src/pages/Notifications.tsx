@@ -343,16 +343,25 @@ export function NotificationsFeed() {
   )
 }
 
+// In the column's title bar, at its end: where filtered notifications wait,
+// and the policy that decides which are filtered.
+export function NotificationRequestsButton() {
+  return (
+    <Button variant="outline" size="xs" render={<Link to="/notifications/requests" />}>
+      {t({ id: 'eunha.notifications.notification_requests_and_policy', defaultMessage: 'Notification requests and policy' })}
+    </Button>
+  )
+}
+
 export default function Notifications() {
   return (
     <>
       <TopBar />
       <div className="column-frame">
-        <ColumnHeader title={t({ id: 'column.notifications', defaultMessage: 'Notifications' })} />
+        <ColumnHeader title={t({ id: 'column.notifications', defaultMessage: 'Notifications' })}>
+          <NotificationRequestsButton />
+        </ColumnHeader>
         <div className="space-y-2 p-3">
-          <Button variant="outline" size="sm" render={<Link to="/notifications/requests" />}>
-            {t({ id: 'eunha.notifications.notification_requests_and_policy', defaultMessage: 'Notification requests and policy' })}
-          </Button>
           <NotificationsFeed />
         </div>
       </div>

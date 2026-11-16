@@ -151,10 +151,21 @@ function ConversationRow({
   )
 }
 
+// In the column's title bar, at its end, for someone signed in. Opening with
+// `messageTo: null` starts an unaddressed message: the recipient is typed into
+// the text, as upstream does from this page.
+export function NewMessageButton() {
+  const { openCompose } = useComposeModal()
+  if (!getToken()) return null
+  return (
+    <Button size="xs" onClick={() => openCompose({ messageTo: null })}>
+      <Plus /> {t({ id: 'messages.new', defaultMessage: 'New' })}
+    </Button>
+  )
+}
+
 export function MessagesFeed() {
   const token = getToken()
-  const { openCompose } = useComposeModal()
-
   const feed = useInfinitePaginator<mastodon.v1.Conversation>(
     () => getConversations(token ?? ''),
     [token],
@@ -177,13 +188,6 @@ export function MessagesFeed() {
 
   return (
     <>
-      <div className="mb-2 flex justify-end">
-        {/* Opening with `messageTo: null` starts an unaddressed message — the
-            recipient is typed into the text, as upstream does from this page. */}
-        <Button size="sm" onClick={() => openCompose({ messageTo: null })}>
-          <Plus /> {t({ id: 'messages.new', defaultMessage: 'New' })}
-        </Button>
-      </div>
       <p className="text-muted-foreground mb-3 flex items-start gap-1.5 text-xs">
         <LockOpen className="mt-0.5 size-3.5 shrink-0" />
         {t({ id: 'eunha.messages.messages_are_not_end_to_end', defaultMessage: 'Messages are not end-to-end encrypted. Don\'\'t share anything here you wouldn\'\'t share with the servers involved.' })}
@@ -228,7 +232,9 @@ export default function Messages() {
     <>
       <TopBar />
       <div className="column-frame">
-        <ColumnHeader title={t({ id: 'tabs_bar.messages', defaultMessage: 'Messages' })} />
+        <ColumnHeader title={t({ id: 'tabs_bar.messages', defaultMessage: 'Messages' })}>
+          <NewMessageButton />
+        </ColumnHeader>
         <div className="p-3">
           <MessagesFeed />
         </div>

@@ -11,8 +11,8 @@ import { PANES, paneTitle, readPanes, writePanes, type PaneId } from '../lib/pan
 import { TopBar } from '@/components/top-bar.tsx'
 import { ColumnHeader } from '@/components/column-header.tsx'
 import { StatusFeed } from '@/components/status-feed.tsx'
-import { NotificationsFeed } from '@/pages/Notifications.tsx'
-import { MessagesFeed } from '@/pages/Messages.tsx'
+import { NotificationRequestsButton, NotificationsFeed } from '@/pages/Notifications.tsx'
+import { MessagesFeed, NewMessageButton } from '@/pages/Messages.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import {
   AnnouncementsButton,
@@ -104,6 +104,8 @@ function Pane({
             onToggle={announcements.toggle}
           />
         )}
+        {id === 'notifications' && <NotificationRequestsButton />}
+        {id === 'messages' && <NewMessageButton />}
         <Button
           variant="ghost"
           size="icon"
