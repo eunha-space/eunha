@@ -99,7 +99,7 @@ export default function FollowedTags() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-4 text-xl font-bold">{t({ id: 'navigation_bar.followed_tags', defaultMessage: 'Followed hashtags' })}</h1>
+      <h1 className="mb-4 text-xl font-bold">{t({ id: 'search_results.hashtags', defaultMessage: 'Hashtags' })}</h1>
       {token ? (
         <FollowedTagList key={getActiveAccountId()} token={token} />
       ) : (

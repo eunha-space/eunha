@@ -80,7 +80,7 @@ const messages = defineMessages({
   local: { id: 'mastodon.admin.accounts.location.local', defaultMessage: 'Local' },
   federated: { id: 'eunha.navigation.federated', defaultMessage: 'Federated' },
   lists: { id: 'navigation_bar.lists', defaultMessage: 'Lists' },
-  followedTags: { id: 'navigation_bar.followed_tags', defaultMessage: 'Followed hashtags' },
+  followedTags: { id: 'search_results.hashtags', defaultMessage: 'Hashtags' },
   saved: { id: 'tabs_bar.saved', defaultMessage: 'Saved' },
   invitePeople: { id: 'mastodon.invites.title', defaultMessage: 'Invite people' },
   moderation: { id: 'navigation_bar.moderation', defaultMessage: 'Moderation' },

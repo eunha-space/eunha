@@ -26,7 +26,7 @@ test('followed hashtags follow the server cursor and can be removed from the lis
   )
 
   await page.goto('/')
-  await page.getByRole('link', { name: 'Followed hashtags', exact: true }).click()
+  await page.getByRole('link', { name: 'Hashtags', exact: true }).click()
   await expect(page).toHaveURL(/\/followed_tags$/)
   await expect(page.getByRole('link', { name: '#eunha' })).toHaveAttribute('href', '/tags/eunha')
   await page.getByRole('button', { name: 'Unfollow #eunha' }).click()
