@@ -88,3 +88,18 @@ run = "python3 scripts/trial_federation_test.py"
 [tasks."trial:tunnels"]
 description = "Check public trial APIs, WebFinger and actors through Serveo and Pinggy"
 run = "python3 scripts/trial_tunnel_test.py"
+
+[tasks."bench:shared"]
+description = "Benchmark many instances in one process, as eunha.space runs them (about 90 minutes; macOS)"
+run = [
+  "SQLX_OFFLINE=true cargo build --release --bin eunha",
+  "scripts/benchmark_shared.sh",
+]
+
+[tasks."bench:shared:quick"]
+description = "A few-minute run of bench:shared, to check that it works"
+env = { EUNHA_SHARED_COUNTS = "5 20", EUNHA_SHARED_LOAD_RPS = "100", EUNHA_SHARED_HOT_RPS = "300", EUNHA_SHARED_HOT_BASE_RPS = "50", EUNHA_SHARED_SETTLE_SECONDS = "10", EUNHA_SHARED_WINDOW_SECONDS = "20", EUNHA_SHARED_LOAD_SECONDS = "15", EUNHA_SHARED_COOLDOWN_SECONDS = "5", EUNHA_SHARED_WARM_POSTS = "3" }
+run = [
+  "SQLX_OFFLINE=true cargo build --release --bin eunha",
+  "scripts/benchmark_shared.sh",
+]

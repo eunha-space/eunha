@@ -506,6 +506,130 @@ In order of what the measurements say they are worth:
     be measured.
 6.  **More machines,** placing tenants by measured memory rather than by count.
 
+The shared process as eunha.space runs it
+=========================================
+
+The prototype above answered whether to share a process. Once that existed,
+the next question was what the real one, `eunha --tenants`, costs as
+eunha.space configures it. `scripts/benchmark_shared.sh` starts its own
+PostgreSQL (`max_connections=300`, `shared_buffers=1GB`), a PgBouncer in
+transaction mode with eunha.space's settings (`default_pool_size=3`,
+`max_db_connections=5`, `server_idle_timeout=30`), its own Redis, and one eunha
+process serving every tenant by `Host`. Each tenant has its own database and
+role, the hosting profile's two-connection pool, and a health check every five
+minutes, as the console sweeps it. It adds tenants in steps. At each step it
+records the idle cost over a five-minute window, then sends an open-loop
+request load spread over the tenants by a Zipf distribution. The load is a
+mix of timelines, notifications, posting, instance and WebFinger lookups and
+anonymous requests. Last, it sends a case where one tenant gets 1,500 req/s.
+
+~~~~ sh
+mise run bench:shared        # the full run, about an hour and a half
+mise run bench:shared:quick  # a minute or two, to check the harness
+~~~~
+
+Every knob is an `EUNHA_SHARED_*` variable at the top of the script. Rate
+limits are off so the load measures the server, not the throttles. Anonymous
+requests carry a random `X-Forwarded-For`.
+
+[the multitenancy plan]: https://github.com/eunha-space/space/blob/main/docs/multitenancy.md
+
+
+2026-11-16 baseline
+-------------------
+
+Measured on the same Mac17,2 (10 cores, 24 GiB), on `main` at de4e555b and
+then with the timed-task fix described below (77a983cb).
+
+Idle, per tenant:
+
+| Resource                            | 10 tenants | 40 tenants | 100 tenants | 200 tenants |
+| ----------------------------------- | ---------: | ---------: | ----------: | ----------: |
+| eunha footprint                     |    3.7 MiB |    2.0 MiB |     1.5 MiB |     1.5 MiB |
+| PostgreSQL backends, before the fix |       1.37 |       1.39 |        1.39 |        1.31 |
+| PostgreSQL backends, after          |       0.97 |       0.93 |        0.92 |        1.03 |
+| Sessions opened a minute, before    |        1.6 |        1.7 |         1.8 |         1.6 |
+| Sessions opened a minute, after     |        1.1 |        1.0 |         1.0 |         1.1 |
+| Transactions a second, before       |       0.63 |       0.62 |        0.62 |        0.60 |
+| Transactions a second, after        |       0.31 |       0.30 |        0.30 |        0.34 |
+| Redis commands a second, before     |       0.11 |       0.11 |        0.11 |        0.10 |
+| Redis commands a second, after      |       0.01 |       0.01 |        0.01 |        0.01 |
+| Startup, until every tenant answers |     215 ms |     232 ms |      520 ms |      80.9 s |
+
+The whole process ran on twelve threads at every step. An empty database is
+16 MiB on disk.
+
+**Idle tenants held their pools.** On `main` an idle tenant held 1.4 of its
+two connections on average, and every tenant's pool reached its maximum within
+the window. The cause was the two timed tasks that b8e07cf1 had moved onto
+Mastodon's every-minute schedule: post deletion
+(`AccountsStatusesCleanupScheduler`) and scheduled announcements
+(`ScheduledStatusesScheduler`). Each woke every tenant every minute. They held
+a lease and ran a query whether or not any account had a policy or any
+announcement was scheduled. 77a983cb puts both to sleep while they have nothing
+to do (see *jobs.md*). That halved idle transactions and cut idle Redis traffic
+by 90%.
+
+An idle tenant still opens about one PostgreSQL session a minute and keeps it
+for PgBouncer's 30-second `server_idle_timeout`. That is about one backend per
+tenant. What still wakes it once a minute is not yet traced.
+
+**Startup at 200 tenants took 81 seconds.** At 10 to 100 tenants every tenant
+answered within 0.6 seconds. At 200, the startup migration checks and first
+queries wanted more connections than PostgreSQL's 300 allowed. Tenants that
+could not get one retried, and the median tenant took 31 seconds. It took as
+long before the fix.
+
+Under load, p95 for the tenants outside the busiest tenth, after the fix
+(on `main` within a millisecond of these; `main` did not reach the load at
+200 tenants):
+
+| Tenants | 100 req/s | 400 req/s | 1,600 req/s | 1,600 req/s, errors |
+| ------: | --------: | --------: | ----------: | ------------------: |
+|      10 |   12.9 ms |    7.1 ms |      320 ms |              18,981 |
+|      40 |   14.9 ms |    7.6 ms |       41 ms |              15,253 |
+|     100 |   17.5 ms |    8.9 ms |       48 ms |              15,723 |
+|     200 | 10,004 ms | 10,002 ms |   10,002 ms |              22,538 |
+
+At 400 req/s eunha used 36% of one core, PostgreSQL 25–51% and PgBouncer
+about 26%. At 1,600 req/s the errors are 503s from the busiest tenants. Zipf
+sends the busiest one several hundred requests a second, more than its two
+connections serve, so it sheds and its neighbours do not slow down. Across
+100 tenants the other 90 kept a p95 of 48 ms.
+
+**A noisy neighbour stays its own problem.** With one tenant sent 1,500 req/s
+on top of 200 req/s spread over the rest, it shed about 60,000 of its 90,000
+requests. The other tenants' p95 stayed at 8–11 ms at 10, 40 and 100 tenants.
+
+**200 tenants hit the connection wall.** 200 two-connection pools are 400
+connections against PostgreSQL's 300. PgBouncer does not cap the sum, because
+`max_db_connections` applies to each database and every tenant has its own.
+Idle, the fix kept the backends at 205 on average, under the limit, against
+263 on `main`, which peaked at 358, over the limit. Under any load, though,
+PostgreSQL stayed at 297 backends. Tenants waited out their five-second
+acquire timeout, some more than once, and p95 for everyone went to ten seconds.
+eunha was not the limit: its CPU stayed below one core.
+
+What this means for eunha.space:
+
+ -  **Keep `process_database_connections` under what PostgreSQL can give.**
+    eunha.space's default of 80 admits 40 two-connection tenants per runtime.
+    That is safe, and the measurements say a runtime could carry more as long
+    as the sum of every runtime's pools stays below `max_connections`, less
+    the reserved and operational slots.
+ -  **PgBouncer will not stop it.** Its `max_db_connections` of five applies
+    to each tenant's database, and it has no cap on the sum, so five times the
+    tenant count can exceed `max_connections`. The limit has to come from
+    `process_database_connections` across runtimes.
+ -  **Idle cost is now memory, not connections.** 1.5 MiB of eunha and about
+    one PostgreSQL backend per idle tenant, and that backend comes from
+    whatever still wakes the tenant once a minute.
+
+The first run of this benchmark was on a busy workstation and is not used:
+one step's p95 jumped to 11 seconds while the machine was decompressing
+memory. Results are kept in `benchmark-results/shared-*`, outside the
+repository.
+
 Spikes
 ======
 
@@ -565,8 +689,6 @@ flagged as contended and should not be compared. Two of four runs on
 2026-09-28 were, with load averages near six: their p95 was 0.5–1.1 s against
 8 ms for the same build uncontended, and the simulator's own send rate showed
 it.
-
-[the multitenancy plan]: https://github.com/eunha-space/space/blob/main/docs/multitenancy.md
 
 ### Nothing leaves the machine
 
