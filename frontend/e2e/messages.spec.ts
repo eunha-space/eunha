@@ -149,3 +149,33 @@ test('a message is sent as direct, not as the account default', async ({ page })
 
   await expect.poll(() => posted).toMatchObject({ visibility: 'direct' })
 })
+
+// A message thread reads like a chat window: oldest at the top, newest at the
+// bottom, scrolled to the newest on arrival, with the reply box under it.
+test('a message thread opens at its newest message', async ({ page }) => {
+  await signedIn(page)
+  const at = (n: number) => `2026-01-01T00:${String(n).padStart(2, '0')}:00.000Z`
+  const thread = Array.from({ length: 30 }, (_, i) => ({
+    ...status(String(i + 1), `message ${i + 1}`, 'direct', i % 2 ? me : bob),
+    created_at: at(i),
+    mentions: [{ id: i % 2 ? bob.id : me.id, username: i % 2 ? 'bob' : 'alice', acct: i % 2 ? 'bob' : 'alice', url: '' }],
+  }))
+  const newest = thread.at(-1)!
+  await page.route('**/api/v1/statuses/30/context', (r) =>
+    // Out of order on purpose: the client sorts by time.
+    r.fulfill({ json: { ancestors: thread.slice(0, -1).reverse(), descendants: [] } }),
+  )
+  await page.route('**/api/v1/statuses/30', (r) => r.fulfill({ json: newest }))
+
+  await page.goto('/@alice/30')
+  await expect(page.getByRole('heading', { name: 'Bob', exact: true })).toBeVisible()
+  await expect(page.getByText('message 30')).toBeInViewport()
+  await expect(page.getByText('message 1', { exact: true })).not.toBeInViewport()
+  await expect
+    .poll(() => page.evaluate(() => window.innerHeight + window.scrollY - document.documentElement.scrollHeight))
+    .toBeGreaterThan(-2)
+  const order = await page.getByText(/^message \d+$/).allTextContents()
+  expect(order.at(0)).toBe('message 1')
+  expect(order.at(-1)).toBe('message 30')
+  await expect(page.getByRole('button', { name: 'Reply', exact: true }).last()).toBeInViewport()
+})
