@@ -13,6 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 function ManageDomainBlocks({ token }: { token: string }) {
   const [domain, setDomain] = useState('')
@@ -46,35 +47,35 @@ function ManageDomainBlocks({ token }: { token: string }) {
         event.preventDefault()
         if (domain.trim()) setConfirm(true)
       }}>
-        <Input aria-label="Domain" placeholder="example.social" value={domain}
+        <Input aria-label={t({ id: 'mastodon.admin.domain_blocks.domain', defaultMessage: 'Domain' })} placeholder="example.social" value={domain}
           onChange={(event) => setDomain(event.target.value)} />
-        <Button type="submit" disabled={busy || !domain.trim()}>Block domain</Button>
+        <Button type="submit" disabled={busy || !domain.trim()}>{t({ id: 'eunha.domain_blocks.block_domain', defaultMessage: 'Block domain' })}</Button>
       </form>
       {feed.error && <p role="alert" className="text-destructive">{feed.error}</p>}
       {!feed.items && !feed.error && <RowsSkeleton action />}
-      {feed.items?.length === 0 && <p>No blocked domains.</p>}
+      {feed.items?.length === 0 && <p>{t({ id: 'eunha.domain_blocks.no_blocked_domains', defaultMessage: 'No blocked domains.' })}</p>}
       {feed.items?.map((item) => (
         <div key={item} className="flex items-center justify-between gap-2 rounded-md border p-3">
           <span className="break-all">{item}</span>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void change(item, false)}>
-            Unblock
+            {t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
           </Button>
         </div>
       ))}
       {feed.items && !feed.done && !feed.error && (
-        <Button variant="outline" disabled={feed.loadingMore} onClick={feed.loadMore}>Load more</Button>
+        <Button variant="outline" disabled={feed.loadingMore} onClick={feed.loadMore}>{t({ id: 'status.load_more', defaultMessage: 'Load more' })}</Button>
       )}
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Block {domain.trim()}?</AlertDialogTitle>
+            <AlertDialogTitle>{t({ id: 'eunha.domain_blocks.block_title', defaultMessage: 'Block {domain}?' }, { domain: domain.trim() })}</AlertDialogTitle>
             <AlertDialogDescription>
-              Posts and notifications from this domain will be hidden and followers from it will be removed.
+              {t({ id: 'eunha.domain_blocks.posts_and_notifications_from_this_domain', defaultMessage: 'Posts and notifications from this domain will be hidden and followers from it will be removed.' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void change(domain.trim(), true)}>Block domain</AlertDialogAction>
+            <AlertDialogCancel>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void change(domain.trim(), true)}>{t({ id: 'eunha.domain_blocks.block_domain', defaultMessage: 'Block domain' })}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -87,9 +88,9 @@ export default function DomainBlocks() {
   return (
     <div className="page-frame space-y-3">
       <TopBar />
-      <Link to="/blocked">Blocked accounts</Link>
-      <h1 className="text-xl font-bold">Blocked domains</h1>
-      {token ? <ManageDomainBlocks token={token} /> : <Button onClick={() => void beginLogin()}>Sign in</Button>}
+      <Link to="/blocked">{t({ id: 'column.blocked_accounts', defaultMessage: 'Blocked accounts' })}</Link>
+      <h1 className="text-xl font-bold">{t({ id: 'navigation_bar.domain_blocks', defaultMessage: 'Blocked domains' })}</h1>
+      {token ? <ManageDomainBlocks token={token} /> : <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>}
     </div>
   )
 }

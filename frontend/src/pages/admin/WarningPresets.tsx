@@ -19,15 +19,16 @@ import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /** `admin.warning_presets.dropdown`. */
 const CATEGORIES: Record<WarningPresetCategory, string> = {
-  all_actions: 'All actions',
-  none: 'Warning',
-  disable: 'Freeze',
-  sensitive: 'Sensitive',
-  silence: 'Limit',
-  suspend: 'Suspend',
+  get all_actions() { return t({ id: 'eunha.admin.warning_presets.all_actions', defaultMessage: 'All actions' }) },
+  get none() { return t({ id: 'mastodon.admin.instances.back_to_warning', defaultMessage: 'Warning' }) },
+  get disable() { return t({ id: 'mastodon.admin.accounts.disable', defaultMessage: 'Freeze' }) },
+  get sensitive() { return t({ id: 'collections.sensitive', defaultMessage: 'Sensitive' }) },
+  get silence() { return t({ id: 'mastodon.admin.accounts.silence', defaultMessage: 'Limit' }) },
+  get suspend() { return t({ id: 'mastodon.admin.accounts.perform_full_suspension', defaultMessage: 'Suspend' }) },
 }
 
 function PresetForm({
@@ -66,16 +67,16 @@ function PresetForm({
   return (
     <form onSubmit={submit} className="space-y-2 rounded-lg border p-3">
       <div className="space-y-1">
-        <Label htmlFor={`preset-title-${initial?.id ?? 'new'}`}>Title</Label>
+        <Label htmlFor={`preset-title-${initial?.id ?? 'new'}`}>{t({ id: 'mastodon.simple_form.labels.account_warning_preset.title', defaultMessage: 'Title' })}</Label>
         <Input
           id={`preset-title-${initial?.id ?? 'new'}`}
           value={title}
-          placeholder="Optional"
+          placeholder={t({ id: 'eunha.admin.warning_presets.optional', defaultMessage: 'Optional' })}
           onChange={(e) => setTitle(e.target.value)}
         />
       </div>
       <div className="space-y-1">
-        <Label htmlFor={`preset-text-${initial?.id ?? 'new'}`}>Preset text</Label>
+        <Label htmlFor={`preset-text-${initial?.id ?? 'new'}`}>{t({ id: 'eunha.admin.warning_presets.preset_text', defaultMessage: 'Preset text' })}</Label>
         <Textarea
           id={`preset-text-${initial?.id ?? 'new'}`}
           value={text}
@@ -85,9 +86,9 @@ function PresetForm({
         />
       </div>
       <div className="space-y-1">
-        <Label>Action</Label>
+        <Label>{t({ id: 'mastodon.simple_form.labels.admin_account_action.type', defaultMessage: 'Action' })}</Label>
         <ChoiceSelect
-          label="Action"
+          label={t({ id: 'mastodon.simple_form.labels.admin_account_action.type', defaultMessage: 'Action' })}
           value={category}
           items={CATEGORIES}
           onChange={setCategory}
@@ -99,7 +100,7 @@ function PresetForm({
         </Button>
         {onCancel && (
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </Button>
         )}
       </div>
@@ -130,13 +131,13 @@ export default function WarningPresets() {
   useEffect(load, [token])
 
   return (
-    <AdminLayout title="Warning presets" permission="manage_settings">
+    <AdminLayout title={t({ id: 'eunha.admin.warning_presets.warning_presets', defaultMessage: 'Warning presets' })} permission="manage_settings">
       <div className="mb-4">
         <PresetForm
-          submitLabel="Add new preset"
+          submitLabel={t({ id: 'eunha.admin.warning_presets.add_new_preset', defaultMessage: 'Add new preset' })}
           onSubmit={async (title, text, action_category) => {
             await createWarningPreset(token ?? '', { title, text, action_category })
-            toast.success('Preset added.')
+            toast.success(t({ id: 'eunha.admin.warning_presets.preset_added', defaultMessage: 'Preset added.' }))
             load()
           }}
         />
@@ -144,7 +145,7 @@ export default function WarningPresets() {
       <AdminError error={error} />
       {presets === null && !error && <RowsSkeleton action />}
       {presets?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No warning presets have been defined yet.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.warning_presets.no_warning_presets_have_been_defined', defaultMessage: 'No warning presets have been defined yet.' })}</p>
       )}
       <div className="space-y-2">
         {presets?.map((p) =>
@@ -152,11 +153,11 @@ export default function WarningPresets() {
             <PresetForm
               key={p.id}
               initial={p}
-              submitLabel="Save changes"
+              submitLabel={t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' })}
               onCancel={() => setEditing(null)}
               onSubmit={async (title, text, action_category) => {
                 await updateWarningPreset(token ?? '', p.id, { title, text, action_category })
-                toast.success('Preset saved.')
+                toast.success(t({ id: 'eunha.admin.warning_presets.preset_saved', defaultMessage: 'Preset saved.' }))
                 setEditing(null)
                 load()
               }}
@@ -171,20 +172,20 @@ export default function WarningPresets() {
                 <p className="text-muted-foreground text-sm whitespace-pre-wrap">{p.text}</p>
               </div>
               <Button size="xs" variant="outline" onClick={() => setEditing(p.id)}>
-                Edit
+                {t({ id: 'status.edit', defaultMessage: 'Edit' })}
               </Button>
               <ConfirmButton
                 size="xs"
-                title="Delete this preset?"
-                description="Warnings already sent with it are not changed."
-                confirmLabel="Delete"
+                title={t({ id: 'eunha.admin.warning_presets.delete_this_preset', defaultMessage: 'Delete this preset?' })}
+                description={t({ id: 'eunha.admin.warning_presets.warnings_already_sent_with_it_are', defaultMessage: 'Warnings already sent with it are not changed.' })}
+                confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                 onConfirm={async () => {
                   await deleteWarningPreset(token ?? '', p.id)
                   setPresets((list) => (list ?? []).filter((x) => x.id !== p.id))
-                  toast.success('Preset deleted.')
+                  toast.success(t({ id: 'eunha.admin.warning_presets.preset_deleted', defaultMessage: 'Preset deleted.' }))
                 }}
               >
-                Delete
+                {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
               </ConfirmButton>
             </div>
           ),

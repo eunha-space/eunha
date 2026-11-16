@@ -1,6 +1,7 @@
 // Mastodon C2S API calls, backed by masto.js. The same API is consumed by
 // third-party mobile apps; this frontend is just one client.
 import { restClient, type mastodon } from './masto.ts'
+import { t } from '@/i18n.tsx'
 
 let cachedInstance: mastodon.v2.Instance | null = null
 
@@ -44,13 +45,13 @@ export async function getTermsOfService(date?: string): Promise<TermsOfService |
     : '/api/v1/instance/terms_of_service'
   const res = await fetch(`${window.location.origin}${path}`)
   if (res.status === 404) return null
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`)
+  if (!res.ok) throw new Error(t({ id: 'eunha.api.get_failed', defaultMessage: 'GET {path} failed: {status}' }, { path, status: res.status }))
   return (await res.json()) as TermsOfService
 }
 
 export async function getPrivacyPolicy(): Promise<PrivacyPolicy> {
   const res = await fetch(`${window.location.origin}/api/v1/instance/privacy_policy`)
-  if (!res.ok) throw new Error(`GET /api/v1/instance/privacy_policy failed: ${res.status}`)
+  if (!res.ok) throw new Error(t({ id: 'eunha.api.get_api_v1_instance_privacy_policy', defaultMessage: 'GET /api/v1/instance/privacy_policy failed: {status}' }, { status: res.status }))
   return (await res.json()) as PrivacyPolicy
 }
 
@@ -426,7 +427,7 @@ export async function translateStatus(
     const message =
       body && typeof body === 'object' && 'error' in body
         ? String((body as { error: unknown }).error)
-        : `Translation failed (${res.status})`
+        : t({ id: 'eunha.api.translation_failed', defaultMessage: 'Translation failed ({status})' }, { status: res.status })
     throw new Error(message)
   }
   return body as StatusTranslation

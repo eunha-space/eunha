@@ -11,12 +11,13 @@ import { RelativeTime } from '@/components/relative-time.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { cn } from '@/lib/utils.ts'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 export const CATEGORY_LABELS: Record<AdminReport['category'], string> = {
-  spam: 'Spam',
-  legal: 'Legal',
-  violation: 'Rule violation',
-  other: 'Other',
+  get spam() { return t({ id: 'report.categories.spam', defaultMessage: 'Spam' }) },
+  get legal() { return t({ id: 'report.categories.legal', defaultMessage: 'Legal' }) },
+  get violation() { return t({ id: 'report_notification.categories.violation', defaultMessage: 'Rule violation' }) },
+  get other() { return t({ id: 'report.categories.other', defaultMessage: 'Other' }) },
 }
 
 function ReportRow({ report }: { report: AdminReport }) {
@@ -47,20 +48,20 @@ function ReportRow({ report }: { report: AdminReport }) {
           )}
           {report.forwarded && (
             <Badge variant="outline">
-              <Forward /> Forwarded
+              <Forward /> {t({ id: 'mastodon.admin.reports.forwarded', defaultMessage: 'Forwarded' })}
             </Badge>
           )}
-          {report.action_taken && <Badge variant="outline">Resolved</Badge>}
+          {report.action_taken && <Badge variant="outline">{t({ id: 'mastodon.admin.reports.resolved', defaultMessage: 'Resolved' })}</Badge>}
           <span className="text-muted-foreground text-xs">
-            by @{reporter.acct}
+            {t({ id: 'eunha.admin.reports.by_reporter', defaultMessage: 'by @{acct}' }, { acct: reporter.acct })}
             {report.assigned_account &&
-              ` · assigned to @${publicAccount(report.assigned_account).acct}`}
+              ` · ${t({ id: 'eunha.admin.reports.assigned_to', defaultMessage: 'assigned to @{acct}' }, { acct: publicAccount(report.assigned_account).acct })}`}
           </span>
         </div>
         {report.comment && (
           <p className="text-foreground line-clamp-2 text-sm">{report.comment}</p>
         )}
-        <span className="sr-only">Open report on @{target.acct}</span>
+        <span className="sr-only">{t({ id: 'eunha.admin.reports.open_report_on', defaultMessage: 'Open report on @{acct}' }, { acct: target.acct })}</span>
       </Link>
     </div>
   )
@@ -102,26 +103,26 @@ export default function Reports() {
   }
 
   return (
-    <AdminLayout title="Reports" permission="manage_reports">
+    <AdminLayout title={t({ id: 'mastodon.admin.reports.title', defaultMessage: 'Reports' })} permission="manage_reports">
       <div className="mb-3 flex flex-wrap items-center gap-1">
         <Link
           to={withFilter({ resolved: undefined })}
           className={cn(pill, !resolved && 'bg-muted text-foreground font-medium')}
         >
-          Unresolved
+          {t({ id: 'mastodon.admin.reports.unresolved', defaultMessage: 'Unresolved' })}
         </Link>
         <Link
           to={withFilter({ resolved: 'true' })}
           className={cn(pill, resolved && 'bg-muted text-foreground font-medium')}
         >
-          Resolved
+          {t({ id: 'mastodon.admin.reports.resolved', defaultMessage: 'Resolved' })}
         </Link>
         {(accountId || targetAccountId) && (
           <Link
             to={withFilter({ account_id: undefined, target_account_id: undefined })}
             className={cn(pill, 'ml-auto')}
           >
-            {targetAccountId ? 'About one account' : 'By one account'} · Clear
+            {targetAccountId ? t({ id: 'eunha.admin.reports.about_one_account', defaultMessage: 'About one account' }) : t({ id: 'eunha.admin.reports.by_one_account', defaultMessage: 'By one account' })} · {t({ id: 'emoji_button.clear', defaultMessage: 'Clear' })}
           </Link>
         )}
       </div>
@@ -134,7 +135,7 @@ export default function Reports() {
       </div>
       {feed.items?.length === 0 && (
         <p className="text-muted-foreground text-sm">
-          {resolved ? 'No resolved reports.' : 'Nothing to review. All reports are resolved.'}
+          {resolved ? t({ id: 'eunha.admin.reports.no_resolved_reports', defaultMessage: 'No resolved reports.' }) : t({ id: 'eunha.admin.reports.nothing_to_review_all_reports_are', defaultMessage: 'Nothing to review. All reports are resolved.' })}
         </p>
       )}
       <InfiniteScroll

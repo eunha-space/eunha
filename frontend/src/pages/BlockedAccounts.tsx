@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn, errorMessage } from '@/lib/utils.ts'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -39,7 +40,7 @@ export default function BlockedAccounts() {
       if (muted) await setMute(account.id, token, false)
       else await setBlock(account.id, token, false)
       feed.mutate((items) => items.filter((a) => a.id !== account.id))
-      toast.success(`${muted ? 'Unmuted' : 'Unblocked'} @${account.acct}.`)
+      toast.success(`${muted ? t({ id: 'eunha.blocked_accounts.unmuted', defaultMessage: 'Unmuted' }) : t({ id: 'eunha.blocked_accounts.unblocked', defaultMessage: 'Unblocked' })} @${account.acct}.`)
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -54,9 +55,9 @@ export default function BlockedAccounts() {
         <Card>
           <CardContent className="space-y-3 py-6 text-center">
             <p className="text-muted-foreground text-sm">
-              Sign in to see the accounts you have blocked or muted.
+              {t({ id: 'eunha.blocked_accounts.sign_in_to_see_the_accounts', defaultMessage: 'Sign in to see the accounts you have blocked or muted.' })}
             </p>
-            <Button onClick={() => void beginLogin()}>Sign in</Button>
+            <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>
           </CardContent>
         </Card>
       </div>
@@ -66,14 +67,14 @@ export default function BlockedAccounts() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-2 text-lg font-bold">Blocked and muted</h1>
+      <h1 className="mb-2 text-lg font-bold">{t({ id: 'eunha.blocked_accounts.blocked_and_muted', defaultMessage: 'Blocked and muted' })}</h1>
       <nav className="mb-2 flex gap-1 border-b">
         <NavLink to="/blocked" className={cls}>
-          Blocked
+          {t({ id: 'account.blocked', defaultMessage: 'Blocked' })}
         </NavLink>
-        <NavLink to="/domain_blocks" className={cls}>Domains</NavLink>
+        <NavLink to="/domain_blocks" className={cls}>{t({ id: 'eunha.blocked_accounts.domains', defaultMessage: 'Domains' })}</NavLink>
         <NavLink to="/muted" className={cls}>
-          Muted
+          {t({ id: 'account.muted', defaultMessage: 'Muted' })}
         </NavLink>
       </nav>
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
@@ -92,14 +93,14 @@ export default function BlockedAccounts() {
                 disabled={busy === a.id}
                 onClick={() => void undo(a)}
               >
-                {muted ? 'Unmute' : 'Unblock'}
+                {muted ? t({ id: 'account.unmute_short', defaultMessage: 'Unmute' }) : t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
               </Button>
             }
           />
         ))}
         {accounts?.length === 0 && (
           <p className="text-muted-foreground text-sm">
-            {muted ? 'You have not muted anyone.' : 'You have not blocked anyone.'}
+            {muted ? t({ id: 'eunha.blocked_accounts.you_have_not_muted_anyone', defaultMessage: 'You have not muted anyone.' }) : t({ id: 'eunha.blocked_accounts.you_have_not_blocked_anyone', defaultMessage: 'You have not blocked anyone.' })}
           </p>
         )}
         <InfiniteScroll

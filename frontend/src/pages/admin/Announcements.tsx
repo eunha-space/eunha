@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /** An ISO time as a `datetime-local` value, in the browser's zone. */
 function toLocalInput(value: string | null): string {
@@ -75,14 +76,14 @@ function AnnouncementForm({
       if (initial) await updateAnnouncement(token ?? '', initial.id, params)
       else {
         const created = await createAnnouncement(token ?? '', params)
-        toast.success(created.published ? 'Announcement published!' : 'Announcement scheduled!')
+        toast.success(created.published ? t({ id: 'eunha.admin.announcements.announcement_published', defaultMessage: 'Announcement published!' }) : t({ id: 'eunha.admin.announcements.announcement_scheduled', defaultMessage: 'Announcement scheduled!' }))
         setText('')
         setStartsAt('')
         setEndsAt('')
         setScheduledAt('')
         setAllDay(false)
       }
-      if (initial) toast.success('Announcement updated!')
+      if (initial) toast.success(t({ id: 'eunha.admin.announcements.announcement_updated', defaultMessage: 'Announcement updated!' }))
       onSaved()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -95,7 +96,7 @@ function AnnouncementForm({
   return (
     <form onSubmit={submit} className="space-y-3 rounded-lg border p-3">
       <div className="space-y-1">
-        <Label htmlFor={`announcement-text-${id}`}>Text</Label>
+        <Label htmlFor={`announcement-text-${id}`}>{t({ id: 'eunha.admin.announcements.text', defaultMessage: 'Text' })}</Label>
         <Textarea
           id={`announcement-text-${id}`}
           rows={3}
@@ -105,7 +106,7 @@ function AnnouncementForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label htmlFor={`announcement-starts-${id}`}>Event start</Label>
+          <Label htmlFor={`announcement-starts-${id}`}>{t({ id: 'eunha.admin.announcements.event_start', defaultMessage: 'Event start' })}</Label>
           <Input
             id={`announcement-starts-${id}`}
             type="datetime-local"
@@ -114,7 +115,7 @@ function AnnouncementForm({
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor={`announcement-ends-${id}`}>Event end</Label>
+          <Label htmlFor={`announcement-ends-${id}`}>{t({ id: 'eunha.admin.announcements.event_end', defaultMessage: 'Event end' })}</Label>
           <Input
             id={`announcement-ends-${id}`}
             type="datetime-local"
@@ -124,16 +125,15 @@ function AnnouncementForm({
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        If the announcement is bound to a time range, give both its start and end. The
-        announcement is unpublished once it ends.
+        {t({ id: 'eunha.admin.announcements.if_the_announcement_is_bound_to', defaultMessage: 'If the announcement is bound to a time range, give both its start and end. The announcement is unpublished once it ends.' })}
       </p>
       <Label className="text-sm font-normal">
         <Switch checked={allDay} onCheckedChange={setAllDay} />
-        All-day event
+        {t({ id: 'mastodon.simple_form.labels.announcement.all_day', defaultMessage: 'All-day event' })}
       </Label>
       {!initial?.published && (
         <div className="space-y-1">
-          <Label htmlFor={`announcement-scheduled-${id}`}>Schedule publication</Label>
+          <Label htmlFor={`announcement-scheduled-${id}`}>{t({ id: 'mastodon.simple_form.labels.announcement.scheduled_at', defaultMessage: 'Schedule publication' })}</Label>
           <Input
             id={`announcement-scheduled-${id}`}
             type="datetime-local"
@@ -141,17 +141,17 @@ function AnnouncementForm({
             onChange={(e) => setScheduledAt(e.target.value)}
           />
           <p className="text-muted-foreground text-xs">
-            Leave blank to publish the announcement immediately.
+            {t({ id: 'eunha.admin.announcements.leave_blank_to_publish_the_announcement', defaultMessage: 'Leave blank to publish the announcement immediately.' })}
           </p>
         </div>
       )}
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={saving || !text.trim()}>
-          {initial ? 'Save changes' : 'Create announcement'}
+          {initial ? t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' }) : t({ id: 'mastodon.admin.announcements.new.create', defaultMessage: 'Create announcement' })}
         </Button>
         {onCancel && (
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </Button>
         )}
       </div>
@@ -159,7 +159,7 @@ function AnnouncementForm({
   )
 }
 
-const FILTERS = { all: 'All', published: 'Published', unpublished: 'Unpublished' }
+const FILTERS = { get all() { return t({ id: 'notifications.filter.all', defaultMessage: 'All' }) }, get published() { return t({ id: 'eunha.admin.announcements.published', defaultMessage: 'Published' }) }, get unpublished() { return t({ id: 'eunha.admin.announcements.unpublished', defaultMessage: 'Unpublished' }) } }
 
 /**
  * Announcements: Mastodon's `Admin::AnnouncementsController`, and mailing an
@@ -198,11 +198,11 @@ export default function Announcements() {
 
   return (
     <AdminLayout
-      title="Announcements"
+      title={t({ id: 'mastodon.admin.announcements.title', defaultMessage: 'Announcements' })}
       permission="manage_announcements"
       actions={
         <ChoiceSelect
-          label="Show"
+          label={t({ id: 'content_warning.show_short', defaultMessage: 'Show' })}
           value={filter}
           items={FILTERS}
           onChange={setFilter}
@@ -216,7 +216,7 @@ export default function Announcements() {
       <AdminError error={error} />
       {items === null && !error && <RowsSkeleton action />}
       {items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No announcements found.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'mastodon.admin.announcements.empty', defaultMessage: 'No announcements found.' })}</p>
       )}
       <div className="space-y-2">
         {items?.map((a) =>
@@ -234,11 +234,11 @@ export default function Announcements() {
             <div key={a.id} className="space-y-2 rounded-lg border p-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {a.published ? (
-                  <Badge>Published</Badge>
+                  <Badge>{t({ id: 'eunha.admin.announcements.published', defaultMessage: 'Published' })}</Badge>
                 ) : a.scheduled_at ? (
-                  <Badge variant="outline">Scheduled for {formatDate(a.scheduled_at)}</Badge>
+                  <Badge variant="outline">{t({ id: 'eunha.admin.announcements.scheduled_for', defaultMessage: 'Scheduled for {date}' }, { date: formatDate(a.scheduled_at) })}</Badge>
                 ) : (
-                  <Badge variant="outline">Unpublished</Badge>
+                  <Badge variant="outline">{t({ id: 'eunha.admin.announcements.unpublished', defaultMessage: 'Unpublished' })}</Badge>
                 )}
                 {a.starts_at && (
                   <span className="text-muted-foreground">
@@ -248,7 +248,7 @@ export default function Announcements() {
                 )}
                 {a.notification_sent_at && (
                   <span className="text-muted-foreground">
-                    Mailed {formatDate(a.notification_sent_at)}
+                    {t({ id: 'eunha.admin.announcements.mailed', defaultMessage: 'Mailed {date}' }, { date: formatDate(a.notification_sent_at) })}
                   </span>
                 )}
               </div>
@@ -258,7 +258,7 @@ export default function Announcements() {
               />
               <div className="flex flex-wrap gap-2">
                 <Button size="xs" variant="outline" onClick={() => setEditing(a.id)}>
-                  Edit
+                  {t({ id: 'status.edit', defaultMessage: 'Edit' })}
                 </Button>
                 <Button
                   size="xs"
@@ -266,11 +266,11 @@ export default function Announcements() {
                   onClick={() =>
                     void act(
                       () => setAnnouncementPublished(token ?? '', a.id, !a.published),
-                      a.published ? 'Announcement unpublished.' : 'Announcement published!',
+                      a.published ? t({ id: 'eunha.admin.announcements.announcement_unpublished', defaultMessage: 'Announcement unpublished.' }) : t({ id: 'eunha.admin.announcements.announcement_published', defaultMessage: 'Announcement published!' }),
                     )
                   }
                 >
-                  {a.published ? 'Unpublish' : 'Publish'}
+                  {a.published ? t({ id: 'mastodon.admin.announcements.unpublish', defaultMessage: 'Unpublish' }) : t({ id: 'compose.publish', defaultMessage: 'Publish' })}
                 </Button>
                 {mayDistribute && a.published && !a.notification_sent_at && (
                   <>
@@ -280,41 +280,41 @@ export default function Announcements() {
                       onClick={() =>
                         void act(
                           () => testAnnouncement(token ?? '', a.id),
-                          'A test email has been sent to you.',
+                          t({ id: 'eunha.admin.announcements.a_test_email_has_been_sent', defaultMessage: 'A test email has been sent to you.' }),
                         )
                       }
                     >
-                      Send test email
+                      {t({ id: 'eunha.admin.announcements.send_test_email', defaultMessage: 'Send test email' })}
                     </Button>
                     <ConfirmButton
                       size="xs"
                       destructive={false}
-                      title="Notify users by email?"
-                      description="Every confirmed user is mailed this announcement, once."
-                      confirmLabel="Send"
+                      title={t({ id: 'eunha.admin.announcements.notify_users_by_email', defaultMessage: 'Notify users by email?' })}
+                      description={t({ id: 'eunha.admin.announcements.every_confirmed_user_is_mailed_this', defaultMessage: 'Every confirmed user is mailed this announcement, once.' })}
+                      confirmLabel={t({ id: 'compose.message.publish', defaultMessage: 'Send' })}
                       onConfirm={async () => {
                         const preview = await previewAnnouncement(token ?? '', a.id)
                         await distributeAnnouncement(token ?? '', a.id)
-                        toast.success(`Sending to ${preview.user_count} users.`)
+                        toast.success(t({ id: 'eunha.admin.announcements.sending_to_users', defaultMessage: 'Sending to {user_count} users.' }, { user_count: preview.user_count }))
                         load()
                       }}
                     >
-                      Notify users via email
+                      {t({ id: 'eunha.admin.announcements.notify_users_via_email', defaultMessage: 'Notify users via email' })}
                     </ConfirmButton>
                   </>
                 )}
                 <ConfirmButton
                   size="xs"
-                  title="Delete this announcement?"
-                  description="It disappears for everyone, with its reactions."
-                  confirmLabel="Delete"
+                  title={t({ id: 'eunha.admin.announcements.delete_this_announcement', defaultMessage: 'Delete this announcement?' })}
+                  description={t({ id: 'eunha.admin.announcements.it_disappears_for_everyone_with_its', defaultMessage: 'It disappears for everyone, with its reactions.' })}
+                  confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                   onConfirm={async () => {
                     await deleteAnnouncement(token ?? '', a.id)
-                    toast.success('Announcement deleted.')
+                    toast.success(t({ id: 'eunha.admin.announcements.announcement_deleted', defaultMessage: 'Announcement deleted.' }))
                     load()
                   }}
                 >
-                  Delete
+                  {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                 </ConfirmButton>
               </div>
             </div>

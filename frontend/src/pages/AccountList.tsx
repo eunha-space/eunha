@@ -10,6 +10,7 @@ import { AccountRow } from '@/components/account-row.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { cn } from '@/lib/utils.ts'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -54,10 +55,10 @@ export default function AccountList() {
       <h1 className="mb-2 text-lg font-bold">@{handle}</h1>
       <nav className="mb-2 flex gap-1 border-b">
         <NavLink to={`/@${handle}/followers`} className={cls}>
-          Followers
+          {t({ id: 'account.followers', defaultMessage: 'Followers' })}
         </NavLink>
         <NavLink to={`/@${handle}/following`} className={cls}>
-          Following
+          {t({ id: 'account.following', defaultMessage: 'Following' })}
         </NavLink>
       </nav>
       {error && <p className="text-destructive text-sm">{error}</p>}
@@ -69,7 +70,7 @@ export default function AccountList() {
           <AccountRow key={a.id} account={a} />
         ))}
         {accounts?.length === 0 && (
-          <p className="text-muted-foreground text-sm">Nobody here yet.</p>
+          <p className="text-muted-foreground text-sm">{t({ id: 'eunha.account_list.nobody_here_yet', defaultMessage: 'Nobody here yet.' })}</p>
         )}
         <InfiniteScroll
           onLoadMore={feed.loadMore}

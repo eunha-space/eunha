@@ -22,9 +22,10 @@ import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-const MODERATION = { all: 'All', limited: 'Limited' }
-const AVAILABILITY = { all: 'All', failing: 'Failing', unavailable: 'Unavailable' }
+const MODERATION = { get all() { return t({ id: 'notifications.filter.all', defaultMessage: 'All' }) }, get limited() { return t({ id: 'about.domain_blocks.silenced.title', defaultMessage: 'Limited' }) } }
+const AVAILABILITY = { get all() { return t({ id: 'notifications.filter.all', defaultMessage: 'All' }) }, get failing() { return t({ id: 'mastodon.admin.instances.delivery.failing', defaultMessage: 'Failing' }) }, get unavailable() { return t({ id: 'mastodon.admin.instances.delivery.unavailable', defaultMessage: 'Unavailable' }) } }
 
 /** What a block does, as Mastodon's `policy_list` says it. */
 export function policyText(block: {
@@ -37,7 +38,7 @@ export function policyText(block: {
   else if (block.severity === 'silence') parts.push('Limited')
   if (block.reject_media) parts.push('Reject media')
   if (block.reject_reports) parts.push('Reject reports')
-  return parts.join(' · ') || 'No restrictions'
+  return parts.join(' · ') || t({ id: 'eunha.admin.instances.no_restrictions', defaultMessage: 'No restrictions' })
 }
 
 /**
@@ -77,14 +78,14 @@ function BlockImport({ onDone }: { onDone: () => void }) {
       }
     }
     setBusy(false)
-    toast.success(`${created} domain blocks created.`)
+    toast.success(t({ id: 'eunha.admin.instances.domain_blocks_created', defaultMessage: '{created} domain blocks created.' }, { created }))
     setCandidates(null)
     onDone()
   }
 
   return (
     <div className="space-y-2 rounded-lg border p-3">
-      <Label htmlFor="import-blocks">Import domain blocks</Label>
+      <Label htmlFor="import-blocks">{t({ id: 'mastodon.admin.export_domain_blocks.import.title', defaultMessage: 'Import domain blocks' })}</Label>
       <Input
         id="import-blocks"
         type="file"
@@ -93,14 +94,13 @@ function BlockImport({ onDone }: { onDone: () => void }) {
       />
       {candidates && candidates.length === 0 && (
         <p className="text-muted-foreground text-sm">
-          Nothing to import: every domain in the file is already blocked.
+          {t({ id: 'eunha.admin.instances.nothing_to_import_every_domain_in', defaultMessage: 'Nothing to import: every domain in the file is already blocked.' })}
         </p>
       )}
       {candidates && candidates.length > 0 && (
         <div className="space-y-2">
           <p className="text-muted-foreground text-xs">
-            Pick the blocks to create. Domains marked as followed have local accounts that
-            follow or are followed by their accounts, which a block would sever.
+            {t({ id: 'eunha.admin.instances.pick_the_blocks_to_create_domains', defaultMessage: 'Pick the blocks to create. Domains marked as followed have local accounts that follow or are followed by their accounts, which a block would sever.' })}
           </p>
           {candidates.map((b) => (
             <Label key={b.domain} className="text-sm font-normal">
@@ -117,11 +117,11 @@ function BlockImport({ onDone }: { onDone: () => void }) {
               />
               <span className="font-medium">{b.domain}</span>
               <span className="text-muted-foreground">{policyText(b)}</span>
-              {warnings.includes(b.domain) && <Badge variant="destructive">Followed</Badge>}
+              {warnings.includes(b.domain) && <Badge variant="destructive">{t({ id: 'eunha.admin.instances.followed', defaultMessage: 'Followed' })}</Badge>}
             </Label>
           ))}
           <Button size="sm" disabled={busy || picked.size === 0} onClick={() => void save()}>
-            Block {picked.size} domains
+            {t({ id: 'eunha.admin.instances.block_domains', defaultMessage: 'Block {count, plural, one {# domain} other {# domains}}' }, { count: picked.size })}
           </Button>
         </div>
       )}
@@ -161,12 +161,12 @@ export default function Instances() {
   useEffect(load, [token, moderation, availability, byDomain, page])
 
   return (
-    <AdminLayout title="Federation" permission="manage_federation">
+    <AdminLayout title={t({ id: 'mastodon.admin.instances.title', defaultMessage: 'Federation' })} permission="manage_federation">
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <div className="space-y-1">
-          <Label>Moderation</Label>
+          <Label>{t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })}</Label>
           <ChoiceSelect
-            label="Moderation"
+            label={t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })}
             value={moderation}
             items={MODERATION}
             onChange={(v) => {
@@ -177,9 +177,9 @@ export default function Instances() {
           />
         </div>
         <div className="space-y-1">
-          <Label>Availability</Label>
+          <Label>{t({ id: 'mastodon.admin.instances.availability.title', defaultMessage: 'Availability' })}</Label>
           <ChoiceSelect
-            label="Availability"
+            label={t({ id: 'mastodon.admin.instances.availability.title', defaultMessage: 'Availability' })}
             value={availability}
             items={AVAILABILITY}
             onChange={(v) => {
@@ -190,7 +190,7 @@ export default function Instances() {
           />
         </div>
         <div className="min-w-40 flex-1 space-y-1">
-          <Label htmlFor="by-domain">Domain</Label>
+          <Label htmlFor="by-domain">{t({ id: 'mastodon.admin.instances.by_domain', defaultMessage: 'Domain' })}</Label>
           <Input
             id="by-domain"
             value={byDomain}
@@ -204,7 +204,7 @@ export default function Instances() {
       </div>
       <AdminError error={error} />
       {items === null && !error && <RowsSkeleton count={6} />}
-      {items?.length === 0 && <p className="text-muted-foreground text-sm">No servers found.</p>}
+      {items?.length === 0 && <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.instances.no_servers_found', defaultMessage: 'No servers found.' })}</p>}
       <div className="divide-y rounded-lg border">
         {items?.map((i) => (
           <Link
@@ -214,11 +214,11 @@ export default function Instances() {
           >
             <span className="min-w-0 flex-1 truncate font-medium">{i.domain}</span>
             {i.domain_block && <Badge variant="outline">{policyText(i.domain_block)}</Badge>}
-            {i.domain_allow && <Badge variant="outline">Allowed</Badge>}
-            {i.unavailable && <Badge variant="destructive">Unavailable</Badge>}
+            {i.domain_allow && <Badge variant="outline">{t({ id: 'mastodon.admin.accounts.follow_recommendations.allowed', defaultMessage: 'Allowed' })}</Badge>}
+            {i.unavailable && <Badge variant="destructive">{t({ id: 'mastodon.admin.instances.delivery.unavailable', defaultMessage: 'Unavailable' })}</Badge>}
             {!i.unavailable && i.failure_days !== null && (
               <Badge variant="outline">
-                Failing for {i.failure_days} {i.failure_days === 1 ? 'day' : 'days'}
+                {t({ id: 'eunha.admin.instances.failing_for', defaultMessage: 'Failing for {count, plural, one {# day} other {# days}}' }, { count: i.failure_days })}
               </Badge>
             )}
             <span className="text-muted-foreground text-xs tabular-nums">
@@ -229,7 +229,7 @@ export default function Instances() {
       </div>
       <div className="mt-2 flex gap-2">
         <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>
-          Newer
+          {t({ id: 'mastodon.pagination.newer', defaultMessage: 'Newer' })}
         </Button>
         <Button
           size="sm"
@@ -237,11 +237,11 @@ export default function Instances() {
           disabled={(items?.length ?? 0) < 40}
           onClick={() => setPage(page + 1)}
         >
-          Older
+          {t({ id: 'mastodon.pagination.older', defaultMessage: 'Older' })}
         </Button>
       </div>
 
-      <h2 className="mt-6 mb-2 text-sm font-semibold">Block and allow lists</h2>
+      <h2 className="mt-6 mb-2 text-sm font-semibold">{t({ id: 'eunha.admin.instances.block_and_allow_lists', defaultMessage: 'Block and allow lists' })}</h2>
       <div className="mb-3 flex flex-wrap gap-2">
         <Button
           size="sm"
@@ -252,7 +252,7 @@ export default function Instances() {
             )
           }
         >
-          Export domain blocks
+          {t({ id: 'eunha.admin.instances.export_domain_blocks', defaultMessage: 'Export domain blocks' })}
         </Button>
         <Button
           size="sm"
@@ -263,13 +263,13 @@ export default function Instances() {
             )
           }
         >
-          Export domain allows
+          {t({ id: 'eunha.admin.instances.export_domain_allows', defaultMessage: 'Export domain allows' })}
         </Button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <BlockImport onDone={load} />
         <div className="space-y-2 rounded-lg border p-3">
-          <Label htmlFor="import-allows">Import domain allows</Label>
+          <Label htmlFor="import-allows">{t({ id: 'mastodon.admin.export_domain_allows.new.title', defaultMessage: 'Import domain allows' })}</Label>
           <Input
             id="import-allows"
             type="file"
@@ -279,7 +279,7 @@ export default function Instances() {
               if (!file) return
               try {
                 const created = await importDomainAllows(token ?? '', file)
-                toast.success(`${created.length} domains allowed.`)
+                toast.success(t({ id: 'eunha.admin.instances.domains_allowed', defaultMessage: '{length} domains allowed.' }, { length: created.length }))
                 load()
               } catch (err) {
                 toast.error(errorMessage(err))
@@ -287,7 +287,7 @@ export default function Instances() {
             }}
           />
           <p className="text-muted-foreground text-xs">
-            Every domain in the file not yet allowed is allowed at once.
+            {t({ id: 'eunha.admin.instances.every_domain_in_the_file_not', defaultMessage: 'Every domain in the file not yet allowed is allowed at once.' })}
           </p>
         </div>
       </div>

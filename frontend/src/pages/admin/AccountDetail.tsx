@@ -28,6 +28,7 @@ import { ModerationNotes } from '@/components/admin/moderation-notes.tsx'
 import { UserManagement } from '@/components/admin/user-management.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { DetailSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -40,11 +41,11 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 // What each lifting call is called on the button, and what the toast says.
 const UNDO: Record<AccountUndo, { label: string; done: string }> = {
-  approve: { label: 'Approve', done: 'Approved.' },
-  enable: { label: 'Unfreeze', done: 'Unfrozen.' },
-  unsilence: { label: 'Undo limit', done: 'Limit lifted.' },
-  unsuspend: { label: 'Undo suspension', done: 'Suspension lifted.' },
-  unsensitive: { label: 'Undo force-sensitive', done: 'No longer force-sensitive.' },
+  approve: { get label() { return t({ id: 'mastodon.admin.accounts.approve', defaultMessage: 'Approve' }) }, get done() { return t({ id: 'eunha.common.approved', defaultMessage: 'Approved.' }) } },
+  enable: { get label() { return t({ id: 'mastodon.admin.accounts.enable', defaultMessage: 'Unfreeze' }) }, get done() { return t({ id: 'eunha.common.unfrozen', defaultMessage: 'Unfrozen.' }) } },
+  unsilence: { get label() { return t({ id: 'mastodon.admin.accounts.undo_silenced', defaultMessage: 'Undo limit' }) }, get done() { return t({ id: 'eunha.admin.account_detail.limit_lifted', defaultMessage: 'Limit lifted.' }) } },
+  unsuspend: { get label() { return t({ id: 'mastodon.admin.accounts.undo_suspension', defaultMessage: 'Undo suspension' }) }, get done() { return t({ id: 'eunha.admin.account_detail.suspension_lifted', defaultMessage: 'Suspension lifted.' }) } },
+  unsensitive: { get label() { return t({ id: 'mastodon.admin.accounts.undo_sensitized', defaultMessage: 'Undo force-sensitive' }) }, get done() { return t({ id: 'eunha.admin.account_detail.no_longer_force_sensitive', defaultMessage: 'No longer force-sensitive.' }) } },
 }
 
 /**
@@ -106,7 +107,7 @@ export default function AccountDetail() {
     : []
 
   return (
-    <AdminLayout title={pub ? `@${pub.acct}` : 'Account'} permission="manage_users">
+    <AdminLayout title={pub ? `@${pub.acct}` : t({ id: 'mastodon.admin.email_subscriptions.accounts.account', defaultMessage: 'Account' })} permission="manage_users">
       <AdminError error={error} />
       {!a && !error && <DetailSkeleton />}
       {a && pub && token && (
@@ -141,35 +142,35 @@ export default function AccountDetail() {
             ))}
             {pending && (
               <ConfirmButton
-                title={`Reject @${pub.acct}?`}
-                description="Rejecting a sign-up deletes the account. The username and email can be used again."
-                confirmLabel="Reject"
+                title={t({ id: 'eunha.admin.account_detail.reject', defaultMessage: 'Reject @{acct}?' }, { acct: pub.acct })}
+                description={t({ id: 'eunha.admin.account_detail.rejecting_a_sign_up_deletes_the', defaultMessage: 'Rejecting a sign-up deletes the account. The username and email can be used again.' })}
+                confirmLabel={t({ id: 'follow_request.reject', defaultMessage: 'Reject' })}
                 onConfirm={async () => {
                   await rejectAccount(token, id)
-                  toast.success('Sign-up rejected.')
+                  toast.success(t({ id: 'eunha.admin.account_detail.sign_up_rejected', defaultMessage: 'Sign-up rejected.' }))
                   navigate('/admin/accounts?status=pending')
                 }}
               >
-                Reject
+                {t({ id: 'follow_request.reject', defaultMessage: 'Reject' })}
               </ConfirmButton>
             )}
             <Button size="sm" variant="destructive" onClick={() => setActing(true)}>
-              Moderate…
+              {t({ id: 'eunha.admin.account_detail.moderate', defaultMessage: 'Moderate…' })}
             </Button>
             {/* Upstream's `AccountPolicy#destroy?`: only a suspended account,
                 and only for a role that may delete user data. */}
             {a.suspended && can(permissions, 'delete_user_data') && (
               <ConfirmButton
-                title={`Delete @${pub.acct} permanently?`}
-                description="Everything the account has posted and stored is deleted. This cannot be undone, and the suspension can no longer be lifted."
-                confirmLabel="Delete permanently"
+                title={t({ id: 'eunha.admin.account_detail.delete_permanently', defaultMessage: 'Delete @{acct} permanently?' }, { acct: pub.acct })}
+                description={t({ id: 'eunha.admin.account_detail.everything_the_account_has_posted_and', defaultMessage: 'Everything the account has posted and stored is deleted. This cannot be undone, and the suspension can no longer be lifted.' })}
+                confirmLabel={t({ id: 'eunha.admin.account_detail.delete_permanently_2', defaultMessage: 'Delete permanently' })}
                 onConfirm={async () => {
                   await deleteAccount(token, id)
-                  toast.success('Deletion queued.')
+                  toast.success(t({ id: 'eunha.admin.account_detail.deletion_queued', defaultMessage: 'Deletion queued.' }))
                   load()
                 }}
               >
-                Delete permanently
+                {t({ id: 'eunha.admin.account_detail.delete_permanently_2', defaultMessage: 'Delete permanently' })}
               </ConfirmButton>
             )}
           </section>
@@ -177,58 +178,60 @@ export default function AccountDetail() {
           <dl className="grid gap-4 sm:grid-cols-2">
             {local ? (
               <>
-                <Field label="Email">
+                <Field label={t({ id: 'email_subscriptions.email', defaultMessage: 'Email' })}>
                   {a.email ?? '—'}
                   {a.email && !a.confirmed && (
-                    <span className="text-muted-foreground"> (unconfirmed)</span>
+                    <span className="text-muted-foreground"> {t({ id: 'eunha.admin.account_detail.unconfirmed', defaultMessage: '(unconfirmed)' })}</span>
                   )}
                 </Field>
-                <Field label="Role">{a.role?.name || 'No role'}</Field>
-                <Field label="Most recent IP">{a.ip ?? '—'}</Field>
-                <Field label="Locale">{a.locale ?? '—'}</Field>
+                <Field label={t({ id: 'mastodon.admin.accounts.role', defaultMessage: 'Role' })}>{a.role?.name || t({ id: 'mastodon.admin.accounts.change_role.no_role', defaultMessage: 'No role' })}</Field>
+                <Field label={t({ id: 'mastodon.admin.accounts.most_recent_ip', defaultMessage: 'Most recent IP' })}>{a.ip ?? '—'}</Field>
+                <Field label={t({ id: 'mastodon.activerecord.attributes.user.locale', defaultMessage: 'Locale' })}>{a.locale ?? '—'}</Field>
                 {a.invite_request && (
-                  <Field label="Reason for joining">{a.invite_request}</Field>
+                  <Field label={t({ id: 'eunha.admin.account_detail.reason_for_joining', defaultMessage: 'Reason for joining' })}>{a.invite_request}</Field>
                 )}
                 {a.invited_by_account_id && (
-                  <Field label="Invited by">
+                  <Field label={t({ id: 'mastodon.admin.accounts.invited_by', defaultMessage: 'Invited by' })}>
                     <Link to={`/admin/accounts/${a.invited_by_account_id}`}>
-                      Account {a.invited_by_account_id}
+                      {t({ id: 'eunha.admin.account_detail.account_number', defaultMessage: 'Account {id}' }, { id: a.invited_by_account_id })}
                     </Link>
                   </Field>
                 )}
               </>
             ) : (
-              <Field label="Domain">{a.domain}</Field>
+              <Field label={t({ id: 'mastodon.admin.accounts.by_domain', defaultMessage: 'Domain' })}>{a.domain}</Field>
             )}
-            <Field label="Joined">{formatDate(a.created_at)}</Field>
-            <Field label="Profile">
-              <Link to={`/@${pub.acct}`}>View profile</Link>
+            <Field label={t({ id: 'mastodon.admin.accounts.joined', defaultMessage: 'Joined' })}>{formatDate(a.created_at)}</Field>
+            <Field label={t({ id: 'eunha.admin.account_detail.profile', defaultMessage: 'Profile' })}>
+              <Link to={`/@${pub.acct}`}>{t({ id: 'account.view_profile', defaultMessage: 'View profile' })}</Link>
               {pub.url && !local && (
                 <>
                   {' · '}
                   <a href={pub.url} target="_blank" rel="noreferrer">
-                    On {a.domain}
+                    {t({ id: 'eunha.admin.account_detail.on_domain', defaultMessage: 'On {domain}' }, { domain: a.domain })}
                   </a>
                 </>
               )}
             </Field>
-            <Field label="Posts">
-              {pub.statuses_count ?? 0} · {pub.followers_count ?? 0} followers ·{' '}
-              {pub.following_count ?? 0} following
+            <Field label={t({ id: 'account.posts', defaultMessage: 'Posts' })}>
+              {t(
+                { id: 'eunha.admin.account_detail.counts', defaultMessage: '{posts} · {followers} followers · {following} following' },
+                { posts: pub.statuses_count ?? 0, followers: pub.followers_count ?? 0, following: pub.following_count ?? 0 },
+              )}
             </Field>
-            <Field label="Reports">
-              <Link to={`/admin/reports?target_account_id=${a.id}`}>About this account</Link>
+            <Field label={t({ id: 'mastodon.admin.reports.title', defaultMessage: 'Reports' })}>
+              <Link to={`/admin/reports?target_account_id=${a.id}`}>{t({ id: 'eunha.admin.account_detail.about_this_account', defaultMessage: 'About this account' })}</Link>
               {' · '}
-              <Link to={`/admin/reports?account_id=${a.id}`}>Filed by this account</Link>
+              <Link to={`/admin/reports?account_id=${a.id}`}>{t({ id: 'eunha.admin.account_detail.filed_by_this_account', defaultMessage: 'Filed by this account' })}</Link>
             </Field>
-            <Field label="Moderation">
-              <Link to={`/admin/accounts/${a.id}/statuses`}>Posts</Link>
+            <Field label={t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })}>
+              <Link to={`/admin/accounts/${a.id}/statuses`}>{t({ id: 'account.posts', defaultMessage: 'Posts' })}</Link>
               {' · '}
-              <Link to={`/admin/accounts/${a.id}/relationships`}>Relationships</Link>
+              <Link to={`/admin/accounts/${a.id}/relationships`}>{t({ id: 'navigation_bar.relationships', defaultMessage: 'Relationships' })}</Link>
               {can(permissions, 'view_audit_log') && (
                 <>
                   {' · '}
-                  <Link to={`/admin/action_logs?target_account_id=${a.id}`}>Audit log</Link>
+                  <Link to={`/admin/action_logs?target_account_id=${a.id}`}>{t({ id: 'mastodon.admin.action_logs.title', defaultMessage: 'Audit log' })}</Link>
                 </>
               )}
             </Field>
@@ -236,7 +239,7 @@ export default function AccountDetail() {
 
           {local && a.ips && a.ips.length > 0 && (
             <section className="space-y-1">
-              <h2 className="text-sm font-semibold">Recent IPs</h2>
+              <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.account_detail.recent_ips', defaultMessage: 'Recent IPs' })}</h2>
               <ul className="text-sm">
                 {a.ips.map((ip) => (
                   <li key={`${ip.ip}-${ip.used_at}`} className="flex justify-between gap-2">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { completeLogin, takeReturnPath } from '../auth.ts'
+import { t } from '@/i18n.tsx'
 
 const logins = new Map<string, Promise<void>>()
 
@@ -20,7 +21,7 @@ export default function Callback() {
   useEffect(() => {
     const code = params.get('code')
     if (!code) {
-      setError(params.get('error_description') ?? 'No authorization code returned.')
+      setError(params.get('error_description') ?? t({ id: 'eunha.callback.no_authorization_code_returned', defaultMessage: 'No authorization code returned.' }))
       return
     }
     loginOnce(code)
@@ -31,7 +32,7 @@ export default function Callback() {
   return (
     <div className="page-frame">
       <p className={error ? 'text-destructive text-sm' : 'text-muted-foreground text-sm'}>
-        {error ?? 'Signing you in…'}
+        {error ?? t({ id: 'eunha.callback.signing_you_in', defaultMessage: 'Signing you in…' })}
       </p>
     </div>
   )

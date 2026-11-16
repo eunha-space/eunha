@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { LinesSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 function readFrequency(key: string): Record<string, number> {
   try {
@@ -19,7 +20,7 @@ function readFrequency(key: string): Record<string, number> {
 export function PostLanguagePicker({
   value,
   onChange,
-  label = 'Post language',
+  label = t({ id: 'eunha.post_language_picker.post_language', defaultMessage: 'Post language' }),
   disabled,
   allowDefault,
 }: {
@@ -74,19 +75,19 @@ export function PostLanguagePicker({
       <PopoverTrigger
         render={<Button type="button" size="sm" variant="outline" disabled={disabled} aria-label={label} />}
       >
-        <Languages /> {value ? postLanguageName(value) : allowDefault ? 'Use interface language' : label}
+        <Languages /> {value ? postLanguageName(value) : allowDefault ? t({ id: 'eunha.post_language_picker.use_interface_language', defaultMessage: 'Use interface language' }) : label}
       </PopoverTrigger>
       <PopoverContent aria-label={label} align="start">
-        <Input aria-label="Search languages" placeholder="Search languages…" value={query}
+        <Input aria-label={t({ id: 'eunha.post_language_picker.search_languages', defaultMessage: 'Search languages' })} placeholder={t({ id: 'compose.language.search', defaultMessage: 'Search languages…' })} value={query}
           onChange={(event) => setQuery(event.target.value)} />
         {allowDefault && !query && (
           <Button type="button" variant="ghost" aria-pressed={!value} onClick={() => choose('')}>
-            Use interface language
+            {t({ id: 'eunha.post_language_picker.use_interface_language', defaultMessage: 'Use interface language' })}
           </Button>
         )}
-        {error && <p role="alert">Could not load languages. Reopen the picker to retry.</p>}
+        {error && <p role="alert">{t({ id: 'eunha.post_language_picker.could_not_load_languages_reopen_the', defaultMessage: 'Could not load languages. Reopen the picker to retry.' })}</p>}
         {!matches && !error && <LinesSkeleton count={5} />}
-        {matches?.length === 0 && <p className="text-muted-foreground">No languages found.</p>}
+        {matches?.length === 0 && <p className="text-muted-foreground">{t({ id: 'eunha.post_language_picker.no_languages_found', defaultMessage: 'No languages found.' })}</p>}
         <div className="max-h-64 overflow-y-auto">
           {matches?.map(([code, name, nativeName]) => (
             <Button key={code} type="button" variant="ghost" aria-pressed={value === code}

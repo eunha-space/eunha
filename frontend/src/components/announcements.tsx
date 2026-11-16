@@ -21,6 +21,8 @@ import {
   type CarouselApi,
 } from '@/components/ui/carousel.tsx'
 import { cn } from '@/lib/utils.ts'
+import { currentLocale, t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 type Announcement = mastodon.v1.Announcement & { read?: boolean }
 
@@ -152,7 +154,7 @@ export function AnnouncementsButton({
   shown: boolean
   onToggle: () => void
 }) {
-  const label = shown ? 'Hide announcements' : 'Show announcements'
+  const label = shown ? t({ id: 'home.hide_announcements', defaultMessage: 'Hide announcements' }) : t({ id: 'home.show_announcements', defaultMessage: 'Show announcements' })
   return (
     <Button
       variant="ghost"
@@ -174,7 +176,7 @@ export function AnnouncementsButton({
 }
 
 const dateFormat = (date: Date, now: Date, withTime: boolean, withDay = true) =>
-  new Intl.DateTimeFormat(undefined, {
+  new Intl.DateTimeFormat(currentLocale(), {
     year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
     month: withDay ? 'short' : undefined,
     day: withDay ? '2-digit' : undefined,
@@ -252,14 +254,14 @@ function Reactions({
       ))}
       {visible.length < 8 && (
         <EmojiPicker
-          label="Add reaction"
+          label={t({ id: 'eunha.announcements.add_reaction', defaultMessage: 'Add reaction' })}
           // Mastodon reacts with a custom emoji's shortcode, or the
           // Unicode emoji itself.
           onPick={(picked) =>
             react(picked.type === 'custom' ? picked.shortcode : picked.native, true)
           }
           trigger={
-            <Button variant="ghost" size="icon-xs" aria-label="Add reaction">
+            <Button variant="ghost" size="icon-xs" aria-label={t({ id: 'eunha.announcements.add_reaction', defaultMessage: 'Add reaction' })}>
               <Plus />
             </Button>
           }
@@ -307,9 +309,13 @@ function AnnouncementItem({
   return (
     <AnimateEmoji className="relative">
       <p className="text-muted-foreground text-xs font-semibold">
-        Announcement · <When announcement={announcement} />
+        <FormattedMessage
+          id="eunha.announcements.heading"
+          defaultMessage="Announcement · {when}"
+          values={{ when: <When announcement={announcement} /> }}
+        />
         {!visuallyRead && (
-          <span className="bg-primary ml-1.5 inline-block size-2 rounded-full" aria-label="Unread" />
+          <span className="bg-primary ml-1.5 inline-block size-2 rounded-full" aria-label={t({ id: 'eunha.announcements.unread', defaultMessage: 'Unread' })} />
         )}
       </p>
       <EmojiHtml
@@ -352,7 +358,7 @@ export function AnnouncementsPanel({
 
   if (items.length === 0) return null
   return (
-    <section aria-label="Announcements" className="bg-muted/40 border-b px-3 py-3">
+    <section aria-label={t({ id: 'mastodon.admin.announcements.title', defaultMessage: 'Announcements' })} className="bg-muted/40 border-b px-3 py-3">
       <Carousel setApi={setApi}>
         <CarouselContent>
           {items.map((a, i) => (

@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog.tsx'
 import { Input } from '@/components/ui/input.tsx'
+import { t } from '@/i18n.tsx'
 
 const NO_ROLE = 'none'
 
@@ -91,29 +92,29 @@ export function UserManagement({
   const canChangeRole = manageRoles && actingPosition !== undefined && targetPosition !== undefined
     && actingPosition > targetPosition
 
-  const roleItems: Record<string, string> = { [NO_ROLE]: 'No role' }
+  const roleItems: Record<string, string> = { [NO_ROLE]: t({ id: 'mastodon.admin.accounts.change_role.no_role', defaultMessage: 'No role' }) }
   for (const r of roles) {
     if (actingPosition !== undefined && r.position <= actingPosition) roleItems[r.id] = r.name
   }
 
   const submitEmail = async (e: FormEvent) => {
     e.preventDefault()
-    await run(() => changeUserEmail(token, account.id, email.trim()), 'Confirmation link sent to the new address.')
+    await run(() => changeUserEmail(token, account.id, email.trim()), t({ id: 'eunha.admin.user_management.confirmation_link_sent_to_the_new', defaultMessage: 'Confirmation link sent to the new address.' }))
     setEmailOpen(false)
   }
 
   return (
     <section className="space-y-2">
-      <h2 className="text-sm font-semibold">Sign-in and role</h2>
+      <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.user_management.sign_in_and_role', defaultMessage: 'Sign-in and role' })}</h2>
       {manageRoles && actingPosition !== undefined && targetPosition !== undefined && !canChangeRole && (
         <p className="text-muted-foreground text-sm">
-          You can only change roles for users whose role is below yours.
+          {t({ id: 'eunha.admin.user_management.you_can_only_change_roles_for', defaultMessage: 'You can only change roles for users whose role is below yours.' })}
         </p>
       )}
       {canChangeRole && (
         <div className="flex flex-wrap items-center gap-2">
           <ChoiceSelect
-            label="Role"
+            label={t({ id: 'mastodon.admin.accounts.role', defaultMessage: 'Role' })}
             value={roleId}
             items={roleItems}
             onChange={setRoleId}
@@ -126,11 +127,11 @@ export function UserManagement({
             onClick={() =>
               void run(
                 () => changeUserRole(token, account.id, roleId === NO_ROLE ? null : roleId),
-                'Role changed.',
+                t({ id: 'eunha.admin.user_management.role_changed', defaultMessage: 'Role changed.' }),
               )
             }
           >
-            Change role
+            {t({ id: 'mastodon.admin.accounts.change_role.label', defaultMessage: 'Change role' })}
           </Button>
         </div>
       )}
@@ -145,7 +146,7 @@ export function UserManagement({
               setEmailOpen(true)
             }}
           >
-            Change email
+            {t({ id: 'mastodon.admin.accounts.change_email.label', defaultMessage: 'Change email' })}
           </Button>
           {!account.confirmed && (
             <>
@@ -154,10 +155,10 @@ export function UserManagement({
                 variant="outline"
                 disabled={busy}
                 onClick={() =>
-                  void run(() => userAccessAction(token, account.id, 'confirmation'), 'Confirmed.')
+                  void run(() => userAccessAction(token, account.id, 'confirmation'), t({ id: 'eunha.common.confirmed', defaultMessage: 'Confirmed.' }))
                 }
               >
-                Confirm
+                {t({ id: 'mastodon.admin.accounts.confirm', defaultMessage: 'Confirm' })}
               </Button>
               <Button
                 size="sm"
@@ -166,35 +167,35 @@ export function UserManagement({
                 onClick={() =>
                   void run(
                     () => userAccessAction(token, account.id, 'confirmation/resend'),
-                    'Confirmation link successfully sent!',
+                    t({ id: 'mastodon.admin.accounts.resend_confirmation.success', defaultMessage: 'Confirmation link successfully sent!' }),
                   )
                 }
               >
-                Resend confirmation link
+                {t({ id: 'mastodon.admin.accounts.resend_confirmation.send', defaultMessage: 'Resend confirmation link' })}
               </Button>
             </>
           )}
           <ConfirmButton
-            title="Reset the password?"
-            description="The user is signed out everywhere and mailed a link to choose a new password."
-            confirmLabel="Reset password"
+            title={t({ id: 'eunha.admin.user_management.reset_the_password', defaultMessage: 'Reset the password?' })}
+            description={t({ id: 'eunha.admin.user_management.the_user_is_signed_out_everywhere', defaultMessage: 'The user is signed out everywhere and mailed a link to choose a new password.' })}
+            confirmLabel={t({ id: 'mastodon.admin.accounts.reset_password', defaultMessage: 'Reset password' })}
             onConfirm={async () => {
               onChanged(await userAccessAction(token, account.id, 'reset'))
-              toast.success('Password reset.')
+              toast.success(t({ id: 'eunha.admin.user_management.password_reset', defaultMessage: 'Password reset.' }))
             }}
           >
-            Reset password
+            {t({ id: 'mastodon.admin.accounts.reset_password', defaultMessage: 'Reset password' })}
           </ConfirmButton>
           <ConfirmButton
-            title="Disable two-factor authentication?"
-            description="The user can then sign in with their email address and password alone."
-            confirmLabel="Disable 2FA"
+            title={t({ id: 'eunha.admin.user_management.disable_two_factor_authentication', defaultMessage: 'Disable two-factor authentication?' })}
+            description={t({ id: 'eunha.admin.user_management.the_user_can_then_sign_in', defaultMessage: 'The user can then sign in with their email address and password alone.' })}
+            confirmLabel={t({ id: 'mastodon.admin.accounts.disable_two_factor_authentication', defaultMessage: 'Disable 2FA' })}
             onConfirm={async () => {
               onChanged(await disableTwoFactor(token, account.id))
-              toast.success('Two-factor authentication disabled.')
+              toast.success(t({ id: 'eunha.admin.user_management.two_factor_authentication_disabled', defaultMessage: 'Two-factor authentication disabled.' }))
             }}
           >
-            Disable 2FA
+            {t({ id: 'mastodon.admin.accounts.disable_two_factor_authentication', defaultMessage: 'Disable 2FA' })}
           </ConfirmButton>
         </div>
       )}
@@ -202,22 +203,23 @@ export function UserManagement({
         <DialogContent>
           <form onSubmit={submitEmail} className="space-y-4">
             <DialogHeader>
-              <DialogTitle>Change email for {account.username}</DialogTitle>
+              <DialogTitle>
+                {t({ id: 'mastodon.admin.accounts.change_email.title', defaultMessage: 'Change email for {username}' }, { username: account.username })}
+              </DialogTitle>
               <DialogDescription>
-                The new address takes over once its owner follows the confirmation link mailed to
-                it.
+                {t({ id: 'eunha.admin.user_management.the_new_address_takes_over_once', defaultMessage: 'The new address takes over once its owner follows the confirmation link mailed to it.' })}
               </DialogDescription>
             </DialogHeader>
             <Input
               type="email"
-              aria-label="New email address"
+              aria-label={t({ id: 'mastodon.devise.mailer.email_changed.title', defaultMessage: 'New email address' })}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
             <DialogFooter>
-              <DialogClose render={<Button type="button" variant="outline" />}>Cancel</DialogClose>
+              <DialogClose render={<Button type="button" variant="outline" />}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</DialogClose>
               <Button type="submit" disabled={busy || !email.trim()}>
-                Change email
+                {t({ id: 'mastodon.admin.accounts.change_email.label', defaultMessage: 'Change email' })}
               </Button>
             </DialogFooter>
           </form>

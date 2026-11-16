@@ -20,6 +20,8 @@ import { DisplayName } from '@/components/emoji.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { decodeIdna } from '@/lib/punycode.ts'
 import { cn } from '@/lib/utils.ts'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 // Fields Mastodon's `PreviewCardSerializer` sends that masto.js does not model.
 type Card = mastodon.v1.PreviewCard & {
@@ -68,15 +70,22 @@ function MoreFromAuthor({ account }: { account: mastodon.v1.Account }) {
   const avatar = useAnimatedImage(account.avatar, account.avatarStatic)
   return (
     <p className="text-muted-foreground flex items-center gap-1 px-1 pt-1.5 text-xs">
-      More from
-      <Link
-        to={`/@${account.acct}`}
-        className="text-foreground inline-flex min-w-0 items-center gap-1 font-medium no-underline hover:underline"
-        {...avatar.hover}
-      >
-        {avatar.src && <img src={avatar.src} alt="" className="size-4 shrink-0 rounded-sm" />}
-        <DisplayName account={account} className="truncate" />
-      </Link>
+      <FormattedMessage
+        id="link_preview.more_from_author"
+        defaultMessage="More from {name}"
+        values={{
+          name: (
+            <Link
+              to={`/@${account.acct}`}
+              className="text-foreground inline-flex min-w-0 items-center gap-1 font-medium no-underline hover:underline"
+              {...avatar.hover}
+            >
+              {avatar.src && <img src={avatar.src} alt="" className="size-4 shrink-0 rounded-sm" />}
+              <DisplayName account={account} className="truncate" />
+            </Link>
+          ),
+        }}
+      />
     </p>
   )
 }
@@ -93,8 +102,8 @@ function SpoilerButton({ onReveal }: { onReveal: () => void }) {
       className="absolute inset-0 flex items-center justify-center"
     >
       <span className="bg-background/85 flex flex-col items-center rounded-md px-2 py-1 text-xs">
-        <span className="font-medium">Sensitive content</span>
-        <span className="text-muted-foreground">Click to show</span>
+        <span className="font-medium">{t({ id: 'status.sensitive_warning', defaultMessage: 'Sensitive content' })}</span>
+        <span className="text-muted-foreground">{t({ id: 'status.media.show', defaultMessage: 'Click to show' })}</span>
       </span>
     </button>
   )
@@ -166,7 +175,7 @@ export function PreviewCard({ card: raw, sensitive }: { card: mastodon.v1.Previe
             {embed && (
               <button
                 type="button"
-                aria-label="Play"
+                aria-label={t({ id: 'video.play', defaultMessage: 'Play' })}
                 onClick={() => setEmbedded(true)}
                 className="bg-background/85 hover:bg-background flex size-10 items-center justify-center rounded-full"
               >
@@ -177,7 +186,7 @@ export function PreviewCard({ card: raw, sensitive }: { card: mastodon.v1.Previe
               href={card.url}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Open in a new tab"
+              aria-label={t({ id: 'eunha.preview_card.open_in_a_new_tab', defaultMessage: 'Open in a new tab' })}
               className="bg-background/85 hover:bg-background text-foreground flex size-10 items-center justify-center rounded-full"
             >
               <ExternalLink className="size-5" />
@@ -268,7 +277,11 @@ export function PreviewCard({ card: raw, sensitive }: { card: mastodon.v1.Previe
           {!author &&
             (card.authorName ? (
               <span className="text-muted-foreground truncate text-xs">
-                By <strong className="font-medium">{card.authorName}</strong>
+                <FormattedMessage
+                  id="link_preview.author"
+                  defaultMessage="By {name}"
+                  values={{ name: <strong className="font-medium">{card.authorName}</strong> }}
+                />
               </span>
             ) : (
               card.description && (

@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
 type Category = mastodon.v1.ReportCategory
 
@@ -33,10 +34,10 @@ type Category = mastodon.v1.ReportCategory
 // `violation` is offered only when the server has rules to break, as upstream
 // does: without them there is nothing to name.
 const CATEGORIES: Record<Category, string> = {
-  spam: 'Spam or scam',
-  legal: 'Illegal content',
-  violation: 'Breaks a server rule',
-  other: 'Something else',
+  get spam() { return t({ id: 'eunha.report_dialog.spam_or_scam', defaultMessage: 'Spam or scam' }) },
+  get legal() { return t({ id: 'report_notification.categories.legal_sentence', defaultMessage: 'Illegal content' }) },
+  get violation() { return t({ id: 'eunha.report_dialog.breaks_a_server_rule', defaultMessage: 'Breaks a server rule' }) },
+  get other() { return t({ id: 'eunha.report_dialog.something_else', defaultMessage: 'Something else' }) },
 }
 
 // Mastodon's Report::COMMENT_SIZE_LIMIT, which the server enforces too.
@@ -143,7 +144,7 @@ export function ReportDialog({
         category,
         ruleIds: category === 'violation' ? ruleIds : undefined,
       })
-      toast.success(`Reported @${account.acct}. Moderators will take a look.`)
+      toast.success(t({ id: 'eunha.report_dialog.reported_moderators_will_take_a_look', defaultMessage: 'Reported @{acct}. Moderators will take a look.' }, { acct: account.acct }))
       onOpenChange(false)
     } catch (e) {
       toast.error(errorMessage(e))
@@ -159,21 +160,23 @@ export function ReportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Report @{account.acct}?</DialogTitle>
+          <DialogTitle>
+            {t({ id: 'eunha.report_dialog.title', defaultMessage: 'Report @{acct}?' }, { acct: account.acct })}
+          </DialogTitle>
           <DialogDescription>
-            Moderators on this server will see the report and the posts you pick.
+            {t({ id: 'eunha.report_dialog.moderators_on_this_server_will_see', defaultMessage: 'Moderators on this server will see the report and the posts you pick.' })}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1">
-            <Label>Reason</Label>
+            <Label>{t({ id: 'mastodon.activerecord.attributes.user/invite_request.text', defaultMessage: 'Reason' })}</Label>
             <Select
               items={categories}
               value={category}
               onValueChange={(v) => setCategory((v as Category) ?? 'other')}
             >
-              <SelectTrigger className="w-full" aria-label="Reason">
+              <SelectTrigger className="w-full" aria-label={t({ id: 'mastodon.activerecord.attributes.user/invite_request.text', defaultMessage: 'Reason' })}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -190,7 +193,7 @@ export function ReportDialog({
 
           {category === 'violation' && (
             <fieldset className="space-y-1.5">
-              <legend className="mb-1 text-sm font-medium">Which rules?</legend>
+              <legend className="mb-1 text-sm font-medium">{t({ id: 'eunha.report_dialog.which_rules', defaultMessage: 'Which rules?' })}</legend>
               {rules.map((rule) => (
                 <Label key={rule.id} className="items-start text-sm leading-snug font-normal">
                   <Checkbox
@@ -210,7 +213,7 @@ export function ReportDialog({
 
           {recent.length > 0 && (
             <fieldset className="space-y-1.5">
-              <legend className="mb-1 text-sm font-medium">Posts to include (optional)</legend>
+              <legend className="mb-1 text-sm font-medium">{t({ id: 'eunha.report_dialog.posts_to_include_optional', defaultMessage: 'Posts to include (optional)' })}</legend>
               <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border p-2">
                 {recent.map((s) => (
                   <Label
@@ -225,11 +228,11 @@ export function ReportDialog({
                       <span className="line-clamp-2 break-words">
                         {s.spoilerText ? `CW: ${s.spoilerText}` : plainText(s.content) ||
                           (s.mediaAttachments.length > 0
-                            ? `${s.mediaAttachments.length} attachment(s)`
+                            ? t({ id: 'eunha.report_dialog.attachment_s', defaultMessage: '{length} attachment(s)' }, { length: s.mediaAttachments.length })
                             : '(empty)')}
                       </span>
                       <span className="text-muted-foreground block text-xs">
-                        {new Date(s.createdAt).toLocaleString()}
+                        {new Date(s.createdAt).toLocaleString(currentLocale())}
                       </span>
                     </span>
                   </Label>
@@ -239,7 +242,7 @@ export function ReportDialog({
           )}
 
           <div className="space-y-1">
-            <Label htmlFor="report-comment">Anything else? (optional)</Label>
+            <Label htmlFor="report-comment">{t({ id: 'eunha.report_dialog.anything_else_optional', defaultMessage: 'Anything else? (optional)' })}</Label>
             <Textarea
               id="report-comment"
               value={comment}
@@ -247,7 +250,7 @@ export function ReportDialog({
               onChange={(e) => setComment(e.target.value)}
               rows={3}
               className="resize-y"
-              placeholder="What should a moderator know?"
+              placeholder={t({ id: 'eunha.report_dialog.what_should_a_moderator_know', defaultMessage: 'What should a moderator know?' })}
             />
             <p className="text-muted-foreground text-xs">
               {comment.length}/{COMMENT_LIMIT}
@@ -257,8 +260,7 @@ export function ReportDialog({
           {domains.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-muted-foreground text-xs">
-                The account is from another server. Send an anonymized copy of the
-                report there as well?
+                {t({ id: 'report.forward_hint', defaultMessage: 'The account is from another server. Send an anonymized copy of the report there as well?' })}
               </p>
               {domains.map((d) => (
                 <Label key={d} className="text-sm font-normal">
@@ -267,7 +269,7 @@ export function ReportDialog({
                     checked={forwardTo.includes(d)}
                     onCheckedChange={(on) => setForwardTo((list) => toggle(list, d, on))}
                   />
-                  Forward to {d}
+                  {t({ id: 'report.forward', defaultMessage: 'Forward to {target}' }, { target: d })}
                 </Label>
               ))}
             </div>
@@ -276,10 +278,10 @@ export function ReportDialog({
 
         <DialogFooter>
           <DialogClose render={<Button variant="outline" disabled={sending} />}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </DialogClose>
           <Button variant="destructive" disabled={sending || needsRule} onClick={submit}>
-            {sending ? 'Reporting…' : 'Report'}
+            {sending ? t({ id: 'eunha.common.reporting', defaultMessage: 'Reporting…' }) : t({ id: 'mastodon.admin.collections.batch.report', defaultMessage: 'Report' })}
           </Button>
         </DialogFooter>
       </DialogContent>

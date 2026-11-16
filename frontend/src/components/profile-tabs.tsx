@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { cn } from '@/lib/utils.ts'
 import { GridSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 // What masto.js leaves out of an account: the profile's display preferences,
 // which choose its tabs.
@@ -80,10 +81,10 @@ export function ProfileTabs({ account }: { account: mastodon.v1.Account }) {
     </NavLink>
   )
   return (
-    <nav className="mb-2 flex gap-1 border-b" aria-label="Profile">
-      {link('activity', base, 'Activity')}
-      {views.includes('media') && link('media', `${base}/media`, 'Media')}
-      {views.includes('featured') && link('featured', `${base}/featured`, 'Featured')}
+    <nav className="mb-2 flex gap-1 border-b" aria-label={t({ id: 'eunha.profile_tabs.profile', defaultMessage: 'Profile' })}>
+      {link('activity', base, t({ id: 'account.activity', defaultMessage: 'Activity' }))}
+      {views.includes('media') && link('media', `${base}/media`, t({ id: 'account.media', defaultMessage: 'Media' }))}
+      {views.includes('featured') && link('featured', `${base}/featured`, t({ id: 'account.featured', defaultMessage: 'Featured' }))}
     </nav>
   )
 }
@@ -144,7 +145,7 @@ export function ActivityFilterBar({
             checked={filters.boosts}
             onCheckedChange={(boosts) => onChange({ ...filters, boosts })}
           />
-          Boosts
+          {t({ id: 'notifications.filter.boosts', defaultMessage: 'Boosts' })}
         </Label>
         <Label className="text-sm font-normal">
           <Switch
@@ -152,11 +153,11 @@ export function ActivityFilterBar({
             disabled={repliesForced}
             onCheckedChange={(replies) => onChange({ ...filters, replies })}
           />
-          Replies
+          {t({ id: 'eunha.profile_tabs.replies', defaultMessage: 'Replies' })}
         </Label>
       </div>
       {featuredTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" aria-label="Featured hashtags">
+        <div className="flex flex-wrap gap-1.5" aria-label={t({ id: 'account_edit.featured_hashtags.title', defaultMessage: 'Featured hashtags' })}>
           {featuredTags.map((tag) => {
             const active = tagged?.toLowerCase() === tag.name.toLowerCase()
             return (
@@ -210,7 +211,7 @@ export function MediaGrid({ account, token }: { account: mastodon.v1.Account; to
     <div className="space-y-2">
       {feed.items === null && <GridSkeleton count={9} className="grid-cols-3 gap-1" />}
       {tiles.length > 0 && (
-        <ul className="grid grid-cols-3 gap-1" aria-label="Media">
+        <ul className="grid grid-cols-3 gap-1" aria-label={t({ id: 'account.media', defaultMessage: 'Media' })}>
           {tiles.map(({ status, media }) => (
             <li key={`${status.id}:${media.id}`}>
               <MediaTile status={status} media={media} />
@@ -218,7 +219,7 @@ export function MediaGrid({ account, token }: { account: mastodon.v1.Account; to
           ))}
         </ul>
       )}
-      {feed.items?.length === 0 && <p className="text-muted-foreground text-sm">No media yet.</p>}
+      {feed.items?.length === 0 && <p className="text-muted-foreground text-sm">{t({ id: 'eunha.profile_tabs.no_media_yet', defaultMessage: 'No media yet.' })}</p>}
       <InfiniteScroll
         onLoadMore={feed.loadMore}
         loading={feed.loadingMore}
@@ -245,7 +246,7 @@ function MediaTile({
     <Link
       to={`/@${status.account.acct}/${status.id}`}
       className="bg-muted relative block aspect-square overflow-hidden rounded-md"
-      aria-label={media.description || (hidden ? 'Sensitive media' : 'Media')}
+      aria-label={media.description || (hidden ? t({ id: 'eunha.profile_tabs.sensitive_media', defaultMessage: 'Sensitive media' }) : t({ id: 'account.media', defaultMessage: 'Media' }))}
     >
       {hidden ? (
         <>
@@ -313,8 +314,8 @@ export function FeaturedPane({
     return (
       <p className="text-muted-foreground text-sm">
         {isSelf
-          ? 'You have not featured any profiles or collections yet.'
-          : 'This account has not featured any profiles or collections yet.'}
+          ? t({ id: 'eunha.profile_tabs.you_have_not_featured_any_profiles', defaultMessage: 'You have not featured any profiles or collections yet.' })
+          : t({ id: 'eunha.profile_tabs.this_account_has_not_featured_any', defaultMessage: 'This account has not featured any profiles or collections yet.' })}
       </p>
     )
   }
@@ -323,7 +324,7 @@ export function FeaturedPane({
     <div className="space-y-4">
       {profiles.length > 0 && (
         <section className="space-y-1">
-          <h2 className="text-muted-foreground text-sm font-semibold">Profiles</h2>
+          <h2 className="text-muted-foreground text-sm font-semibold">{t({ id: 'search_results.accounts', defaultMessage: 'Profiles' })}</h2>
           <div className="divide-y rounded-lg border">
             {profiles.map((p) => (
               <AccountRow key={p.id} account={p} />
@@ -333,16 +334,15 @@ export function FeaturedPane({
       )}
       {(listed.length > 0 || unlisted.length > 0) && (
         <section className="space-y-1">
-          <h2 className="text-muted-foreground text-sm font-semibold">Collections</h2>
+          <h2 className="text-muted-foreground text-sm font-semibold">{t({ id: 'navigation_bar.collections', defaultMessage: 'Collections' })}</h2>
           <CollectionList collections={listed} />
           {unlisted.length > 0 && (
             <>
               <h3 className="text-muted-foreground pt-2 text-xs font-semibold">
-                Unlisted collections ({unlisted.length})
+                {t({ id: 'collections.unlisted_collections_with_count', defaultMessage: 'Unlisted collections ({count})' }, { count: unlisted.length })}
               </h3>
               <p className="text-muted-foreground text-xs">
-                These don’t appear on your profile to others. Anyone with the link can discover
-                them.
+                {t({ id: 'collections.unlisted_collections_description', defaultMessage: 'These don’t appear on your profile to others. Anyone with the link can discover them.' })}
               </p>
               <CollectionList collections={unlisted} />
             </>
@@ -362,7 +362,7 @@ function CollectionList({ collections }: { collections: AccountCollection[] }) {
           <Link className="text-sm font-medium" to={`/collections/${c.id}`}>{c.name}</Link>
           {c.description && <p className="text-muted-foreground text-xs">{c.description}</p>}
           <p className="text-muted-foreground text-xs">
-            {c.item_count === 1 ? '1 account' : `${c.item_count} accounts`}
+            {c.item_count === 1 ? '1 account' : t({ id: 'eunha.profile_tabs.accounts', defaultMessage: '{item_count} accounts' }, { item_count: c.item_count })}
           </p>
         </li>
       ))}

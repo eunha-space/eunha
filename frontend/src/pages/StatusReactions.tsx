@@ -11,6 +11,7 @@ import { StatusCard } from '@/components/status-card.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { cn } from '@/lib/utils.ts'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -56,10 +57,10 @@ export default function StatusReactions() {
       )}
       <nav className="mb-2 flex gap-1 border-b">
         <NavLink to={`/@${handle}/${id}/favourites`} className={cls}>
-          Favourites
+          {t({ id: 'eunha.status_reactions.favourites', defaultMessage: 'Favourites' })}
         </NavLink>
         <NavLink to={`/@${handle}/${id}/reblogs`} className={cls}>
-          Boosts
+          {t({ id: 'notifications.filter.boosts', defaultMessage: 'Boosts' })}
         </NavLink>
       </nav>
       {error && <p className="text-destructive text-sm">{error}</p>}
@@ -72,7 +73,7 @@ export default function StatusReactions() {
         ))}
         {accounts?.length === 0 && (
           <p className="text-muted-foreground text-sm">
-            {boosts ? 'Nobody has boosted this yet.' : 'Nobody has favourited this yet.'}
+            {boosts ? t({ id: 'eunha.status_reactions.nobody_has_boosted_this_yet', defaultMessage: 'Nobody has boosted this yet.' }) : t({ id: 'eunha.status_reactions.nobody_has_favourited_this_yet', defaultMessage: 'Nobody has favourited this yet.' })}
           </p>
         )}
         <InfiniteScroll

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn } from '@/lib/utils.ts'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * The signed-in account's role permissions, or `null` until they are known.
@@ -121,9 +122,9 @@ export function AdminLayout({
       <Card>
         <CardContent className="space-y-3 py-6 text-center">
           <p className="text-muted-foreground text-sm">
-            Sign in with a moderator account to see this page.
+            {t({ id: 'eunha.admin.admin_layout.sign_in_with_a_moderator_account', defaultMessage: 'Sign in with a moderator account to see this page.' })}
           </p>
-          <Button onClick={() => void beginLogin()}>Sign in</Button>
+          <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>
         </CardContent>
       </Card>
     )
@@ -132,7 +133,7 @@ export function AdminLayout({
   } else if (!can(permissions, permission)) {
     body = (
       <p className="text-muted-foreground text-sm">
-        Your role does not allow you to see this page.
+        {t({ id: 'eunha.admin.admin_layout.your_role_does_not_allow_you', defaultMessage: 'Your role does not allow you to see this page.' })}
       </p>
     )
   } else {
@@ -156,11 +157,11 @@ export function AdminLayout({
     <div className="page-frame">
       <TopBar />
       <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-        Moderation
+        {t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })}
       </p>
       {sections.length > 0 && (
         <nav
-          aria-label="Moderation sections"
+          aria-label={t({ id: 'eunha.admin.admin_layout.moderation_sections', defaultMessage: 'Moderation sections' })}
           // Wraps rather than scrolls: eight sections don't fit beside the
           // rail, and a sideways-scrolling row hides the ones past the edge.
           className="mb-3 flex flex-wrap gap-x-1 border-b"
@@ -179,7 +180,7 @@ export function AdminLayout({
         </nav>
       )}
       {sub && token && permissions !== null && can(permissions, permission) && (
-        <nav aria-label={`${title} views`} className="mb-3 flex flex-wrap gap-1">
+        <nav aria-label={t({ id: 'eunha.admin.admin_layout.views', defaultMessage: '{title} views' }, { title })} className="mb-3 flex flex-wrap gap-1">
           {sub.map((s) => (
             <NavLink key={s.to} to={s.to} end={s.end} className={subTabClass}>
               {s.label}
@@ -232,12 +233,12 @@ export function AdminError({ error }: { error: string | null }) {
     <div className="text-destructive space-y-2 text-sm">
       <p>
         {scopes
-          ? 'This session was signed in before moderation access was asked for.'
+          ? t({ id: 'eunha.admin.admin_layout.this_session_was_signed_in_before', defaultMessage: 'This session was signed in before moderation access was asked for.' })
           : error.replace(/^\w*Error: /, '')}
       </p>
       {scopes && (
         <Button size="sm" onClick={() => void beginLogin()}>
-          Sign in again
+          {t({ id: 'eunha.admin.admin_layout.sign_in_again', defaultMessage: 'Sign in again' })}
         </Button>
       )}
     </div>

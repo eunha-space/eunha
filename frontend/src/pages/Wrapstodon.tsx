@@ -7,6 +7,8 @@ import { AccountRow } from '@/components/account-row.tsx'
 import { StatusCard } from '@/components/status-card.tsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.tsx'
 import { DetailSkeleton } from '@/components/skeletons.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 // Mastodon's shared Wrapstodon page (`WrapstodonController#show`), at its
 // `/@:account_username/wrapstodon/:year/:share_key`. The server puts the report
@@ -45,31 +47,41 @@ type Loaded =
   | { kind: 'unavailable' }
 
 // `annual_report.summary.archetype.*`.
-const ARCHETYPES: Record<string, { name: string; description: (name: string) => string }> = {
+const ARCHETYPES: Record<string, { name: string; description: (name: string, self: boolean) => string }> = {
   booster: {
-    name: 'The Archer',
-    description: (name) =>
-      `${name} stayed on the hunt for posts to boost, amplifying other creators with perfect aim.`,
+    get name() { return t({ id: 'annual_report.summary.archetype.booster.name', defaultMessage: 'The Archer' }) },
+    description: (name, self) =>
+      self
+        ? t({ id: 'annual_report.summary.archetype.booster.desc_self', defaultMessage: 'You stayed on the hunt for posts to boost, amplifying other creators with perfect aim.' })
+        : t({ id: 'annual_report.summary.archetype.booster.desc_public', defaultMessage: '{name} stayed on the hunt for posts to boost, amplifying other creators with perfect aim.' }, { name }),
   },
   lurker: {
-    name: 'The Stoic',
-    description: (name) =>
-      `We know ${name} was out there, somewhere, enjoying Mastodon in their own quiet way.`,
+    get name() { return t({ id: 'annual_report.summary.archetype.lurker.name', defaultMessage: 'The Stoic' }) },
+    description: (name, self) =>
+      self
+        ? t({ id: 'annual_report.summary.archetype.lurker.desc_self', defaultMessage: 'We know you were out there, somewhere, enjoying Mastodon in your own quiet way.' })
+        : t({ id: 'annual_report.summary.archetype.lurker.desc_public', defaultMessage: 'We know {name} was out there, somewhere, enjoying Mastodon in their own quiet way.' }, { name }),
   },
   oracle: {
-    name: 'The Oracle',
-    description: (name) =>
-      `${name} created new posts more than replies, keeping Mastodon fresh and future-facing.`,
+    get name() { return t({ id: 'annual_report.summary.archetype.oracle.name', defaultMessage: 'The Oracle' }) },
+    description: (name, self) =>
+      self
+        ? t({ id: 'annual_report.summary.archetype.oracle.desc_self', defaultMessage: 'You created new posts more than replies, keeping Mastodon fresh and future-facing.' })
+        : t({ id: 'annual_report.summary.archetype.oracle.desc_public', defaultMessage: '{name} created new posts more than replies, keeping Mastodon fresh and future-facing.' }, { name }),
   },
   pollster: {
-    name: 'The Wonderer',
-    description: (name) =>
-      `${name} created more polls than other post types, cultivating curiosity on Mastodon.`,
+    get name() { return t({ id: 'annual_report.summary.archetype.pollster.name', defaultMessage: 'The Wonderer' }) },
+    description: (name, self) =>
+      self
+        ? t({ id: 'annual_report.summary.archetype.pollster.desc_self', defaultMessage: 'You created more polls than other post types, cultivating curiosity on Mastodon.' })
+        : t({ id: 'annual_report.summary.archetype.pollster.desc_public', defaultMessage: '{name} created more polls than other post types, cultivating curiosity on Mastodon.' }, { name }),
   },
   replier: {
-    name: 'The Butterfly',
-    description: (name) =>
-      `${name} frequently replied to other people’s posts, pollinating Mastodon with new discussions.`,
+    get name() { return t({ id: 'annual_report.summary.archetype.replier.name', defaultMessage: 'The Butterfly' }) },
+    description: (name, self) =>
+      self
+        ? t({ id: 'annual_report.summary.archetype.replier.desc_self', defaultMessage: 'You frequently replied to other people’s posts, pollinating Mastodon with new discussions.' })
+        : t({ id: 'annual_report.summary.archetype.replier.desc_public', defaultMessage: '{name} frequently replied to other people’s posts, pollinating Mastodon with new discussions.' }, { name }),
   },
 }
 
@@ -157,11 +169,11 @@ export default function Wrapstodon() {
         </main>
       )
     case 'missing':
-      return <Notice>This Wrapstodon could not be found.</Notice>
+      return <Notice>{t({ id: 'eunha.wrapstodon.this_wrapstodon_could_not_be_found', defaultMessage: 'This Wrapstodon could not be found.' })}</Notice>
     case 'sign-in':
-      return <Notice>Sign in to see this Wrapstodon.</Notice>
+      return <Notice>{t({ id: 'eunha.wrapstodon.sign_in_to_see_this_wrapstodon', defaultMessage: 'Sign in to see this Wrapstodon.' })}</Notice>
     case 'unavailable':
-      return <Notice>This Wrapstodon is not available.</Notice>
+      return <Notice>{t({ id: 'eunha.wrapstodon.this_wrapstodon_is_not_available', defaultMessage: 'This Wrapstodon is not available.' })}</Notice>
     case 'found':
       return <SharedReport data={loaded.data} />
   }
@@ -173,7 +185,7 @@ function SharedReport({ data }: { data: SharedData }) {
   const accounts = camelize(data.accounts) as mastodon.v1.Account[]
   const statuses = camelize(data.statuses) as mastodon.v1.Status[]
   const account = accounts.find((a) => a.id === report?.account_id)
-  if (!report || !account) return <Notice>This Wrapstodon is not available.</Notice>
+  if (!report || !account) return <Notice>{t({ id: 'eunha.wrapstodon.this_wrapstodon_is_not_available', defaultMessage: 'This Wrapstodon is not available.' })}</Notice>
 
   const name = account.displayName || account.username
   const self = data.me === account.id
@@ -186,7 +198,7 @@ function SharedReport({ data }: { data: SharedData }) {
   return (
     <main className="page-frame space-y-4">
       <header className="space-y-3">
-        <h1 className="text-2xl font-bold">Wrapstodon {report.year}</h1>
+        <h1 className="text-2xl font-bold">{t({ id: 'eunha.wrapstodon.title', defaultMessage: 'Wrapstodon {year}' }, { year: report.year })}</h1>
         <AccountRow account={account} />
       </header>
 
@@ -194,19 +206,19 @@ function SharedReport({ data }: { data: SharedData }) {
         <Card>
           <CardHeader>
             <p className="text-muted-foreground text-sm">
-              {self ? 'Your archetype' : `${name}'s archetype`}
+              {self ? t({ id: 'annual_report.summary.archetype.title_self', defaultMessage: 'Your archetype' }) : t({ id: 'annual_report.summary.archetype.title_public', defaultMessage: '{name}\'\'s archetype' }, { name })}
             </p>
             <CardTitle className="text-xl">{archetype.name}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p>{archetype.description(self ? 'You' : name)}</p>
+            <p>{archetype.description(name, self)}</p>
           </CardContent>
         </Card>
       )}
 
       {topStatus && (
         <section className="space-y-2">
-          <h2 className="text-muted-foreground text-sm font-semibold">Most popular post</h2>
+          <h2 className="text-muted-foreground text-sm font-semibold">{t({ id: 'annual_report.summary.highlighted_post.title', defaultMessage: 'Most popular post' })}</h2>
           <StatusCard status={topStatus} token={token} />
         </section>
       )}
@@ -216,13 +228,13 @@ function SharedReport({ data }: { data: SharedData }) {
           <>
             <Card>
               <CardContent>
-                <p className="text-2xl font-bold">{year.statuses.toLocaleString()}</p>
-                <p className="text-muted-foreground text-sm">new posts</p>
+                <p className="text-2xl font-bold">{year.statuses.toLocaleString(currentLocale())}</p>
+                <p className="text-muted-foreground text-sm">{t({ id: 'annual_report.summary.new_posts.new_posts', defaultMessage: 'new posts' })}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent>
-                <p className="text-2xl font-bold">{year.followers.toLocaleString()}</p>
+                <p className="text-2xl font-bold">{year.followers.toLocaleString(currentLocale())}</p>
                 <p className="text-muted-foreground text-sm">
                   {year.followers === 1 ? 'new follower' : 'new followers'}
                 </p>
@@ -237,10 +249,10 @@ function SharedReport({ data }: { data: SharedData }) {
                 #{hashtag.name}
               </Link>
               <p className="text-muted-foreground text-sm">
-                most used hashtag ·{' '}
-                {`${self ? 'You' : name} included this hashtag in ${
-                  hashtag.count === 1 ? 'one post' : `${hashtag.count.toLocaleString()} posts`
-                }.`}
+                {t({ id: 'annual_report.summary.most_used_hashtag.most_used_hashtag', defaultMessage: 'most used hashtag' })} ·{' '}
+                {self
+                  ? t({ id: 'annual_report.summary.most_used_hashtag.used_count', defaultMessage: 'You included this hashtag in {count, plural, one {one post} other {# posts}}.' }, { count: hashtag.count })
+                  : t({ id: 'annual_report.summary.most_used_hashtag.used_count_public', defaultMessage: '{name} included this hashtag in {count, plural, one {one post} other {# posts}}.' }, { name, count: hashtag.count })}
               </p>
             </CardContent>
           </Card>
@@ -249,11 +261,14 @@ function SharedReport({ data }: { data: SharedData }) {
 
       <footer className="text-muted-foreground space-y-1 border-t pt-4 text-sm">
         <p>
-          {name} uses <strong>{data.domain}</strong>, one of many communities powered by
-          Mastodon.
+          <FormattedMessage
+            id='annual_report.shared_page.footer_server_info'
+            defaultMessage='{username} uses {domain}, one of many communities powered by Mastodon.'
+            values={{ username: name, domain: <strong>{data.domain}</strong> }}
+          />
         </p>
         <Link to="/about" className="underline">
-          About {data.domain}
+          {t({ id: 'footer.about_server', defaultMessage: 'About {domain}' }, { domain: data.domain })}
         </Link>
       </footer>
     </main>

@@ -26,6 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * Several timelines at once, for people who want them.
@@ -106,9 +107,9 @@ function Pane({
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`Close ${paneTitle(id)}`}
+          aria-label={t({ id: 'eunha.advanced_layout.close_column', defaultMessage: 'Close {title}' }, { title: paneTitle(id) })}
           title={
-            canClose ? `Close ${paneTitle(id)}` : 'The last column cannot be closed'
+            canClose ? t({ id: 'eunha.advanced_layout.close_column', defaultMessage: 'Close {title}' }, { title: paneTitle(id) }) : t({ id: 'eunha.advanced_layout.the_last_column_cannot_be_closed', defaultMessage: 'The last column cannot be closed' })
           }
           disabled={!canClose}
           onClick={onClose}
@@ -277,9 +278,9 @@ export function AdvancedLayout() {
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={<Button variant="outline" size="sm" />}
-                  aria-label="Add a timeline"
+                  aria-label={t({ id: 'eunha.advanced_layout.add_a_timeline', defaultMessage: 'Add a timeline' })}
                 >
-                  <Plus /> Add
+                  <Plus /> {t({ id: 'lists.add_member', defaultMessage: 'Add' })}
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
                   {available.map((p) => (

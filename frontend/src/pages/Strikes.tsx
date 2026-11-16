@@ -7,6 +7,7 @@ import { StrikeCard } from '@/components/admin/strike-card.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * The strikes against the signed-in account: Mastodon's
@@ -28,20 +29,22 @@ export default function Strikes() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-1 text-lg font-bold">Account status</h1>
+      <h1 className="mb-1 text-lg font-bold">{t({ id: 'mastodon.relationships.status', defaultMessage: 'Account status' })}</h1>
       <p className="text-muted-foreground mb-4 text-sm">
-        These are actions taken against your account and warnings that have been sent to you by
-        the staff of {window.location.hostname}.
+        {t(
+          { id: 'mastodon.disputes.strikes.description_html', defaultMessage: 'These are actions taken against your account and warnings that have been sent to you by the staff of {instance}.' },
+          { instance: window.location.hostname },
+        )}
       </p>
       {!token && (
-        <Button onClick={() => void beginLogin()}>Sign in</Button>
+        <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>
       )}
       {error && <p className="text-destructive text-sm">{error}</p>}
       {token && strikes === null && !error && (
         <RowsSkeleton count={2} />
       )}
       {strikes?.length === 0 && (
-        <p className="text-muted-foreground text-sm">Your account is in good standing.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.strikes.your_account_is_in_good_standing', defaultMessage: 'Your account is in good standing.' })}</p>
       )}
       <div className="space-y-2">
         {strikes?.map((s) => <StrikeCard key={s.id} strike={s} />)}

@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 type TranslationDraft = RuleParams['translations_attributes'][number]
 
@@ -38,11 +39,11 @@ function RuleForm({
   const [text, setText] = useState(initial?.text ?? '')
   const [hint, setHint] = useState(initial?.hint ?? '')
   const [translations, setTranslations] = useState<TranslationDraft[]>(
-    () => initial?.translations.map((t) => ({ ...t })) ?? [],
+    () => initial?.translations.map((tr) => ({ ...tr })) ?? [],
   )
   const [saving, setSaving] = useState(false)
   const setTranslation = (index: number, change: Partial<TranslationDraft>) =>
-    setTranslations((list) => list.map((t, i) => (i === index ? { ...t, ...change } : t)))
+    setTranslations((list) => list.map((tr, i) => (i === index ? { ...tr, ...change } : tr)))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -64,7 +65,7 @@ function RuleForm({
   return (
     <form onSubmit={submit} className="space-y-3 rounded-lg border p-3">
       <div className="space-y-1">
-        <Label htmlFor={`rule-text-${key}`}>Rule</Label>
+        <Label htmlFor={`rule-text-${key}`}>{t({ id: 'mastodon.simple_form.labels.rule.text', defaultMessage: 'Rule' })}</Label>
         <Textarea
           id={`rule-text-${key}`}
           rows={2}
@@ -73,12 +74,11 @@ function RuleForm({
           onChange={(e) => setText(e.target.value)}
         />
         <p className="text-muted-foreground text-xs">
-          Describe a rule or requirement for users on this server. Try to keep it short and
-          simple.
+          {t({ id: 'eunha.admin.rules.describe_a_rule_or_requirement_for', defaultMessage: 'Describe a rule or requirement for users on this server. Try to keep it short and simple.' })}
         </p>
       </div>
       <div className="space-y-1">
-        <Label htmlFor={`rule-hint-${key}`}>Additional info</Label>
+        <Label htmlFor={`rule-hint-${key}`}>{t({ id: 'eunha.admin.rules.additional_info', defaultMessage: 'Additional info' })}</Label>
         <Textarea
           id={`rule-hint-${key}`}
           rows={2}
@@ -86,18 +86,18 @@ function RuleForm({
           onChange={(e) => setHint(e.target.value)}
         />
         <p className="text-muted-foreground text-xs">
-          Optional. Provide more details about the rule.
+          {t({ id: 'eunha.admin.rules.optional_provide_more_details_about_the', defaultMessage: 'Optional. Provide more details about the rule.' })}
         </p>
       </div>
-      {translations.map((t, index) =>
-        t._destroy ? null : (
-          <div key={t.id ?? `new-${index}`} className="space-y-2 rounded-md border border-dashed p-2">
+      {translations.map((tr, index) =>
+        tr._destroy ? null : (
+          <div key={tr.id ?? `new-${index}`} className="space-y-2 rounded-md border border-dashed p-2">
             <div className="flex items-end gap-2">
               <div className="w-32 space-y-1">
-                <Label htmlFor={`rule-lang-${key}-${index}`}>Language</Label>
+                <Label htmlFor={`rule-lang-${key}-${index}`}>{t({ id: 'about.language_label', defaultMessage: 'Language' })}</Label>
                 <Input
                   id={`rule-lang-${key}-${index}`}
-                  value={t.language}
+                  value={tr.language}
                   placeholder="ko"
                   onChange={(e) => setTranslation(index, { language: e.target.value })}
                 />
@@ -107,27 +107,27 @@ function RuleForm({
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  t.id
+                  tr.id
                     ? setTranslation(index, { _destroy: true })
                     : setTranslations((list) => list.filter((_, i) => i !== index))
                 }
               >
-                Remove
+                {t({ id: 'tag.remove', defaultMessage: 'Remove' })}
               </Button>
             </div>
             <Textarea
-              aria-label="Translated rule"
+              aria-label={t({ id: 'eunha.admin.rules.translated_rule', defaultMessage: 'Translated rule' })}
               rows={2}
-              lang={t.language}
-              value={t.text}
+              lang={tr.language}
+              value={tr.text}
               onChange={(e) => setTranslation(index, { text: e.target.value })}
             />
             <Textarea
-              aria-label="Translated additional info"
+              aria-label={t({ id: 'eunha.admin.rules.translated_additional_info', defaultMessage: 'Translated additional info' })}
               rows={2}
-              lang={t.language}
-              value={t.hint}
-              placeholder="Additional info"
+              lang={tr.language}
+              value={tr.hint}
+              placeholder={t({ id: 'eunha.admin.rules.additional_info', defaultMessage: 'Additional info' })}
               onChange={(e) => setTranslation(index, { hint: e.target.value })}
             />
           </div>
@@ -145,11 +145,11 @@ function RuleForm({
             setTranslations((list) => [...list, { language: '', text: '', hint: '' }])
           }
         >
-          Add translation
+          {t({ id: 'mastodon.admin.rules.add_translation', defaultMessage: 'Add translation' })}
         </Button>
         {onCancel && (
           <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </Button>
         )}
       </div>
@@ -188,16 +188,16 @@ export default function Rules() {
   }
 
   return (
-    <AdminLayout title="Server rules" permission="manage_rules">
+    <AdminLayout title={t({ id: 'about.rules', defaultMessage: 'Server rules' })} permission="manage_rules">
       <p className="text-muted-foreground mb-3 text-sm">
-        Server rules are shown to people signing up and can be cited in reports.
+        {t({ id: 'eunha.admin.rules.server_rules_are_shown_to_people', defaultMessage: 'Server rules are shown to people signing up and can be cited in reports.' })}
       </p>
       <div className="mb-4">
         <RuleForm
-          submitLabel="Add rule"
+          submitLabel={t({ id: 'mastodon.admin.rules.add_new', defaultMessage: 'Add rule' })}
           onSubmit={async (params) => {
             await createRule(token ?? '', params)
-            toast.success('Rule added.')
+            toast.success(t({ id: 'eunha.admin.rules.rule_added', defaultMessage: 'Rule added.' }))
             load()
           }}
         />
@@ -205,7 +205,7 @@ export default function Rules() {
       <AdminError error={error} />
       {rules === null && !error && <RowsSkeleton action />}
       {rules?.length === 0 && (
-        <p className="text-muted-foreground text-sm">You have not defined any server rules yet.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.rules.you_have_not_defined_any_server', defaultMessage: 'You have not defined any server rules yet.' })}</p>
       )}
       <ol className="space-y-2">
         {rules?.map((rule, index) =>
@@ -213,11 +213,11 @@ export default function Rules() {
             <li key={rule.id}>
               <RuleForm
                 initial={rule}
-                submitLabel="Save changes"
+                submitLabel={t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' })}
                 onCancel={() => setEditing(null)}
                 onSubmit={async (params) => {
                   await updateRule(token ?? '', rule.id, params)
-                  toast.success('Rule saved.')
+                  toast.success(t({ id: 'eunha.admin.rules.rule_saved', defaultMessage: 'Rule saved.' }))
                   setEditing(null)
                   load()
                 }}
@@ -235,14 +235,14 @@ export default function Rules() {
                 )}
                 {rule.translations.length > 0 && (
                   <p className="text-muted-foreground text-xs">
-                    Translated into {rule.translations.map((t) => t.language).join(', ')}
+                    {t({ id: 'eunha.admin.rules.translated_into', defaultMessage: 'Translated into {languages}' }, { languages: rule.translations.map((tr) => tr.language).join(', ') })}
                   </p>
                 )}
               </div>
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Move up"
+                aria-label={t({ id: 'mastodon.admin.rules.move_up', defaultMessage: 'Move up' })}
                 onClick={() => void move(rule.id, 'move_up')}
               >
                 <ArrowUp />
@@ -250,26 +250,26 @@ export default function Rules() {
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Move down"
+                aria-label={t({ id: 'mastodon.admin.rules.move_down', defaultMessage: 'Move down' })}
                 onClick={() => void move(rule.id, 'move_down')}
               >
                 <ArrowDown />
               </Button>
               <Button size="xs" variant="outline" onClick={() => setEditing(rule.id)}>
-                Edit
+                {t({ id: 'status.edit', defaultMessage: 'Edit' })}
               </Button>
               <ConfirmButton
                 size="xs"
-                title="Delete this rule?"
-                description="Reports that cite it keep showing it."
-                confirmLabel="Delete"
+                title={t({ id: 'eunha.admin.rules.delete_this_rule', defaultMessage: 'Delete this rule?' })}
+                description={t({ id: 'eunha.admin.rules.reports_that_cite_it_keep_showing', defaultMessage: 'Reports that cite it keep showing it.' })}
+                confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                 onConfirm={async () => {
                   await deleteRule(token ?? '', rule.id)
                   setRules((list) => (list ?? []).filter((r) => r.id !== rule.id))
-                  toast.success('Rule deleted.')
+                  toast.success(t({ id: 'eunha.admin.rules.rule_deleted', defaultMessage: 'Rule deleted.' }))
                 }}
               >
-                Delete
+                {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
               </ConfirmButton>
             </li>
           ),

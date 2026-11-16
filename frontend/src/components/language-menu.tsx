@@ -16,7 +16,7 @@ import {
 import { LOCALES, useLocale, type Locale } from '@/i18n.tsx'
 
 const messages = defineMessages({
-  language: { id: 'eunha.language.label', defaultMessage: 'Language' },
+  language: { id: 'mastodon.admin.statuses.language', defaultMessage: 'Language' },
   saveFailed: {
     id: 'eunha.language.save_failed',
     defaultMessage: 'Could not save the language to your account',

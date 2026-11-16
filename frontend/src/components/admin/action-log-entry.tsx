@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { type ActionLog } from '../../admin-api.ts'
 import { AdminAvatar, formatDate } from '@/components/admin/admin-common.tsx'
+import { t } from '@/i18n.tsx'
 
 /** Where an entry's target links: a page here, or a post's own address. */
 function TargetLink({ target }: { target: NonNullable<ActionLog['target']> }) {
@@ -51,7 +52,7 @@ export function ActionLogEntry({ log }: { log: ActionLog }) {
         </p>
         {log.moderation_subscription && (
           <p className="text-muted-foreground text-xs">
-            Action suggested by{' '}
+            {t({ id: 'eunha.admin.action_log_entry.suggested_by', defaultMessage: 'Action suggested by' })}{' '}
             {log.moderation_subscription.name ? (
               <Link to={`/admin/moderation_subscriptions/${log.moderation_subscription.id}`}>
                 {log.moderation_subscription.name}

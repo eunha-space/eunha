@@ -25,29 +25,30 @@ import {
 import { Label } from '@/components/ui/label.tsx'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
+import { t } from '@/i18n.tsx'
 
 // Mastodon's `Admin::AccountAction::TYPES`, labelled and explained as its
 // admin form does (`account_action_type_label` and the type hints).
 const TYPES: Record<AccountActionType, { label: string; hint: string }> = {
   none: {
-    label: 'Warning',
-    hint: 'Send a warning to the user, without any other action.',
+    get label() { return t({ id: 'mastodon.admin.instances.back_to_warning', defaultMessage: 'Warning' }) },
+    get hint() { return t({ id: 'eunha.admin.account_action_dialog.send_a_warning_to_the_user', defaultMessage: 'Send a warning to the user, without any other action.' }) },
   },
   disable: {
-    label: 'Freeze',
-    hint: 'Keep the user from using their account, without deleting or hiding what they have posted.',
+    get label() { return t({ id: 'mastodon.admin.accounts.disable', defaultMessage: 'Freeze' }) },
+    get hint() { return t({ id: 'eunha.admin.account_action_dialog.keep_the_user_from_using_their', defaultMessage: 'Keep the user from using their account, without deleting or hiding what they have posted.' }) },
   },
   sensitive: {
     label: 'Force-sensitive',
-    hint: "Mark all of this user's media as sensitive.",
+    get hint() { return t({ id: 'eunha.admin.account_action_dialog.mark_all_of_this_user_s', defaultMessage: 'Mark all of this user\'\'s media as sensitive.' }) },
   },
   silence: {
-    label: 'Limit',
-    hint: 'Keep their posts from anyone who does not follow them, and stop them from posting publicly. Closes every report against this account.',
+    get label() { return t({ id: 'mastodon.admin.accounts.silence', defaultMessage: 'Limit' }) },
+    get hint() { return t({ id: 'eunha.admin.account_action_dialog.keep_their_posts_from_anyone_who', defaultMessage: 'Keep their posts from anyone who does not follow them, and stop them from posting publicly. Closes every report against this account.' }) },
   },
   suspend: {
-    label: 'Suspend',
-    hint: 'Stop all interaction with this account and delete what it has posted. Can be undone within 30 days. Closes every report against this account.',
+    get label() { return t({ id: 'mastodon.admin.accounts.perform_full_suspension', defaultMessage: 'Suspend' }) },
+    get hint() { return t({ id: 'eunha.admin.account_action_dialog.stop_all_interaction_with_this_account', defaultMessage: 'Stop all interaction with this account and delete what it has posted. Can be undone within 30 days. Closes every report against this account.' }) },
   },
 }
 
@@ -150,7 +151,7 @@ export function AccountActionDialog({
         text: local && text.trim() ? text.trim() : undefined,
         send_email_notification: local ? notify : undefined,
       })
-      toast.success(`${TYPES[type].label}: done for @${acct}.`)
+      toast.success(t({ id: 'eunha.admin.account_action_dialog.done_for', defaultMessage: '{label}: done for @{acct}.' }, { label: TYPES[type].label, acct }))
       onOpenChange(false)
       onDone()
     } catch (e) {
@@ -164,20 +165,22 @@ export function AccountActionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Moderate @{acct}</DialogTitle>
+          <DialogTitle>
+            {t({ id: 'eunha.admin.account_action_dialog.title', defaultMessage: 'Moderate @{acct}' }, { acct })}
+          </DialogTitle>
           <DialogDescription>
             {account.suspended
-              ? 'This account is already suspended.'
+              ? t({ id: 'eunha.admin.account_action_dialog.this_account_is_already_suspended', defaultMessage: 'This account is already suspended.' })
               : account.silenced
-                ? 'This account is already limited.'
-                : 'Choose what happens to this account.'}
+                ? t({ id: 'eunha.admin.account_action_dialog.this_account_is_already_limited', defaultMessage: 'This account is already limited.' })
+                : t({ id: 'eunha.admin.account_action_dialog.choose_what_happens_to_this_account', defaultMessage: 'Choose what happens to this account.' })}
           </DialogDescription>
         </DialogHeader>
 
         <RadioGroup
           value={type}
           onValueChange={(v) => setType(v as AccountActionType)}
-          aria-label="Action"
+          aria-label={t({ id: 'mastodon.simple_form.labels.admin_account_action.type', defaultMessage: 'Action' })}
         >
           {types.map((t) => (
             <Label
@@ -197,16 +200,16 @@ export function AccountActionDialog({
           <div className="space-y-3">
             <Label className="text-sm font-normal">
               <Checkbox checked={notify} onCheckedChange={(v) => setNotify(v === true)} />
-              Notify the user by email
+              {t({ id: 'eunha.admin.account_action_dialog.notify_the_user_by_email', defaultMessage: 'Notify the user by email' })}
             </Label>
             {offered.length > 0 && (
               <div className="space-y-1">
-                <Label>Use a warning preset</Label>
+                <Label>{t({ id: 'eunha.admin.account_action_dialog.use_a_warning_preset', defaultMessage: 'Use a warning preset' })}</Label>
                 <ChoiceSelect
-                  label="Warning preset"
+                  label={t({ id: 'eunha.admin.account_action_dialog.warning_preset', defaultMessage: 'Warning preset' })}
                   value={presetId}
                   items={{
-                    [NO_PRESET]: 'None',
+                    [NO_PRESET]: t({ id: 'mastodon.admin.reports.comment.none', defaultMessage: 'None' }),
                     ...Object.fromEntries(offered.map((p) => [p.id, p.title || p.text.slice(0, 40)])),
                   }}
                   onChange={setPresetId}
@@ -219,13 +222,13 @@ export function AccountActionDialog({
               </div>
             )}
             <div className="space-y-1">
-              <Label htmlFor="action-text">Custom warning</Label>
+              <Label htmlFor="action-text">{t({ id: 'eunha.admin.account_action_dialog.custom_warning', defaultMessage: 'Custom warning' })}</Label>
               <Textarea
                 id="action-text"
                 value={text}
                 rows={3}
                 className="resize-y"
-                placeholder="What should the user be told?"
+                placeholder={t({ id: 'eunha.admin.account_action_dialog.what_should_the_user_be_told', defaultMessage: 'What should the user be told?' })}
                 onChange={(e) => setText(e.target.value)}
               />
             </div>
@@ -234,14 +237,14 @@ export function AccountActionDialog({
 
         <DialogFooter>
           <DialogClose render={<Button variant="outline" disabled={sending} />}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </DialogClose>
           <Button
             variant={type === 'none' ? 'default' : 'destructive'}
             disabled={sending || disabled.includes(type)}
             onClick={() => void submit()}
           >
-            {sending ? 'Working…' : TYPES[type].label}
+            {sending ? t({ id: 'eunha.common.working', defaultMessage: 'Working…' }) : TYPES[type].label}
           </Button>
         </DialogFooter>
       </DialogContent>

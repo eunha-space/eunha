@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { GridSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /** What was picked: a custom emoji's shortcode, or a Unicode emoji's text. */
 export type PickedEmoji = { type: 'custom'; shortcode: string } | { type: 'unicode'; native: string }
@@ -78,14 +79,14 @@ function UnicodeEmojiButton({ emoji, onPick }: { emoji: UnicodeEmoji; onPick: ()
 // Mastodon's picker categories after its custom ones, with emoji-mart's names,
 // over Unicode's groups; "people" is emoji-mart's Smileys & People.
 const UNICODE_CATEGORIES: { id: string; title: string; groups: number[]; icon: LucideIcon }[] = [
-  { id: 'people', title: 'People', groups: [0, 1], icon: Smile },
-  { id: 'nature', title: 'Nature', groups: [3], icon: PawPrint },
-  { id: 'foods', title: 'Food & Drink', groups: [4], icon: Apple },
-  { id: 'activity', title: 'Activity', groups: [6], icon: Trophy },
-  { id: 'places', title: 'Travel & Places', groups: [5], icon: Car },
-  { id: 'objects', title: 'Objects', groups: [7], icon: Lightbulb },
-  { id: 'symbols', title: 'Symbols', groups: [8], icon: Hash },
-  { id: 'flags', title: 'Flags', groups: [9], icon: Flag },
+  { id: 'people', get title() { return t({ id: 'explore.suggested_follows', defaultMessage: 'People' }) }, groups: [0, 1], icon: Smile },
+  { id: 'nature', get title() { return t({ id: 'emoji_button.nature', defaultMessage: 'Nature' }) }, groups: [3], icon: PawPrint },
+  { id: 'foods', get title() { return t({ id: 'emoji_button.food', defaultMessage: 'Food & Drink' }) }, groups: [4], icon: Apple },
+  { id: 'activity', get title() { return t({ id: 'account.activity', defaultMessage: 'Activity' }) }, groups: [6], icon: Trophy },
+  { id: 'places', get title() { return t({ id: 'emoji_button.travel', defaultMessage: 'Travel & Places' }) }, groups: [5], icon: Car },
+  { id: 'objects', get title() { return t({ id: 'emoji_button.objects', defaultMessage: 'Objects' }) }, groups: [7], icon: Lightbulb },
+  { id: 'symbols', get title() { return t({ id: 'emoji_button.symbols', defaultMessage: 'Symbols' }) }, groups: [8], icon: Hash },
+  { id: 'flags', get title() { return t({ id: 'emoji_button.flags', defaultMessage: 'Flags' }) }, groups: [9], icon: Flag },
 ]
 
 interface Section {
@@ -103,7 +104,7 @@ interface Section {
 export function EmojiPicker({
   onPick,
   trigger,
-  label = 'Insert emoji',
+  label = t({ id: 'emoji_button.label', defaultMessage: 'Insert emoji' }),
 }: {
   onPick: (emoji: PickedEmoji) => void
   /** The button that opens it; an icon button by default. */
@@ -132,7 +133,7 @@ export function EmojiPicker({
     if (trimmed) {
       const results = searchEmojis(unicode ?? [], custom, trimmed)
       return results.length > 0
-        ? [{ id: 'search', title: 'Search results', icon: Sparkles, emojis: results }]
+        ? [{ id: 'search', title: t({ id: 'emoji_button.search_results', defaultMessage: 'Search results' }), icon: Sparkles, emojis: results }]
         : []
     }
     const byNative = new Map((unicode ?? []).map((e) => [e.native, e]))
@@ -153,13 +154,13 @@ export function EmojiPicker({
       .sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)))
       .map(([category, list]) => ({
         id: `custom-${category}`,
-        title: category || 'Custom',
+        title: category || t({ id: 'emoji_button.custom', defaultMessage: 'Custom' }),
         icon: Sparkles,
         emojis: list.map((emoji) => ({ type: 'custom', emoji }) as const),
       }))
     return [
       ...(frequent.length > 0
-        ? [{ id: 'recent', title: 'Frequently used', icon: Clock, emojis: frequent }]
+        ? [{ id: 'recent', title: t({ id: 'emoji_button.recent', defaultMessage: 'Frequently used' }), icon: Clock, emojis: frequent }]
         : []),
       ...customSections,
       ...UNICODE_CATEGORIES.map((c) => ({
@@ -205,7 +206,7 @@ export function EmojiPicker({
       />
       <PopoverContent align="start" className="w-80 gap-2">
         {!searching && sections.length > 1 && (
-          <nav aria-label="Emoji categories" className="flex flex-wrap gap-0.5">
+          <nav aria-label={t({ id: 'eunha.emoji_picker.emoji_categories', defaultMessage: 'Emoji categories' })} className="flex flex-wrap gap-0.5">
             {sections.map((s) => (
               <Button
                 key={s.id}
@@ -229,8 +230,8 @@ export function EmojiPicker({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search..."
-          aria-label="Search emoji"
+          placeholder={t({ id: 'emoji_button.search', defaultMessage: 'Search...' })}
+          aria-label={t({ id: 'eunha.emoji_picker.search_emoji', defaultMessage: 'Search emoji' })}
           className="h-8"
         />
         <div ref={listRef} className="max-h-64 space-y-2 overflow-y-auto">
@@ -259,7 +260,7 @@ export function EmojiPicker({
             </section>
           ))}
           {searching && sections.length === 0 && (
-            <p className="text-muted-foreground text-sm">No matching emojis found</p>
+            <p className="text-muted-foreground text-sm">{t({ id: 'emoji_button.not_found', defaultMessage: 'No matching emojis found' })}</p>
           )}
           {!searching && !unicode && (
             <GridSkeleton count={32} />

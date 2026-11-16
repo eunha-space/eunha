@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 // Mastodon's `CustomEmoji::SHORTCODE_RE_FRAGMENT`, anchored.
 const SHORTCODE = /^[a-zA-Z0-9_]{2,}$/
@@ -56,8 +57,8 @@ function EmojiRow({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="truncate font-mono text-sm">:{emoji.shortcode}:</div>
         <Input
-          aria-label={`Category for ${emoji.shortcode}`}
-          placeholder="No category"
+          aria-label={t({ id: 'eunha.admin.custom_emojis.category_for', defaultMessage: 'Category for {shortcode}' }, { shortcode: emoji.shortcode })}
+          placeholder={t({ id: 'eunha.admin.custom_emojis.no_category', defaultMessage: 'No category' })}
           value={category}
           disabled={busy}
           className="h-7 max-w-48 text-xs"
@@ -76,7 +77,7 @@ function EmojiRow({
           checked={!emoji.disabled}
           onCheckedChange={(on) => void save({ disabled: !on })}
         />
-        Enabled
+        {t({ id: 'mastodon.admin.custom_emojis.enabled', defaultMessage: 'Enabled' })}
       </Label>
       <Label className="text-sm font-normal">
         <Switch
@@ -85,20 +86,20 @@ function EmojiRow({
           checked={emoji.visible_in_picker}
           onCheckedChange={(on) => void save({ visible_in_picker: on })}
         />
-        In picker
+        {t({ id: 'eunha.admin.custom_emojis.in_picker', defaultMessage: 'In picker' })}
       </Label>
       <ConfirmButton
         size="xs"
-        title={`Delete :${emoji.shortcode}:?`}
-        description="Posts that use it show the shortcode as text instead."
-        confirmLabel="Delete"
+        title={t({ id: 'eunha.admin.custom_emojis.delete', defaultMessage: 'Delete :{shortcode}:?' }, { shortcode: emoji.shortcode })}
+        description={t({ id: 'eunha.admin.custom_emojis.posts_that_use_it_show_the', defaultMessage: 'Posts that use it show the shortcode as text instead.' })}
+        confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
         onConfirm={async () => {
           await deleteCustomEmoji(token, emoji.id)
           onDeleted(emoji.id)
-          toast.success(`Deleted :${emoji.shortcode}:.`)
+          toast.success(t({ id: 'eunha.admin.custom_emojis.deleted', defaultMessage: 'Deleted :{shortcode}:.' }, { shortcode: emoji.shortcode }))
         }}
       >
-        Delete
+        {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
       </ConfirmButton>
     </div>
   )
@@ -131,7 +132,7 @@ export default function CustomEmojis() {
     e.preventDefault()
     if (!token || !file) return
     if (!SHORTCODE.test(shortcode)) {
-      toast.error('Shortcodes are at least two letters, digits or underscores.')
+      toast.error(t({ id: 'eunha.admin.custom_emojis.shortcodes_are_at_least_two_letters', defaultMessage: 'Shortcodes are at least two letters, digits or underscores.' }))
       return
     }
     setUploading(true)
@@ -145,7 +146,7 @@ export default function CustomEmojis() {
       setShortcode('')
       setFile(null)
       setFileKey((k) => k + 1)
-      toast.success(`Added :${emoji.shortcode}:.`)
+      toast.success(t({ id: 'eunha.admin.custom_emojis.added', defaultMessage: 'Added :{shortcode}:.' }, { shortcode: emoji.shortcode }))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -161,19 +162,19 @@ export default function CustomEmojis() {
   )
 
   return (
-    <AdminLayout title="Custom emoji" permission="manage_custom_emojis">
+    <AdminLayout title={t({ id: 'eunha.admin.custom_emojis.custom_emoji', defaultMessage: 'Custom emoji' })} permission="manage_custom_emojis">
       <form onSubmit={upload} className="mb-4 space-y-2 rounded-lg border p-3">
-        <h2 className="text-sm font-semibold">Upload</h2>
+        <h2 className="text-sm font-semibold">{t({ id: 'mastodon.admin.custom_emojis.upload', defaultMessage: 'Upload' })}</h2>
         <div className="grid gap-2 sm:grid-cols-2">
           <Input
-            aria-label="Shortcode"
+            aria-label={t({ id: 'mastodon.admin.custom_emojis.shortcode', defaultMessage: 'Shortcode' })}
             placeholder="shortcode"
             value={shortcode}
             onChange={(e) => setShortcode(e.target.value.replace(/:/g, ''))}
           />
           <Input
-            aria-label="Category"
-            placeholder="Category (optional)"
+            aria-label={t({ id: 'mastodon.admin.reports.category', defaultMessage: 'Category' })}
+            placeholder={t({ id: 'eunha.admin.custom_emojis.category_optional', defaultMessage: 'Category (optional)' })}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           />
@@ -181,19 +182,19 @@ export default function CustomEmojis() {
         <Input
           key={fileKey}
           type="file"
-          aria-label="Image"
+          aria-label={t({ id: 'eunha.admin.custom_emojis.image', defaultMessage: 'Image' })}
           accept="image/png,image/gif,image/webp"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
-        <p className="text-muted-foreground text-xs">PNG, GIF or WebP, up to 256 KB.</p>
+        <p className="text-muted-foreground text-xs">{t({ id: 'eunha.admin.custom_emojis.png_gif_or_webp_up_to', defaultMessage: 'PNG, GIF or WebP, up to 256 KB.' })}</p>
         <Button type="submit" disabled={uploading || !file || !shortcode}>
-          {uploading ? 'Uploading…' : 'Upload'}
+          {uploading ? t({ id: 'eunha.common.uploading', defaultMessage: 'Uploading…' }) : t({ id: 'mastodon.admin.custom_emojis.upload', defaultMessage: 'Upload' })}
         </Button>
       </form>
 
       <Input
-        aria-label="Filter emoji"
-        placeholder="Filter by shortcode or category"
+        aria-label={t({ id: 'eunha.admin.custom_emojis.filter_emoji', defaultMessage: 'Filter emoji' })}
+        placeholder={t({ id: 'eunha.admin.custom_emojis.filter_by_shortcode_or_category', defaultMessage: 'Filter by shortcode or category' })}
         className="mb-3"
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
@@ -216,7 +217,7 @@ export default function CustomEmojis() {
       </div>
       {shown?.length === 0 && (
         <p className="text-muted-foreground text-sm">
-          {filter ? 'No emoji match.' : 'No custom emoji yet.'}
+          {filter ? t({ id: 'eunha.admin.custom_emojis.no_emoji_match', defaultMessage: 'No emoji match.' }) : t({ id: 'eunha.admin.custom_emojis.no_custom_emoji_yet', defaultMessage: 'No custom emoji yet.' })}
         </p>
       )}
     </AdminLayout>

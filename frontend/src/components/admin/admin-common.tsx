@@ -33,11 +33,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
 export function formatDate(value: string | null | undefined): string {
   if (!value) return ''
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(currentLocale())
 }
 
 /**
@@ -93,15 +94,15 @@ export function AdminAccountLink({
 /** What has been done to an account, as Mastodon's account list labels it. */
 export function AccountStateBadges({ account }: { account: AdminAccount }) {
   const badges: { label: string; destructive?: boolean }[] = []
-  if (account.suspended) badges.push({ label: 'Suspended', destructive: true })
+  if (account.suspended) badges.push({ label: t({ id: 'about.domain_blocks.suspended.title', defaultMessage: 'Suspended' }), destructive: true })
   else if (account.account.suspended || (account.domain === null && account.approved === null)) {
-    badges.push({ label: 'Deleted', destructive: true })
+    badges.push({ label: t({ id: 'mastodon.admin.accounts.deleted', defaultMessage: 'Deleted' }), destructive: true })
   }
-  if (account.disabled) badges.push({ label: 'Frozen', destructive: true })
-  if (account.silenced) badges.push({ label: 'Limited', destructive: true })
-  if (account.sensitized) badges.push({ label: 'Sensitive' })
-  if (account.domain === null && account.approved === false) badges.push({ label: 'Pending' })
-  if (account.domain === null && account.confirmed === false) badges.push({ label: 'Unconfirmed' })
+  if (account.disabled) badges.push({ label: t({ id: 'mastodon.admin.accounts.disabled', defaultMessage: 'Frozen' }), destructive: true })
+  if (account.silenced) badges.push({ label: t({ id: 'about.domain_blocks.silenced.title', defaultMessage: 'Limited' }), destructive: true })
+  if (account.sensitized) badges.push({ label: t({ id: 'collections.sensitive', defaultMessage: 'Sensitive' }) })
+  if (account.domain === null && account.approved === false) badges.push({ label: t({ id: 'account.pending', defaultMessage: 'Pending' }) })
+  if (account.domain === null && account.confirmed === false) badges.push({ label: t({ id: 'mastodon.imports.states.unconfirmed', defaultMessage: 'Unconfirmed' }) })
   if (account.role && account.role.name && account.role.id !== '-99') {
     badges.push({ label: account.role.name })
   }
@@ -168,7 +169,7 @@ export function ConfirmButton({
             <AlertDialogDescription>{description}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</AlertDialogCancel>
             <AlertDialogAction
               variant={destructive ? 'destructive' : 'default'}
               disabled={busy}
@@ -211,7 +212,9 @@ export function AdminStatus({ status }: { status: Status }) {
         </span>
       </div>
       {s.spoiler_text && (
-        <p className="text-sm font-medium">CW: {s.spoiler_text}</p>
+        <p className="text-sm font-medium">
+          {t({ id: 'eunha.admin.admin_common.content_warning', defaultMessage: 'CW: {text}' }, { text: s.spoiler_text })}
+        </p>
       )}
       <div
         className="rich-text text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
@@ -222,7 +225,7 @@ export function AdminStatus({ status }: { status: Status }) {
           {s.media_attachments.map((m) =>
             m.preview_url && m.type === 'image' ? (
               <Button key={m.id} variant="ghost" className="size-20 overflow-hidden rounded p-0"
-                aria-label={m.description ? `View image: ${m.description}` : 'View image attachment'}
+                aria-label={m.description ? t({ id: 'eunha.admin.admin_common.view_image', defaultMessage: 'View image: {description}' }, { description: m.description }) : t({ id: 'eunha.admin.admin_common.view_image_attachment', defaultMessage: 'View image attachment' })}
                 onClick={event => {
                   const index = images.findIndex(image => image.id === m.id)
                   if (index < 0) return

@@ -25,23 +25,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
 // Mastodon's dashboard, in its order: the five counters, then the dimensions.
 const MEASURES: { key: string; label: string; href?: string }[] = [
-  { key: 'new_users', label: 'New users' },
-  { key: 'active_users', label: 'Active users' },
-  { key: 'interactions', label: 'Interactions' },
-  { key: 'opened_reports', label: 'Reports opened', href: '/admin/reports' },
-  { key: 'resolved_reports', label: 'Reports resolved', href: '/admin/reports?resolved=true' },
+  { key: 'new_users', get label() { return t({ id: 'admin.dashboard.retention.cohort_size', defaultMessage: 'New users' }) } },
+  { key: 'active_users', get label() { return t({ id: 'server_banner.active_users_title', defaultMessage: 'Active users' }) } },
+  { key: 'interactions', get label() { return t({ id: 'eunha.admin.dashboard.interactions', defaultMessage: 'Interactions' }) } },
+  { key: 'opened_reports', get label() { return t({ id: 'eunha.admin.dashboard.reports_opened', defaultMessage: 'Reports opened' }) }, href: '/admin/reports' },
+  { key: 'resolved_reports', get label() { return t({ id: 'eunha.admin.dashboard.reports_resolved', defaultMessage: 'Reports resolved' }) }, href: '/admin/reports?resolved=true' },
 ]
 
 /** `server` marks what a hosted instance's administrators are not shown. */
 const DIMENSIONS: { key: string; label: string; server?: true }[] = [
-  { key: 'sources', label: 'Sign-up sources' },
-  { key: 'languages', label: 'Top active languages' },
-  { key: 'servers', label: 'Top active servers' },
-  { key: 'software_versions', label: 'Software', server: true },
-  { key: 'space_usage', label: 'Space usage', server: true },
+  { key: 'sources', get label() { return t({ id: 'mastodon.admin.dashboard.sources', defaultMessage: 'Sign-up sources' }) } },
+  { key: 'languages', get label() { return t({ id: 'mastodon.admin.dashboard.top_languages', defaultMessage: 'Top active languages' }) } },
+  { key: 'servers', get label() { return t({ id: 'mastodon.admin.dashboard.top_servers', defaultMessage: 'Top active servers' }) } },
+  { key: 'software_versions', get label() { return t({ id: 'mastodon.admin.dashboard.software', defaultMessage: 'Software' }) }, server: true },
+  { key: 'space_usage', get label() { return t({ id: 'mastodon.admin.dashboard.space', defaultMessage: 'Space usage' }) }, server: true },
 ]
 
 const DAY = 24 * 60 * 60 * 1000
@@ -68,7 +69,7 @@ function Sparkline({ data, label }: { data: Measure['data']; label: string }) {
       preserveAspectRatio="none"
       className="text-primary h-8 w-full"
       role="img"
-      aria-label={`${label} per day`}
+      aria-label={t({ id: 'eunha.admin.dashboard.per_day', defaultMessage: '{label} per day' }, { label })}
     >
       <polyline
         points={points.join(' ')}
@@ -89,7 +90,7 @@ function Sparkline({ data, label }: { data: Measure['data']; label: string }) {
           fill="transparent"
         >
           <title>
-            {new Date(d.date).toLocaleDateString()}: {d.value}
+            {new Date(d.date).toLocaleDateString(currentLocale())}: {d.value}
           </title>
         </rect>
       ))}
@@ -163,7 +164,7 @@ function DimensionCard({
       <CardContent className="space-y-2 px-3">
         <h2 className="text-sm font-semibold">{label}</h2>
         {loading && <LinesSkeleton count={4} />}
-        {!loading && rows.length === 0 && <p className="text-muted-foreground text-xs">No data</p>}
+        {!loading && rows.length === 0 && <p className="text-muted-foreground text-xs">{t({ id: 'eunha.admin.dashboard.no_data', defaultMessage: 'No data' })}</p>}
         <ul className="space-y-1.5">
           {rows.map((r) => (
             <li key={r.key} className="space-y-0.5" title={`${r.human_key}: ${r.human_value ?? r.value}`}>
@@ -194,12 +195,12 @@ function RetentionTable({ cohorts }: { cohorts: Cohort[] }) {
   return (
     <Card className="py-3">
       <CardContent className="space-y-2 px-3">
-        <h2 className="text-sm font-semibold">User retention</h2>
+        <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.dashboard.user_retention', defaultMessage: 'User retention' })}</h2>
         <Table className="text-xs tabular-nums">
           <TableHeader>
             <TableRow>
-              <TableHead>Sign-up month</TableHead>
-              <TableHead className="text-right">Users</TableHead>
+              <TableHead>{t({ id: 'admin.dashboard.retention.cohort', defaultMessage: 'Sign-up month' })}</TableHead>
+              <TableHead className="text-right">{t({ id: 'eunha.admin.dashboard.users', defaultMessage: 'Users' })}</TableHead>
               {Array.from({ length: width }, (_, i) => (
                 <TableHead key={i} className="text-right">
                   {i}
@@ -211,7 +212,7 @@ function RetentionTable({ cohorts }: { cohorts: Cohort[] }) {
             {cohorts.map((c) => (
               <TableRow key={c.period}>
                 <TableCell>
-                  {new Date(c.period).toLocaleDateString(undefined, {
+                  {new Date(c.period).toLocaleDateString(currentLocale(), {
                     year: 'numeric',
                     month: 'short',
                   })}
@@ -289,25 +290,25 @@ export default function Dashboard() {
       .then((d) => {
         const rows: { label: string; count: string; href: string; permission: Permission }[] = [
           {
-            label: 'Pending reports',
+            label: t({ id: 'eunha.admin.dashboard.pending_reports', defaultMessage: 'Pending reports' }),
             count: String(d.pending_reports_count),
             href: '/admin/reports',
             permission: 'manage_reports',
           },
           {
-            label: 'Pending users',
+            label: t({ id: 'eunha.admin.dashboard.pending_users', defaultMessage: 'Pending users' }),
             count: String(d.pending_users_count),
             href: '/admin/accounts?status=pending',
             permission: 'manage_users',
           },
           {
-            label: 'Pending hashtags',
+            label: t({ id: 'eunha.admin.dashboard.pending_hashtags', defaultMessage: 'Pending hashtags' }),
             count: String(d.pending_tags_count),
             href: '/admin/trends/tags',
             permission: 'manage_taxonomies',
           },
           {
-            label: 'Pending appeals',
+            label: t({ id: 'eunha.admin.dashboard.pending_appeals', defaultMessage: 'Pending appeals' }),
             count: String(d.pending_appeals_count),
             href: '/admin/disputes/appeals',
             permission: 'manage_appeals',
@@ -323,7 +324,7 @@ export default function Dashboard() {
     list.find((x) => x.key === key)
 
   return (
-    <AdminLayout title="Dashboard" permission="view_dashboard">
+    <AdminLayout title={t({ id: 'mastodon.admin.dashboard.title', defaultMessage: 'Dashboard' })} permission="view_dashboard">
       <AdminError error={error} />
       <div className="space-y-4">
         {checks.length > 0 && (
@@ -362,7 +363,7 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-        <p className="text-muted-foreground text-xs">Last 30 days, against the 30 before.</p>
+        <p className="text-muted-foreground text-xs">{t({ id: 'eunha.admin.dashboard.last_30_days_against_the_30', defaultMessage: 'Last 30 days, against the 30 before.' })}</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {MEASURES.map((m) => (
             <MeasureTile

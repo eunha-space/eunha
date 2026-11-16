@@ -24,25 +24,26 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { TagsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 export const TREND_TABS = [
-  { to: '/admin/trends/links', label: 'Links', end: true },
-  { to: '/admin/trends/links/preview_card_providers', label: 'Publishers' },
-  { to: '/admin/trends/statuses', label: 'Posts' },
-  { to: '/admin/trends/tags', label: 'Hashtags' },
+  { to: '/admin/trends/links', get label() { return t({ id: 'eunha.admin.trends.links', defaultMessage: 'Links' }) }, end: true },
+  { to: '/admin/trends/links/preview_card_providers', get label() { return t({ id: 'mastodon.admin.trends.preview_card_providers.title', defaultMessage: 'Publishers' }) } },
+  { to: '/admin/trends/statuses', get label() { return t({ id: 'account.posts', defaultMessage: 'Posts' }) } },
+  { to: '/admin/trends/tags', get label() { return t({ id: 'search_results.hashtags', defaultMessage: 'Hashtags' }) } },
 ]
 
 type Item = AdminTag | TrendLink | TrendStatus | Publisher
 
 const KINDS: Record<string, { kind: TrendKind; title: string; open: (t: string) => AsyncIterable<Item[]> }> = {
-  '/admin/trends/links': { kind: 'links', title: 'Trending links', open: listTrendingLinks },
+  '/admin/trends/links': { kind: 'links', get title() { return t({ id: 'mastodon.admin.trends.links.title', defaultMessage: 'Trending links' }) }, open: listTrendingLinks },
   '/admin/trends/links/preview_card_providers': {
     kind: 'links/publishers',
-    title: 'Publishers',
+    get title() { return t({ id: 'mastodon.admin.trends.preview_card_providers.title', defaultMessage: 'Publishers' }) },
     open: listPublishers,
   },
-  '/admin/trends/statuses': { kind: 'statuses', title: 'Trending posts', open: listTrendingStatuses },
-  '/admin/trends/tags': { kind: 'tags', title: 'Trending hashtags', open: listTrendingTags },
+  '/admin/trends/statuses': { kind: 'statuses', get title() { return t({ id: 'mastodon.admin.accounts.trends.title', defaultMessage: 'Trending posts' }) }, open: listTrendingStatuses },
+  '/admin/trends/tags': { kind: 'tags', get title() { return t({ id: 'mastodon.admin.trends.tags.title', defaultMessage: 'Trending hashtags' }) }, open: listTrendingTags },
 }
 
 function lastWeek(history: History[] | undefined): { uses: number; accounts: number } {
@@ -86,7 +87,7 @@ function Row({
           ? updated
           : ({ ...item, requires_review: false } as Item),
       )
-      toast.success(decision === 'approve' ? 'Allowed to trend.' : 'Kept from trending.')
+      toast.success(decision === 'approve' ? t({ id: 'eunha.admin.trends.allowed_to_trend', defaultMessage: 'Allowed to trend.' }) : t({ id: 'eunha.admin.trends.kept_from_trending', defaultMessage: 'Kept from trending.' }))
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -106,7 +107,7 @@ function Row({
           #{tag.name}
         </Link>
         <p className="text-muted-foreground text-xs">
-          {week.accounts} people, {week.uses} posts this week
+          {t({ id: 'eunha.admin.trends.tag_week', defaultMessage: '{people, plural, one {# person} other {# people}}, {posts, plural, one {# post} other {# posts}} this week' }, { people: week.accounts, posts: week.uses })}
         </p>
       </div>
     )
@@ -123,8 +124,8 @@ function Row({
             {link.title || link.url}
           </a>
           <p className="text-muted-foreground truncate text-xs">
-            {link.provider_name || hostOf(link.url)} · {week.accounts} people shared
-            this week
+            {link.provider_name || hostOf(link.url)} ·{' '}
+            {t({ id: 'eunha.admin.trends.link_week', defaultMessage: '{count, plural, one {# person} other {# people}} shared this week' }, { count: week.accounts })}
           </p>
         </div>
       </div>
@@ -143,15 +144,15 @@ function Row({
     <div className="space-y-2 rounded-lg border p-3">
       {body}
       <div className="flex flex-wrap items-center gap-2">
-        {requiresReview && <Badge variant="secondary">Pending review</Badge>}
-        {trendable === true && !requiresReview && <Badge variant="outline">Allowed</Badge>}
-        {trendable === false && !requiresReview && <Badge variant="outline">Not allowed</Badge>}
+        {requiresReview && <Badge variant="secondary">{t({ id: 'mastodon.admin.trends.pending_review', defaultMessage: 'Pending review' })}</Badge>}
+        {trendable === true && !requiresReview && <Badge variant="outline">{t({ id: 'mastodon.admin.accounts.trends.allowed', defaultMessage: 'Allowed' })}</Badge>}
+        {trendable === false && !requiresReview && <Badge variant="outline">{t({ id: 'eunha.admin.trends.not_allowed', defaultMessage: 'Not allowed' })}</Badge>}
         <span className="flex-1" />
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void review('approve')}>
-          Allow
+          {t({ id: 'mastodon.admin.trends.allow', defaultMessage: 'Allow' })}
         </Button>
         <Button size="xs" variant="outline" disabled={busy} onClick={() => void review('reject')}>
-          Disallow
+          {t({ id: 'mastodon.admin.trends.disallow', defaultMessage: 'Disallow' })}
         </Button>
       </div>
     </div>
@@ -191,7 +192,7 @@ export default function Trends() {
           ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">Nothing is trending right now.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.trends.nothing_is_trending_right_now', defaultMessage: 'Nothing is trending right now.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

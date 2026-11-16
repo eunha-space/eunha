@@ -3,6 +3,7 @@
 import { restClient } from './masto.ts'
 import { disableBrowserPush } from './lib/browser-push.ts'
 import { clearMe, loadMe, type MeAccount } from './me.ts'
+import { t } from '@/i18n.tsx'
 
 // `admin:read` and `admin:write` are what the moderation pages call the admin
 // API with. Every account asks for them, as Mastodon's own web client does: the
@@ -230,7 +231,7 @@ export async function completeLogin(code: string): Promise<void> {
   if (creds.client_secret) body.set('client_secret', creds.client_secret)
   if (verifier) body.set('code_verifier', verifier)
   const res = await fetch('/oauth/token', { method: 'POST', body })
-  if (!res.ok) throw new Error(`token exchange failed: ${res.status}`)
+  if (!res.ok) throw new Error(t({ id: 'eunha.auth.token_exchange_failed', defaultMessage: 'token exchange failed: {status}' }, { status: res.status }))
   const token = { accessToken: ((await res.json()) as { access_token: string }).access_token }
   // Verify before replacing the active session, so a failed login preserves it.
   const me = await restClient(token.accessToken).v1.accounts.verifyCredentials()

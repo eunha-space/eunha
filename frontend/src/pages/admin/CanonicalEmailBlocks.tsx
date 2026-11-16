@@ -18,8 +18,9 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { BLOCK_TABS } from './IpBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-const MODES = { email: 'By email address', hash: 'By canonical hash' }
+const MODES = { get email() { return t({ id: 'eunha.admin.canonical_email_blocks.by_email_address', defaultMessage: 'By email address' }) }, get hash() { return t({ id: 'eunha.admin.canonical_email_blocks.by_canonical_hash', defaultMessage: 'By canonical hash' }) } }
 
 /**
  * Single addresses kept from signing up again — Mastodon blocks these
@@ -46,8 +47,8 @@ export default function CanonicalEmailBlocks() {
       const matches = await testCanonicalEmailBlock(token, testEmail.trim())
       setTestResult(
         matches.length > 0
-          ? `Blocked: matches ${matches.map((m) => m.canonical_email_hash.slice(0, 12)).join(', ')}…`
-          : 'Not blocked.',
+          ? t({ id: 'eunha.admin.canonical_email_blocks.blocked_matches', defaultMessage: 'Blocked: matches {hashes}…' }, { hashes: matches.map((m) => m.canonical_email_hash.slice(0, 12)).join(', ') })
+          : t({ id: 'eunha.admin.canonical_email_blocks.not_blocked', defaultMessage: 'Not blocked.' }),
       )
     } catch (err) {
       toast.error(errorMessage(err))
@@ -65,7 +66,7 @@ export default function CanonicalEmailBlocks() {
       )
       feed.mutate((items) => [block, ...items])
       setValue('')
-      toast.success('Address blocked.')
+      toast.success(t({ id: 'eunha.admin.canonical_email_blocks.address_blocked', defaultMessage: 'Address blocked.' }))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -74,14 +75,14 @@ export default function CanonicalEmailBlocks() {
   }
 
   return (
-    <AdminLayout title="Email addresses" permission="manage_blocks" sub={BLOCK_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.canonical_email_blocks.email_addresses', defaultMessage: 'Email addresses' })} permission="manage_blocks" sub={BLOCK_TABS}>
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <form onSubmit={test} className="space-y-2 rounded-lg border p-3">
-          <h2 className="text-sm font-semibold">Test an address</h2>
+          <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.canonical_email_blocks.test_an_address', defaultMessage: 'Test an address' })}</h2>
           <div className="flex gap-2">
             <Input
               type="email"
-              aria-label="Address to test"
+              aria-label={t({ id: 'eunha.admin.canonical_email_blocks.address_to_test', defaultMessage: 'Address to test' })}
               placeholder="someone@example.com"
               value={testEmail}
               onChange={(e) => {
@@ -90,23 +91,23 @@ export default function CanonicalEmailBlocks() {
               }}
             />
             <Button type="submit" variant="outline" disabled={!testEmail.trim()}>
-              Test
+              {t({ id: 'eunha.admin.canonical_email_blocks.test', defaultMessage: 'Test' })}
             </Button>
           </div>
           {testResult && <p className="text-sm">{testResult}</p>}
         </form>
         <form onSubmit={add} className="space-y-2 rounded-lg border p-3">
-          <h2 className="text-sm font-semibold">Block an address</h2>
-          <ChoiceSelect label="Block by" value={mode} items={MODES} onChange={setMode} />
+          <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.canonical_email_blocks.block_an_address', defaultMessage: 'Block an address' })}</h2>
+          <ChoiceSelect label={t({ id: 'eunha.admin.canonical_email_blocks.block_by', defaultMessage: 'Block by' })} value={mode} items={MODES} onChange={setMode} />
           <div className="flex gap-2">
             <Input
-              aria-label={mode === 'email' ? 'Address to block' : 'Hash to block'}
-              placeholder={mode === 'email' ? 'someone@example.com' : 'SHA-256 hex digest'}
+              aria-label={mode === 'email' ? t({ id: 'eunha.admin.canonical_email_blocks.address_to_block', defaultMessage: 'Address to block' }) : t({ id: 'eunha.admin.canonical_email_blocks.hash_to_block', defaultMessage: 'Hash to block' })}
+              placeholder={mode === 'email' ? 'someone@example.com' : t({ id: 'eunha.admin.canonical_email_blocks.sha_256_hex_digest', defaultMessage: 'SHA-256 hex digest' })}
               value={value}
               onChange={(e) => setValue(e.target.value)}
             />
             <Button type="submit" disabled={saving || !value.trim()}>
-              Block
+              {t({ id: 'account.block_short', defaultMessage: 'Block' })}
             </Button>
           </div>
         </form>
@@ -123,22 +124,22 @@ export default function CanonicalEmailBlocks() {
             </span>
             <ConfirmButton
               size="xs"
-              title="Unblock this address?"
-              description="Whoever owns it can sign up again."
-              confirmLabel="Unblock"
+              title={t({ id: 'eunha.admin.canonical_email_blocks.unblock_this_address', defaultMessage: 'Unblock this address?' })}
+              description={t({ id: 'eunha.admin.canonical_email_blocks.whoever_owns_it_can_sign_up', defaultMessage: 'Whoever owns it can sign up again.' })}
+              confirmLabel={t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
               onConfirm={async () => {
                 await deleteCanonicalEmailBlock(token ?? '', b.id)
                 feed.mutate((items) => items.filter((x) => x.id !== b.id))
-                toast.success('Address unblocked.')
+                toast.success(t({ id: 'eunha.admin.canonical_email_blocks.address_unblocked', defaultMessage: 'Address unblocked.' }))
               }}
             >
-              Unblock
+              {t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
             </ConfirmButton>
           </div>
         ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No addresses are blocked.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.canonical_email_blocks.no_addresses_are_blocked', defaultMessage: 'No addresses are blocked.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

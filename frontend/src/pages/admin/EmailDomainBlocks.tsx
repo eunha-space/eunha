@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { BLOCK_TABS } from './IpBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /** Sign-up attempts in the last week, from the block's daily history. */
 function attempts(block: EmailDomainBlock): number {
@@ -53,7 +54,7 @@ export default function EmailDomainBlocks() {
       feed.mutate((items) => [block, ...items])
       setDomain('')
       setWithApproval(false)
-      toast.success(`Blocked sign-ups from ${block.domain}.`)
+      toast.success(t({ id: 'eunha.admin.email_domain_blocks.blocked_sign_ups_from', defaultMessage: 'Blocked sign-ups from {domain}.' }, { domain: block.domain }))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -62,17 +63,17 @@ export default function EmailDomainBlocks() {
   }
 
   return (
-    <AdminLayout title="Email domains" permission="manage_blocks" sub={BLOCK_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.email_domain_blocks.email_domains', defaultMessage: 'Email domains' })} permission="manage_blocks" sub={BLOCK_TABS}>
       <form onSubmit={add} className="mb-4 space-y-2 rounded-lg border p-3">
         <div className="flex gap-2">
           <Input
-            aria-label="Email domain"
+            aria-label={t({ id: 'eunha.admin.email_domain_blocks.email_domain', defaultMessage: 'Email domain' })}
             placeholder="example.com"
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
           />
           <Button type="submit" disabled={saving || !domain.trim()}>
-            Block
+            {t({ id: 'account.block_short', defaultMessage: 'Block' })}
           </Button>
         </div>
         <Label className="text-sm font-normal">
@@ -80,7 +81,7 @@ export default function EmailDomainBlocks() {
             checked={withApproval}
             onCheckedChange={(v) => setWithApproval(v === true)}
           />
-          Allow sign-ups, but hold them for approval
+          {t({ id: 'eunha.admin.email_domain_blocks.allow_sign_ups_but_hold_them', defaultMessage: 'Allow sign-ups, but hold them for approval' })}
         </Label>
       </form>
       <AdminError error={feed.error} />
@@ -94,31 +95,31 @@ export default function EmailDomainBlocks() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="truncate text-sm font-medium">{b.domain}</span>
                 <Badge variant={b.allow_with_approval ? 'secondary' : 'destructive'}>
-                  {b.allow_with_approval ? 'Needs approval' : 'Blocked'}
+                  {b.allow_with_approval ? t({ id: 'eunha.admin.email_domain_blocks.needs_approval', defaultMessage: 'Needs approval' }) : t({ id: 'account.blocked', defaultMessage: 'Blocked' })}
                 </Badge>
               </div>
               <div className="text-muted-foreground text-xs">
-                {attempts(b)} sign-up attempts this week · {formatDate(b.created_at)}
+                {t({ id: 'eunha.admin.email_domain_blocks.attempts', defaultMessage: '{count, plural, one {# sign-up attempt} other {# sign-up attempts}} this week' }, { count: attempts(b) })} · {formatDate(b.created_at)}
               </div>
             </div>
             <ConfirmButton
               size="xs"
-              title={`Unblock ${b.domain}?`}
-              description="People can sign up with addresses at this domain again."
-              confirmLabel="Unblock"
+              title={t({ id: 'eunha.admin.email_domain_blocks.unblock', defaultMessage: 'Unblock {domain}?' }, { domain: b.domain })}
+              description={t({ id: 'eunha.admin.email_domain_blocks.people_can_sign_up_with_addresses', defaultMessage: 'People can sign up with addresses at this domain again.' })}
+              confirmLabel={t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
               onConfirm={async () => {
                 await deleteEmailDomainBlock(token ?? '', b.id)
                 feed.mutate((items) => items.filter((x) => x.id !== b.id))
-                toast.success(`Unblocked ${b.domain}.`)
+                toast.success(t({ id: 'eunha.admin.email_domain_blocks.unblocked', defaultMessage: 'Unblocked {domain}.' }, { domain: b.domain }))
               }}
             >
-              Unblock
+              {t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
             </ConfirmButton>
           </div>
         ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No email domains are blocked.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.email_domain_blocks.no_email_domains_are_blocked', defaultMessage: 'No email domains are blocked.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

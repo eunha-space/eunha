@@ -81,12 +81,14 @@ import { boostItemState, quoteItemState } from '@/lib/statuses.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
 
 import { useTagFollow } from '../hooks/use-tag-follow.ts'
+import { currentLocale, t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 function TagFollowItem({ name, token }: { name: string; token: string }) {
   const { following, disabled, toggle } = useTagFollow(name, token)
   return (
     <DropdownMenuItem disabled={disabled} closeOnClick={false} onClick={toggle}>
-      {following ? 'Unfollow' : 'Follow'} #{name}
+      {following ? t({ id: 'account.unfollow', defaultMessage: 'Unfollow' }) : t({ id: 'account.follow', defaultMessage: 'Follow' })} #{name}
     </DropdownMenuItem>
   )
 }
@@ -109,14 +111,14 @@ function BoostPreferenceItem({ accountId, token }: { accountId: string; token: s
       const relationship = await setFollow(accountId, token, true, { reblogs: !showing })
       setShowing(relationship.showingReblogs)
     } catch {
-      toast.error('Could not update boost preference')
+      toast.error(t({ id: 'eunha.status_card.could_not_update_boost_preference', defaultMessage: 'Could not update boost preference' }))
     } finally {
       setBusy(false)
     }
   }
   return (
     <DropdownMenuItem disabled={busy} closeOnClick={false} onClick={toggle}>
-      <Repeat2 /> {showing ? 'Hide boosts from this account' : 'Show boosts from this account'}
+      <Repeat2 /> {showing ? t({ id: 'eunha.status_card.hide_boosts_from_this_account', defaultMessage: 'Hide boosts from this account' }) : t({ id: 'eunha.status_card.show_boosts_from_this_account', defaultMessage: 'Show boosts from this account' })}
     </DropdownMenuItem>
   )
 }
@@ -125,10 +127,10 @@ const VISIBILITY: Record<
   string,
   { Icon: typeof Globe; label: string }
 > = {
-  public: { Icon: Globe, label: 'Public' },
-  unlisted: { Icon: LockOpen, label: 'Unlisted' },
-  private: { Icon: Lock, label: 'Followers only' },
-  direct: { Icon: AtSign, label: 'Direct message' },
+  public: { Icon: Globe, get label() { return t({ id: 'privacy.public.short', defaultMessage: 'Public' }) } },
+  unlisted: { Icon: LockOpen, get label() { return t({ id: 'collections.visibility_unlisted', defaultMessage: 'Unlisted' }) } },
+  private: { Icon: Lock, get label() { return t({ id: 'mastodon.statuses.quote_policies.followers', defaultMessage: 'Followers only' }) } },
+  direct: { Icon: AtSign, get label() { return t({ id: 'eunha.status_card.direct_message', defaultMessage: 'Direct message' }) } },
 }
 
 function VisibilityIcon({ v }: { v: mastodon.v1.StatusVisibility }) {
@@ -142,11 +144,11 @@ function VisibilityIcon({ v }: { v: mastodon.v1.StatusVisibility }) {
 
 // The language the reader reads, as Mastodon's web client compares it: the
 // interface locale without its region.
-const READER_LANGUAGE = (navigator.language || 'en').split(/[_-]/)[0]
+const readerLanguage = () => currentLocale().split(/[_-]/)[0]!
 
 function languageName(code: string): string {
   try {
-    return new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' }).of(code) ?? code
+    return new Intl.DisplayNames([currentLocale()], { type: 'language' }).of(code) ?? code
   } catch {
     return code
   }
@@ -300,7 +302,7 @@ export function StatusCard({
     !!token &&
     (status.visibility === 'public' || status.visibility === 'unlisted') &&
     status.content.replace(/<[^>]*>/g, '').trim().length > 0 &&
-    (translationLanguages[status.language || 'und'] ?? []).includes(READER_LANGUAGE)
+    (translationLanguages[status.language || 'und'] ?? []).includes(readerLanguage())
 
   const toggleTranslation = async () => {
     if (showTranslation) {
@@ -313,7 +315,7 @@ export function StatusCard({
     }
     setTranslating(true)
     try {
-      setTranslation(await translateStatus(status.id, token, READER_LANGUAGE))
+      setTranslation(await translateStatus(status.id, token, readerLanguage()))
       setShowTranslation(true)
     } catch (e) {
       toast.error(errorMessage(e))
@@ -367,7 +369,7 @@ export function StatusCard({
   }
 
   const onDelete = async () => {
-    if (!window.confirm('Delete this post?')) return
+    if (!window.confirm(t({ id: 'eunha.status_card.delete_this_post', defaultMessage: 'Delete this post?' }))) return
     try {
       await deleteStatus(status.id, token)
       setDeleted(true)
@@ -409,7 +411,7 @@ export function StatusCard({
     setBusy(true)
     try {
       setStatus(await setPin(status.id, token, pinning))
-      toast.success(pinning ? 'Pinned to your profile.' : 'Unpinned.')
+      toast.success(pinning ? t({ id: 'eunha.status_card.pinned_to_your_profile', defaultMessage: 'Pinned to your profile.' }) : t({ id: 'eunha.common.unpinned', defaultMessage: 'Unpinned.' }))
       onPinChange?.()
     } catch (e) {
       toast.error(errorMessage(e))
@@ -439,7 +441,7 @@ export function StatusCard({
   const boostItem = boostItemState(status, token ? getMeId() : null)
   // Mastodon's `isMenuDisabled`: nothing in the menu can be chosen.
   const boostMenuDisabled = boostItem.disabled && quoteItem.disabled
-  const boostMenuLabel = boostMenuDisabled ? 'Boosts and quotes are disabled' : 'Boost or quote'
+  const boostMenuLabel = boostMenuDisabled ? t({ id: 'status.all_disabled', defaultMessage: 'Boosts and quotes are disabled' }) : t({ id: 'status.reblog_or_quote', defaultMessage: 'Boost or quote' })
 
   if (deleted) return null
 
@@ -453,9 +455,11 @@ export function StatusCard({
     return (
       <Card>
         <CardContent className="text-muted-foreground flex items-center justify-between gap-3 py-3 text-sm">
-          <span>Filtered: {warnedBy.map((r) => r.filter.title).join(', ')}</span>
+          <span>
+            {t({ id: 'eunha.status_card.filtered', defaultMessage: 'Filtered: {filters}' }, { filters: warnedBy.map((r) => r.filter.title).join(', ') })}
+          </span>
           <Button variant="outline" size="sm" onClick={() => setShowFiltered(true)}>
-            Show anyway
+            {t({ id: 'content_warning.show', defaultMessage: 'Show anyway' })}
           </Button>
         </CardContent>
       </Card>
@@ -471,13 +475,20 @@ export function StatusCard({
         {boostedBy && (
           <p className="text-muted-foreground flex items-center gap-1 text-xs">
             <Repeat2 className="size-3.5" />
-            <Link
-              to={`/@${boostedBy.acct}`}
-              className="text-muted-foreground font-medium no-underline hover:underline"
-            >
-              <DisplayName account={boostedBy} />
-            </Link>{' '}
-            boosted
+            <FormattedMessage
+              id='status.reblogged_by'
+              defaultMessage='{name} boosted'
+              values={{
+                name: (
+                  <Link
+                    to={`/@${boostedBy.acct}`}
+                    className="text-muted-foreground font-medium no-underline hover:underline"
+                  >
+                    <DisplayName account={boostedBy} />
+                  </Link>
+                ),
+              }}
+            />
           </p>
         )}
         <div className="@container flex items-center gap-2 text-sm">
@@ -514,16 +525,16 @@ export function StatusCard({
               // the story rather than a way to read what changed.
               <Link
                 to={`${threadPath}/history`}
-                title="Show edit history"
+                title={t({ id: 'eunha.status_card.show_edit_history', defaultMessage: 'Show edit history' })}
                 className="text-muted-foreground no-underline hover:underline"
               >
-                (edited)
+                {t({ id: 'eunha.status_card.edited', defaultMessage: '(edited)' })}
               </Link>
             )}
             {hasMenu && (
               <DropdownMenu onOpenChange={onMenuOpenChange}>
                 <DropdownMenuTrigger
-                  aria-label="More"
+                  aria-label={t({ id: 'navigation_bar.more', defaultMessage: 'More' })}
                   className="hover:text-foreground ml-1"
                 >
                   <MoreHorizontal className="size-4" />
@@ -534,7 +545,7 @@ export function StatusCard({
                   )}
                   {token && !!status.tags?.length && (
                     <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>Follow hashtags</DropdownMenuSubTrigger>
+                      <DropdownMenuSubTrigger>{t({ id: 'eunha.status_card.follow_hashtags', defaultMessage: 'Follow hashtags' })}</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent>
                         {status.tags.map(({ name }) => <TagFollowItem key={name} name={name} token={token} />)}
                       </DropdownMenuSubContent>
@@ -551,7 +562,7 @@ export function StatusCard({
                         />
                       }
                     >
-                      <ExternalLink /> Open original page
+                      <ExternalLink /> {t({ id: 'account.open_original_page', defaultMessage: 'Open original page' })}
                     </DropdownMenuItem>
                   )}
                   {canRevokeQuote && (
@@ -559,7 +570,8 @@ export function StatusCard({
                       variant="destructive"
                       onClick={() => setRevoking(true)}
                     >
-                      <Trash2 /> Remove my post from @{status.account.username}’s post
+                      <Trash2 />{' '}
+                      {t({ id: 'status.revoke_quote', defaultMessage: 'Remove my post from @{name}’s post' }, { name: status.account.username })}
                     </DropdownMenuItem>
                   )}
                   {canReport && (
@@ -567,20 +579,20 @@ export function StatusCard({
                       variant="destructive"
                       onClick={() => setReporting(true)}
                     >
-                      <Flag /> Report post
+                      <Flag /> {t({ id: 'eunha.status_card.report_post', defaultMessage: 'Report post' })}
                     </DropdownMenuItem>
                   )}
                   {isOwn && (
                     <>
                       <DropdownMenuItem onClick={togglePin} disabled={busy}>
                         {status.pinned ? <PinOff /> : <Pin />}
-                        {status.pinned ? 'Unpin from profile' : 'Pin to profile'}
+                        {status.pinned ? t({ id: 'status.unpin', defaultMessage: 'Unpin from profile' }) : t({ id: 'eunha.status_card.pin_to_profile', defaultMessage: 'Pin to profile' })}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={startEdit}>
-                        <Pencil /> Edit
+                        <Pencil /> {t({ id: 'status.edit', defaultMessage: 'Edit' })}
                       </DropdownMenuItem>
                       <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                        <Trash2 /> Delete
+                        <Trash2 /> {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                       </DropdownMenuItem>
                     </>
                   )}
@@ -594,7 +606,7 @@ export function StatusCard({
             <Input
               value={editSpoiler}
               onChange={(e) => setEditSpoiler(e.target.value)}
-              placeholder="Content warning (optional)"
+              placeholder={t({ id: 'eunha.status_card.content_warning_optional', defaultMessage: 'Content warning (optional)' })}
             />
             <Textarea
               value={editText}
@@ -605,10 +617,10 @@ export function StatusCard({
             <div className="flex gap-2">
               <PostLanguagePicker value={editLanguage} onChange={setEditLanguage} disabled={saving} />
               <Button size="sm" disabled={saving || !editText.trim()} onClick={saveEdit}>
-                Save
+                {t({ id: 'lists.save', defaultMessage: 'Save' })}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-                Cancel
+                {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
               </Button>
             </div>
           </div>
@@ -624,7 +636,7 @@ export function StatusCard({
                   onClick={() => setExpanded((e) => !e)}
                   className="text-primary ml-2 text-xs font-medium underline"
                 >
-                  {expanded ? 'Show less' : 'Show more'}
+                  {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'content_warning.show_more', defaultMessage: 'Show more' })}
                 </button>
               </AnimateEmoji>
             )}
@@ -646,18 +658,22 @@ export function StatusCard({
                     >
                       <Languages className="size-3.5" />
                       {translating
-                        ? 'Translating…'
+                        ? t({ id: 'eunha.status_card.translating', defaultMessage: 'Translating…' })
                         : showTranslation
-                          ? 'Show original'
-                          : 'Translate'}
+                          ? t({ id: 'status.show_original', defaultMessage: 'Show original' })
+                          : t({ id: 'status.translate', defaultMessage: 'Translate' })}
                     </Button>
                     {shown && (
                       <span>
-                        Translated from{' '}
-                        {languageName(
-                          shown.detected_source_language || status.language || 'und',
-                        )}
-                        {shown.provider ? ` using ${shown.provider}` : ''}
+                        {shown.provider
+                          ? t(
+                              { id: 'status.translated_from_with', defaultMessage: 'Translated from {lang} using {provider}' },
+                              { lang: languageName(shown.detected_source_language || status.language || 'und'), provider: shown.provider },
+                            )
+                          : t(
+                              { id: 'eunha.status_card.translated_from', defaultMessage: 'Translated from {lang}' },
+                              { lang: languageName(shown.detected_source_language || status.language || 'und') },
+                            )}
                       </span>
                     )}
                   </div>
@@ -723,7 +739,7 @@ export function StatusCard({
           <ActionButton
             icon={<Reply />}
             count={status.repliesCount}
-            label="Reply"
+            label={t({ id: 'status.reply', defaultMessage: 'Reply' })}
             onClick={() => (onReply ? onReply(status) : navigate(threadPath))}
           />
           {!token ? (
@@ -733,7 +749,7 @@ export function StatusCard({
               active={status.reblogged ?? false}
               activeClass="text-primary"
               disabled
-              label="Boost"
+              label={t({ id: 'status.reblog', defaultMessage: 'Boost' })}
               onClick={() => {}}
             />
           ) : (
@@ -794,7 +810,7 @@ export function StatusCard({
             active={status.favourited ?? false}
             activeClass="text-yellow-500"
             disabled={busy || !token}
-            label="Favourite"
+            label={t({ id: 'eunha.status_card.favourite', defaultMessage: 'Favourite' })}
             onClick={() => act(() => setFavourite(token, status.id, !status.favourited))}
           />
           <ActionButton
@@ -802,7 +818,7 @@ export function StatusCard({
             active={status.bookmarked ?? false}
             activeClass="text-complement"
             disabled={busy || !token}
-            label="Bookmark"
+            label={t({ id: 'status.bookmark', defaultMessage: 'Bookmark' })}
             onClick={() => act(() => setBookmark(token, status.id, !status.bookmarked))}
           />
         </div>
@@ -814,11 +830,11 @@ export function StatusCard({
         <AlertDialog open={revoking} onOpenChange={setRevoking}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Remove post?</AlertDialogTitle>
-              <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+              <AlertDialogTitle>{t({ id: 'confirmations.revoke_quote.title', defaultMessage: 'Remove post?' })}</AlertDialogTitle>
+              <AlertDialogDescription>{t({ id: 'confirmations.revoke_quote.message', defaultMessage: 'This action cannot be undone.' })}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
                 onClick={() => {
@@ -826,7 +842,7 @@ export function StatusCard({
                   void onRevokeQuote()
                 }}
               >
-                Remove post
+                {t({ id: 'confirmations.revoke_quote.confirm', defaultMessage: 'Remove post' })}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

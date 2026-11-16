@@ -12,14 +12,15 @@ import { Badge } from '@/components/ui/badge.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { TagsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 type Flag = 'usable' | 'trendable' | 'listable'
 
 // Mastodon's admin tag form, one switch per flag.
 const FLAGS: { key: Flag; label: string; hint: string }[] = [
-  { key: 'usable', label: 'Usable', hint: 'Posts can use this hashtag' },
-  { key: 'trendable', label: 'Trendable', hint: 'Can appear in trends' },
-  { key: 'listable', label: 'Listable', hint: 'Can appear in search and suggestions' },
+  { key: 'usable', get label() { return t({ id: 'mastodon.admin.tags.moderation.usable', defaultMessage: 'Usable' }) }, get hint() { return t({ id: 'eunha.admin.tags.posts_can_use_this_hashtag', defaultMessage: 'Posts can use this hashtag' }) } },
+  { key: 'trendable', get label() { return t({ id: 'mastodon.admin.tags.moderation.trendable', defaultMessage: 'Trendable' }) }, get hint() { return t({ id: 'eunha.admin.tags.can_appear_in_trends', defaultMessage: 'Can appear in trends' }) } },
+  { key: 'listable', get label() { return t({ id: 'eunha.admin.tags.listable', defaultMessage: 'Listable' }) }, get hint() { return t({ id: 'eunha.admin.tags.can_appear_in_search_and_suggestions', defaultMessage: 'Can appear in search and suggestions' }) } },
 ]
 
 function TagRow({
@@ -51,8 +52,8 @@ function TagRow({
         <Link to={`/tags/${tag.name}`} className="min-w-0 flex-1 truncate font-medium">
           #{tag.name}
         </Link>
-        {tag.requires_review && <Badge variant="secondary">Pending review</Badge>}
-        <span className="text-muted-foreground text-xs">{week} posts this week</span>
+        {tag.requires_review && <Badge variant="secondary">{t({ id: 'mastodon.admin.tags.moderation.pending_review', defaultMessage: 'Pending review' })}</Badge>}
+        <span className="text-muted-foreground text-xs">{t({ id: 'eunha.explore.posts_this_week', defaultMessage: '{count, plural, one {# post} other {# posts}} this week' }, { count: week })}</span>
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         {FLAGS.map((f) => (
@@ -83,7 +84,7 @@ export default function Tags() {
   const feed = useInfinitePaginator<AdminTag>(() => listTags(token ?? ''), [token])
 
   return (
-    <AdminLayout title="Hashtags" permission="manage_taxonomies">
+    <AdminLayout title={t({ id: 'search_results.hashtags', defaultMessage: 'Hashtags' })} permission="manage_taxonomies">
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
         <TagsSkeleton />
@@ -102,7 +103,7 @@ export default function Tags() {
           ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No hashtags yet.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.tags.no_hashtags_yet', defaultMessage: 'No hashtags yet.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

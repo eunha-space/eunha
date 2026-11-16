@@ -14,12 +14,13 @@ import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { useTagFollow } from '../hooks/use-tag-follow.ts'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 function TagFollowButton({ name, token }: { name: string; token: string }) {
   const { following, disabled, toggle } = useTagFollow(name, token)
   return (
     <Button size="sm" variant="outline" disabled={disabled} onClick={toggle}>
-      {following ? 'Unfollow' : 'Follow'}
+      {following ? t({ id: 'account.unfollow', defaultMessage: 'Unfollow' }) : t({ id: 'account.follow', defaultMessage: 'Follow' })}
     </Button>
   )
 }
@@ -73,7 +74,7 @@ export default function TagTimeline() {
           </TimelineStack>
         )}
         {statuses?.length === 0 && (
-          <p className="text-muted-foreground text-sm">No posts yet.</p>
+          <p className="text-muted-foreground text-sm">{t({ id: 'eunha.tag_timeline.no_posts_yet', defaultMessage: 'No posts yet.' })}</p>
         )}
         <InfiniteScroll
           onLoadMore={feed.loadMore}

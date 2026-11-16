@@ -1,3 +1,4 @@
+import { t } from '@/i18n.tsx'
 /**
  * The advanced layout: several timelines side by side.
  *
@@ -15,11 +16,11 @@ const LIST_KEY = 'eunha:panes:list'
 export type PaneId = 'home' | 'notifications' | 'local' | 'public' | 'messages'
 
 export const PANES: { id: PaneId; title: string }[] = [
-  { id: 'home', title: 'Following' },
-  { id: 'notifications', title: 'Notifications' },
-  { id: 'local', title: 'Local' },
-  { id: 'public', title: 'Federated' },
-  { id: 'messages', title: 'Messages' },
+  { id: 'home', get title() { return t({ id: 'account.following', defaultMessage: 'Following' }) } },
+  { id: 'notifications', get title() { return t({ id: 'column.notifications', defaultMessage: 'Notifications' }) } },
+  { id: 'local', get title() { return t({ id: 'mastodon.admin.accounts.location.local', defaultMessage: 'Local' }) } },
+  { id: 'public', get title() { return t({ id: 'eunha.panes.federated', defaultMessage: 'Federated' }) } },
+  { id: 'messages', get title() { return t({ id: 'tabs_bar.messages', defaultMessage: 'Messages' }) } },
 ]
 
 // What the layout opens as: your timeline, what is addressed to you, and one

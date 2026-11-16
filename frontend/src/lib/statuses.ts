@@ -1,4 +1,5 @@
 import type { mastodon } from '../masto.ts'
+import { t } from '@/i18n.tsx'
 
 /**
  * Drop direct messages from a list of statuses.
@@ -56,25 +57,25 @@ export function quoteItemState(
     approval?.automatic[0] === 'followers' || approval?.manual[0] === 'followers'
 
   if (!isPublic && !isMine) {
-    return { title: 'Quote', meta: 'Private posts cannot be quoted', disabled: true }
+    return { title: t({ id: 'status.quote', defaultMessage: 'Quote' }), meta: t({ id: 'status.quote_private', defaultMessage: 'Private posts cannot be quoted' }), disabled: true }
   }
   if (currentUser === 'automatic' && (isPublic || isMineAndPrivate)) {
-    return { title: 'Quote', disabled: false }
+    return { title: t({ id: 'status.quote', defaultMessage: 'Quote' }), disabled: false }
   }
   // The quote will wait for the author to approve it.
   if (currentUser === 'manual' && (isPublic || isMineAndPrivate)) {
-    return { title: 'Request to quote', meta: 'Author will manually review', disabled: false }
+    return { title: t({ id: 'status.request_quote', defaultMessage: 'Request to quote' }), meta: t({ id: 'status.quote_manual_review', defaultMessage: 'Author will manually review' }), disabled: false }
   }
   if (isLoggedIn) {
     return {
-      title: 'Quote',
+      title: t({ id: 'status.quote', defaultMessage: 'Quote' }),
       meta: isFollowersOnly
-        ? 'Only followers can quote this post'
-        : 'You are not allowed to quote this post',
+        ? t({ id: 'status.quote_followers_only', defaultMessage: 'Only followers can quote this post' })
+        : t({ id: 'status.cannot_quote', defaultMessage: 'You are not allowed to quote this post' }),
       disabled: true,
     }
   }
-  return { title: 'Quote', disabled: false }
+  return { title: t({ id: 'status.quote', defaultMessage: 'Quote' }), disabled: false }
 }
 
 /** What the boost button says, and whether it can be pressed. */
@@ -96,12 +97,12 @@ export function boostItemState(
   const isPublic = status.visibility === 'public' || status.visibility === 'unlisted'
   const isPrivateReblog =
     !!meId && status.account.id === meId && status.visibility === 'private'
-  if (status.reblogged) return { title: 'Unboost', disabled: false }
+  if (status.reblogged) return { title: t({ id: 'status.cancel_reblog_private', defaultMessage: 'Unboost' }), disabled: false }
   if (isPrivateReblog) {
-    return { title: 'Boost', meta: 'Share again with your followers', disabled: false }
+    return { title: t({ id: 'status.reblog', defaultMessage: 'Boost' }), meta: t({ id: 'status.reblog_private', defaultMessage: 'Share again with your followers' }), disabled: false }
   }
-  if (!isPublic) return { title: 'Boost', meta: 'This post cannot be boosted', disabled: true }
-  return { title: 'Boost', disabled: false }
+  if (!isPublic) return { title: t({ id: 'status.reblog', defaultMessage: 'Boost' }), meta: t({ id: 'status.cannot_reblog', defaultMessage: 'This post cannot be boosted' }), disabled: true }
+  return { title: t({ id: 'status.reblog', defaultMessage: 'Boost' }), disabled: false }
 }
 
 /**

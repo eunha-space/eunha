@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils.ts'
+import { t } from '@/i18n.tsx'
 
 /**
  * The heading at the top of a column.
@@ -40,7 +41,7 @@ export function ColumnHeader({
       // A handle is announced as something to pick up, so it needs a name of
       // its own. Left to the contents it would be read as "Following Close
       // Following" — every control in the bar, run together.
-      aria-label={gripRef ? `${title} column` : undefined}
+      aria-label={gripRef ? t({ id: 'eunha.column_header.column', defaultMessage: '{title} column' }, { title }) : undefined}
       className={cn(
         // `md:rounded-t-lg` because the corners are the card's, and below `md`
         // there is no card — a radius there would round this bar away from
@@ -60,7 +61,7 @@ export function ColumnHeader({
         // and the title is the widest part of the bar — so the grip looked
         // like it stopped at the padding.
         className="min-w-0 flex-1 cursor-[inherit] truncate text-left text-sm font-semibold"
-        title={gripRef ? 'Drag to reorder, or press Space and use the arrows' : undefined}
+        title={gripRef ? t({ id: 'eunha.column_header.drag_to_reorder_or_press_space', defaultMessage: 'Drag to reorder, or press Space and use the arrows' }) : undefined}
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
       >
         {title}

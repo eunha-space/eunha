@@ -82,6 +82,8 @@ import { Switch } from '@/components/ui/switch.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { useAnimatedHeader, useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { FeedSkeleton, LinesSkeleton, ProfileSkeleton } from '@/components/skeletons.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 // Limits mirror Mastodon's server-side validations (app/models/account.rb,
 // app/models/featured_tag.rb): display name ≤ 40, note ≤ 500, at most 4 custom
@@ -208,20 +210,20 @@ function ProfileEditModal({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-3 py-10 sm:py-16">
       <div className="bg-card text-card-foreground my-auto w-full max-w-xl rounded-md border shadow-lg">
         <div className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">Edit profile</h2>
+          <h2 className="text-sm font-semibold">{t({ id: 'account.edit_profile', defaultMessage: 'Edit profile' })}</h2>
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-            Close
+            {t({ id: 'lightbox.close', defaultMessage: 'Close' })}
           </Button>
         </div>
         <div className="space-y-5 p-4">
           <label className="grid gap-2 text-sm">
-            <span className="text-muted-foreground">Display name</span>
+            <span className="text-muted-foreground">{t({ id: 'account_edit.display_name.title', defaultMessage: 'Display name' })}</span>
             <Input
               value={displayName}
               maxLength={DISPLAY_NAME_MAX}
               disabled={busy}
               onChange={(event) => setDisplayName(event.currentTarget.value)}
-              placeholder="Your name"
+              placeholder={t({ id: 'eunha.profile.your_name', defaultMessage: 'Your name' })}
             />
             <span className="text-muted-foreground text-right text-xs">
               {DISPLAY_NAME_MAX - displayName.length}
@@ -229,14 +231,14 @@ function ProfileEditModal({
           </label>
 
           <label className="grid gap-2 text-sm">
-            <span className="text-muted-foreground">Description</span>
+            <span className="text-muted-foreground">{t({ id: 'collections.collection_description', defaultMessage: 'Description' })}</span>
             <Textarea
               value={note}
               maxLength={NOTE_MAX}
               rows={5}
               disabled={busy}
               onChange={(event) => setNote(event.currentTarget.value)}
-              placeholder="Tell people about yourself"
+              placeholder={t({ id: 'eunha.profile.tell_people_about_yourself', defaultMessage: 'Tell people about yourself' })}
             />
             <span className="text-muted-foreground text-right text-xs">
               {NOTE_MAX - note.length}
@@ -245,7 +247,7 @@ function ProfileEditModal({
 
           <div className="grid gap-2 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Profile metadata</span>
+              <span className="text-muted-foreground">{t({ id: 'eunha.profile.profile_metadata', defaultMessage: 'Profile metadata' })}</span>
               <span className="text-muted-foreground text-xs">
                 {fields.length}/{FIELD_MAX}
               </span>
@@ -259,7 +261,7 @@ function ProfileEditModal({
                   onChange={(event) =>
                     setField(index, 'name', event.currentTarget.value)
                   }
-                  placeholder="Label"
+                  placeholder={t({ id: 'account_edit.field_edit_modal.name_label', defaultMessage: 'Label' })}
                   className="flex-1"
                 />
                 <Input
@@ -269,7 +271,7 @@ function ProfileEditModal({
                   onChange={(event) =>
                     setField(index, 'value', event.currentTarget.value)
                   }
-                  placeholder="Content"
+                  placeholder={t({ id: 'mastodon.simple_form.labels.account.fields.value', defaultMessage: 'Content' })}
                   className="flex-1"
                 />
                 <Button
@@ -277,7 +279,7 @@ function ProfileEditModal({
                   size="icon"
                   disabled={busy}
                   onClick={() => removeField(index)}
-                  aria-label="Remove field"
+                  aria-label={t({ id: 'eunha.profile.remove_field', defaultMessage: 'Remove field' })}
                 >
                   <Trash2 />
                 </Button>
@@ -291,7 +293,7 @@ function ProfileEditModal({
                 onClick={addField}
                 className="justify-self-start"
               >
-                Add field
+                {t({ id: 'account_edit.custom_fields.add_label', defaultMessage: 'Add field' })}
               </Button>
             )}
           </div>
@@ -299,15 +301,15 @@ function ProfileEditModal({
           {error && <p className="text-destructive text-sm">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCancel} disabled={busy}>
-              Cancel
+              {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
             </Button>
             <Button onClick={() => void save()} disabled={busy}>
-              Save
+              {t({ id: 'lists.save', defaultMessage: 'Save' })}
             </Button>
           </div>
 
           <div className="grid gap-2 border-t pt-4 text-sm">
-            <span className="text-muted-foreground">Featured hashtags</span>
+            <span className="text-muted-foreground">{t({ id: 'account_edit.featured_hashtags.title', defaultMessage: 'Featured hashtags' })}</span>
             {featured === null ? (
               <LinesSkeleton count={1} className="w-48" />
             ) : (
@@ -325,7 +327,7 @@ function ProfileEditModal({
                           className="text-muted-foreground hover:text-foreground disabled:opacity-50"
                           disabled={tagBusy}
                           onClick={() => void removeTag(tag.id)}
-                          aria-label={`Remove #${tag.name}`}
+                          aria-label={t({ id: 'eunha.profile.remove', defaultMessage: 'Remove #{name}' }, { name: tag.name })}
                         >
                           <Trash2 className="size-3.5" />
                         </button>
@@ -345,7 +347,7 @@ function ProfileEditModal({
                           void addTag(newTag)
                         }
                       }}
-                      placeholder="Add a hashtag"
+                      placeholder={t({ id: 'eunha.profile.add_a_hashtag', defaultMessage: 'Add a hashtag' })}
                       className="flex-1"
                     />
                     <Button
@@ -354,13 +356,13 @@ function ProfileEditModal({
                       disabled={tagBusy || newTag.trim() === ''}
                       onClick={() => void addTag(newTag)}
                     >
-                      Add
+                      {t({ id: 'lists.add_member', defaultMessage: 'Add' })}
                     </Button>
                   </div>
                 )}
                 {atTagLimit && (
                   <p className="text-muted-foreground text-xs">
-                    You've reached the limit of {FEATURED_TAG_MAX} featured hashtags.
+                    {t({ id: 'eunha.profile.featured_tag_limit', defaultMessage: 'You\'ve reached the limit of {count} featured hashtags.' }, { count: FEATURED_TAG_MAX })}
                   </p>
                 )}
                 {!atTagLimit && openSuggestions.length > 0 && (
@@ -477,7 +479,7 @@ function ProfileImageCropModal({
       canvas.width = config.width
       canvas.height = config.height
       const ctx = canvas.getContext('2d')
-      if (!ctx) throw new Error('Could not prepare image crop')
+      if (!ctx) throw new Error(t({ id: 'eunha.profile.could_not_prepare_image_crop', defaultMessage: 'Could not prepare image crop' }))
       ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(
         image,
@@ -494,7 +496,7 @@ function ProfileImageCropModal({
         canvas.toBlob(
           (result) => {
             if (result) resolve(result)
-            else reject(new Error('Could not export image crop'))
+            else reject(new Error(t({ id: 'eunha.profile.could_not_export_image_crop', defaultMessage: 'Could not export image crop' })))
           },
           draft.file.type || 'image/png',
           0.92,
@@ -511,10 +513,10 @@ function ProfileImageCropModal({
       <div className="bg-background w-full max-w-xl border shadow-lg">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="font-semibold">
-            {draft.kind === 'avatar' ? 'Crop avatar' : 'Crop header'}
+            {draft.kind === 'avatar' ? t({ id: 'eunha.profile.crop_avatar', defaultMessage: 'Crop avatar' }) : t({ id: 'eunha.profile.crop_header', defaultMessage: 'Crop header' })}
           </div>
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </Button>
         </div>
         <div className="space-y-4 p-4">
@@ -569,7 +571,7 @@ function ProfileImageCropModal({
             />
           </div>
           <label className="grid gap-2 text-sm">
-            <span className="text-muted-foreground">Zoom</span>
+            <span className="text-muted-foreground">{t({ id: 'account_edit.upload_modal.step_crop.zoom', defaultMessage: 'Zoom' })}</span>
             <input
               type="range"
               min="1"
@@ -585,10 +587,10 @@ function ProfileImageCropModal({
           </label>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCancel} disabled={busy}>
-              Cancel
+              {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
             </Button>
             <Button onClick={() => void complete()} disabled={busy || imageSize.width === 0}>
-              Save
+              {t({ id: 'lists.save', defaultMessage: 'Save' })}
             </Button>
           </div>
         </div>
@@ -633,21 +635,21 @@ function PrivateNote({ accountId, token, note, onSaved }: {
 
   return (
     <section className="mt-3 space-y-2 rounded-md border p-3 text-sm">
-      <h2 className="font-medium">Private note</h2>
+      <h2 className="font-medium">{t({ id: 'eunha.profile.private_note', defaultMessage: 'Private note' })}</h2>
       {draft === undefined ? (
         <>
           {note && <p className="break-words whitespace-pre-wrap">{note}</p>}
           <Button variant="outline" size="sm" onClick={() => setDraft(note)}>
-            {note ? 'Edit note' : 'Add note'}
+            {note ? t({ id: 'eunha.profile.edit_note', defaultMessage: 'Edit note' }) : t({ id: 'mastodon.admin.reports.notes.create', defaultMessage: 'Add note' })}
           </Button>
         </>
       ) : (
         <>
-          <Textarea aria-label="Private note" value={draft} maxLength={2000} disabled={saving}
+          <Textarea aria-label={t({ id: 'eunha.profile.private_note', defaultMessage: 'Private note' })} value={draft} maxLength={2000} disabled={saving}
             onChange={(event) => setDraft(event.target.value)} />
           <div className="flex gap-2">
-            <Button size="sm" disabled={saving} onClick={save}>Save note</Button>
-            <Button size="sm" variant="ghost" disabled={saving} onClick={() => setDraft(undefined)}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={save}>{t({ id: 'eunha.profile.save_note', defaultMessage: 'Save note' })}</Button>
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => setDraft(undefined)}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</Button>
           </div>
         </>
       )}
@@ -820,8 +822,8 @@ export default function Profile() {
       setRel(await setMute(account.id, token, muting))
       toast.success(
         muting
-          ? `Muted @${account.acct}. Their posts are hidden from your timelines; they can still mention you and react to your posts.`
-          : `Unmuted @${account.acct}.`,
+          ? t({ id: 'eunha.profile.muted_their_posts_are_hidden_from', defaultMessage: 'Muted @{acct}. Their posts are hidden from your timelines; they can still mention you and react to your posts.' }, { acct: account.acct })
+          : t({ id: 'eunha.profile.unmuted', defaultMessage: 'Unmuted @{acct}.' }, { acct: account.acct }),
       )
     } catch (e) {
       toast.error(errorMessage(e))
@@ -841,8 +843,8 @@ export default function Profile() {
       setRel(await setBlock(account.id, token, blocking))
       toast.success(
         blocking
-          ? `Blocked @${account.acct}. They cannot follow you or see your posts, and any follow between you is undone.`
-          : `Unblocked @${account.acct}.`,
+          ? t({ id: 'eunha.profile.blocked_they_cannot_follow_you_or', defaultMessage: 'Blocked @{acct}. They cannot follow you or see your posts, and any follow between you is undone.' }, { acct: account.acct })
+          : t({ id: 'eunha.profile.unblocked', defaultMessage: 'Unblocked @{acct}.' }, { acct: account.acct }),
       )
     } catch (e) {
       toast.error(errorMessage(e))
@@ -864,7 +866,7 @@ export default function Profile() {
           <Button
             size="sm"
             variant="outline"
-            aria-label={`More actions for @${account.acct}`}
+            aria-label={t({ id: 'eunha.profile.more_actions_for', defaultMessage: 'More actions for @{acct}' }, { acct: account.acct })}
           >
             <MoreHorizontal />
           </Button>
@@ -876,13 +878,13 @@ export default function Profile() {
             <DropdownMenuItem
               onClick={() => openCompose({ messageTo: account })}
             >
-              <MessageCircle /> Message
+              <MessageCircle /> {t({ id: 'account.menu.message', defaultMessage: 'Message' })}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={toggleMute}
               disabled={relationshipBusy}
             >
-              <VolumeX /> {rel.muting ? 'Unmute' : 'Mute'}
+              <VolumeX /> {rel.muting ? t({ id: 'account.unmute_short', defaultMessage: 'Unmute' }) : t({ id: 'account.mute_short', defaultMessage: 'Mute' })}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant={rel.blocking ? undefined : 'destructive'}
@@ -891,13 +893,13 @@ export default function Profile() {
               }
               disabled={relationshipBusy}
             >
-              <Ban /> {rel.blocking ? 'Unblock' : 'Block'}
+              <Ban /> {rel.blocking ? t({ id: 'account.unblock_short', defaultMessage: 'Unblock' }) : t({ id: 'account.block_short', defaultMessage: 'Block' })}
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onClick={() => setReporting(true)}
             >
-              <Flag /> Report account
+              <Flag /> {t({ id: 'account.menu.report', defaultMessage: 'Report account' })}
             </DropdownMenuItem>
           </>
         )}
@@ -912,7 +914,7 @@ export default function Profile() {
               />
             }
           >
-            <ExternalLink /> Open original page
+            <ExternalLink /> {t({ id: 'account.open_original_page', defaultMessage: 'Open original page' })}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -1025,9 +1027,9 @@ export default function Profile() {
       {!account && !error && <ProfileSkeleton />}
       {account?.suspended && (
         <div className="rounded-lg border p-6 text-center">
-          <h1 className="font-semibold">Account suspended</h1>
+          <h1 className="font-semibold">{t({ id: 'empty_column.account_suspended', defaultMessage: 'Account suspended' })}</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            The profile of @{account.acct} is no longer available.
+            {t({ id: 'eunha.profile.no_longer_available', defaultMessage: 'The profile of @{acct} is no longer available.' }, { acct: account.acct })}
           </p>
         </div>
       )}
@@ -1067,7 +1069,7 @@ export default function Profile() {
                     size="icon"
                     variant="outline"
                     className="bg-background/90 size-8"
-                    aria-label="Upload header image"
+                    aria-label={t({ id: 'eunha.profile.upload_header_image', defaultMessage: 'Upload header image' })}
                     disabled={imageBusy !== null}
                     onClick={() => headerInputRef.current?.click()}
                   >
@@ -1077,7 +1079,7 @@ export default function Profile() {
                     size="icon"
                     variant="outline"
                     className="bg-background/90 size-8"
-                    aria-label="Remove header image"
+                    aria-label={t({ id: 'eunha.profile.remove_header_image', defaultMessage: 'Remove header image' })}
                     disabled={imageBusy !== null}
                     onClick={() => void updateProfileImage('header', null)}
                   >
@@ -1095,7 +1097,7 @@ export default function Profile() {
                 disabled={imageBusy !== null}
                 onClick={() => headerInputRef.current?.click()}
               >
-                <ImageUp /> Header
+                <ImageUp /> {t({ id: 'mastodon.admin.accounts.header', defaultMessage: 'Header' })}
               </Button>
             </div>
           )}
@@ -1113,7 +1115,7 @@ export default function Profile() {
                     size="icon"
                     variant="ghost"
                     className="size-7"
-                    aria-label="Upload avatar image"
+                    aria-label={t({ id: 'eunha.profile.upload_avatar_image', defaultMessage: 'Upload avatar image' })}
                     disabled={imageBusy !== null}
                     onClick={() => avatarInputRef.current?.click()}
                   >
@@ -1123,7 +1125,7 @@ export default function Profile() {
                     size="icon"
                     variant="ghost"
                     className="size-7"
-                    aria-label="Remove avatar image"
+                    aria-label={t({ id: 'eunha.profile.remove_avatar_image', defaultMessage: 'Remove avatar image' })}
                     disabled={imageBusy !== null}
                     onClick={() => void updateProfileImage('avatar', null)}
                   >
@@ -1141,14 +1143,14 @@ export default function Profile() {
             {isSelf && (
               <div className="flex flex-col items-end gap-2">
                 <Button size="sm" variant="outline" onClick={() => setEditingProfile(true)}>
-                  <Pencil /> Edit profile
+                  <Pencil /> {t({ id: 'account.edit_profile', defaultMessage: 'Edit profile' })}
                 </Button>
                 <Button
                   render={<Link to="/follow-requests" className="no-underline" />}
                   size="sm"
                   variant="outline"
                 >
-                  <UserPlus /> Follow requests
+                  <UserPlus /> {t({ id: 'column.follow_requests', defaultMessage: 'Follow requests' })}
                 </Button>
               </div>
             )}
@@ -1161,27 +1163,25 @@ export default function Profile() {
                     variant={rel.following || rel.requested ? 'outline' : 'default'}
                     onClick={toggleFollow}
                     disabled={relationshipBusy}
-                    title={rel.requested && !rel.following ? 'Withdraw follow request' : undefined}
+                    title={rel.requested && !rel.following ? t({ id: 'eunha.profile.withdraw_follow_request', defaultMessage: 'Withdraw follow request' }) : undefined}
                   >
-                    {rel.following ? 'Following' : rel.requested ? 'Requested' : 'Follow'}
+                    {rel.following ? t({ id: 'account.following', defaultMessage: 'Following' }) : rel.requested ? t({ id: 'eunha.profile.requested', defaultMessage: 'Requested' }) : t({ id: 'account.follow', defaultMessage: 'Follow' })}
                   </Button>
                   {actionsMenu}
                 </div>
                 {rel.muting && (
                   <p className="text-muted-foreground max-w-64 text-right text-xs">
-                    Muted — their posts are hidden from your timelines. They can
-                    still mention you and react to your posts.
+                    {t({ id: 'eunha.profile.muted_their_posts_are_hidden_from_2', defaultMessage: 'Muted — their posts are hidden from your timelines. They can still mention you and react to your posts.' })}
                   </p>
                 )}
                 {rel.blocking && (
                   <p className="text-muted-foreground max-w-64 text-right text-xs">
-                    Blocked — they cannot follow you or see your posts, and you
-                    will not see theirs.
+                    {t({ id: 'eunha.profile.blocked_they_cannot_follow_you_or_2', defaultMessage: 'Blocked — they cannot follow you or see your posts, and you will not see theirs.' })}
                   </p>
                 )}
                 {rel.blockedBy && !rel.blocking && (
                   <p className="text-muted-foreground max-w-64 text-right text-xs">
-                    This account has blocked you.
+                    {t({ id: 'eunha.profile.this_account_has_blocked_you', defaultMessage: 'This account has blocked you.' })}
                   </p>
                 )}
                 {rel.following && (
@@ -1192,7 +1192,7 @@ export default function Profile() {
                       onCheckedChange={toggleReblogs}
                       disabled={relationshipBusy}
                     />
-                    Show boosts
+                    {t({ id: 'account.filters.boosts_toggle', defaultMessage: 'Show boosts' })}
                   </Label>
                 )}
               </div>
@@ -1235,7 +1235,7 @@ export default function Profile() {
                     {field.verifiedAt && (
                       <CheckCircle2
                         className="size-4 shrink-0 text-emerald-600"
-                        aria-label={`Verified ${new Date(field.verifiedAt).toLocaleDateString()}`}
+                        aria-label={t({ id: 'eunha.profile.verified_on', defaultMessage: 'Verified {date}' }, { date: new Date(field.verifiedAt).toLocaleDateString(currentLocale()) })}
                       />
                     )}
                   </dd>
@@ -1246,19 +1246,31 @@ export default function Profile() {
           </AnimateEmoji>
           <div className="text-muted-foreground mt-3 mb-4 flex gap-4 text-sm">
             <span>
-              <b className="text-foreground">{account.statusesCount}</b> posts
+              <FormattedMessage
+                id='account.statuses_counter'
+                defaultMessage='{count, plural, one {{counter} post} other {{counter} posts}}'
+                values={{ count: account.statusesCount, counter: <b className="text-foreground">{account.statusesCount}</b> }}
+              />
             </span>
             <Link
               to={`/@${account.acct}/following`}
               className="no-underline hover:underline"
             >
-              <b className="text-foreground">{account.followingCount}</b> following
+              <FormattedMessage
+                id='account.following_counter'
+                defaultMessage='{count, plural, one {{counter} following} other {{counter} following}}'
+                values={{ count: account.followingCount, counter: <b className="text-foreground">{account.followingCount}</b> }}
+              />
             </Link>
             <Link
               to={`/@${account.acct}/followers`}
               className="no-underline hover:underline"
             >
-              <b className="text-foreground">{account.followersCount}</b> followers
+              <FormattedMessage
+                id='account.followers_counter'
+                defaultMessage='{count, plural, one {{counter} follower} other {{counter} followers}}'
+                values={{ count: account.followersCount, counter: <b className="text-foreground">{account.followersCount}</b> }}
+              />
             </Link>
           </div>
           {/* Mastodon shows it to visitors only: `!me && account.email_subscriptions`. */}
@@ -1291,7 +1303,7 @@ export default function Profile() {
             {!!pinned?.length && (
               <section className="space-y-1">
                 <h2 className="text-muted-foreground flex items-center gap-1.5 text-sm font-semibold">
-                  <Pin className="size-3.5" /> Pinned
+                  <Pin className="size-3.5" /> {t({ id: 'account.timeline.pinned', defaultMessage: 'Pinned' })}
                 </h2>
                 <TimelineStack>
                   {shownPinned?.map((s) => (
@@ -1311,7 +1323,7 @@ export default function Profile() {
                     className="w-full"
                     onClick={() => setShowAllPinned(true)}
                   >
-                    <Pin /> View all pinned posts
+                    <Pin /> {t({ id: 'account.timeline.pinned.view_all', defaultMessage: 'View all pinned posts' })}
                   </Button>
                 )}
               </section>
@@ -1334,7 +1346,7 @@ export default function Profile() {
               </TimelineStack>
             )}
             {statuses?.length === 0 && (
-              <p className="text-muted-foreground text-sm">No posts yet.</p>
+              <p className="text-muted-foreground text-sm">{t({ id: 'eunha.profile.no_posts_yet', defaultMessage: 'No posts yet.' })}</p>
             )}
             <InfiniteScroll
               onLoadMore={feed.loadMore}
@@ -1357,21 +1369,19 @@ export default function Profile() {
       <AlertDialog open={confirmingBlock} onOpenChange={setConfirmingBlock}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Block @{account?.acct}?</AlertDialogTitle>
+            <AlertDialogTitle>{t({ id: 'eunha.profile.block_title', defaultMessage: 'Block @{acct}?' }, { acct: account?.acct })}</AlertDialogTitle>
             <AlertDialogDescription>
-              They will not be able to follow you or see your posts, and you
-              will not see theirs. Any follow between you is undone now, and
-              unblocking later does not restore it.
+              {t({ id: 'eunha.profile.they_will_not_be_able_to', defaultMessage: 'They will not be able to follow you or see your posts, and you will not see theirs. Any follow between you is undone now, and unblocking later does not restore it.' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={relationshipBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={relationshipBusy}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={relationshipBusy}
               onClick={toggleBlock}
             >
-              {relationshipBusy ? 'Blocking…' : 'Block'}
+              {relationshipBusy ? t({ id: 'eunha.common.blocking', defaultMessage: 'Blocking…' }) : t({ id: 'account.block_short', defaultMessage: 'Block' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

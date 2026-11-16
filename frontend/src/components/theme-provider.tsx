@@ -1,14 +1,15 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { t } from '@/i18n.tsx'
 
 type Theme = 'dark' | 'light' | 'system'
 
 // index.html repeats these keys to set the palette before first paint.
 export const PALETTES = {
-  mint: 'Mint',
-  lilac: 'Lilac',
-  ocean: 'Ocean',
-  rose: 'Rose',
-  amber: 'Amber',
+  get mint() { return t({ id: 'eunha.theme_provider.mint', defaultMessage: 'Mint' }) },
+  get lilac() { return t({ id: 'eunha.theme_provider.lilac', defaultMessage: 'Lilac' }) },
+  get ocean() { return t({ id: 'eunha.theme_provider.ocean', defaultMessage: 'Ocean' }) },
+  get rose() { return t({ id: 'eunha.theme_provider.rose', defaultMessage: 'Rose' }) },
+  get amber() { return t({ id: 'eunha.theme_provider.amber', defaultMessage: 'Amber' }) },
 } as const
 
 export type Palette = keyof typeof PALETTES

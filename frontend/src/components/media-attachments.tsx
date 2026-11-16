@@ -6,6 +6,7 @@ import { Blurhash } from '@/components/blurhash.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { ImageViewer } from '@/components/image-viewer.tsx'
 import { cn } from '@/lib/utils.ts'
+import { t } from '@/i18n.tsx'
 
 function ImageItem({ m, onOpen, disabled }: {
   m: mastodon.v1.MediaAttachment
@@ -18,7 +19,7 @@ function ImageItem({ m, onOpen, disabled }: {
 
   return (
     <Button variant="ghost" disabled={disabled || !full}
-      aria-label={m.description ? `View image: ${m.description}` : 'View image attachment'}
+      aria-label={m.description ? t({ id: 'eunha.media_attachments.view_image', defaultMessage: 'View image: {description}' }, { description: m.description }) : t({ id: 'eunha.media_attachments.view_image_attachment', defaultMessage: 'View image attachment' })}
       onClick={event => onOpen(event.currentTarget)}
       className="relative block h-full w-full overflow-hidden rounded-none p-0">
       {m.blurhash && !loaded && (
@@ -102,7 +103,7 @@ function MediaItem({ m, onOpen, disabled }: {
           rel="noreferrer"
           className="text-accent block p-3 text-sm underline"
         >
-          {m.description || 'Attachment'}
+          {m.description || t({ id: 'eunha.media_attachments.attachment', defaultMessage: 'Attachment' })}
         </a>
       )
   }
@@ -203,7 +204,7 @@ export function MediaAttachments({
           onClick={() => setRevealed(false)}
           className="bg-background/85 absolute top-2 left-2"
         >
-          Hide
+          {t({ id: 'media_gallery.hide', defaultMessage: 'Hide' })}
         </Button>
       ) : (
         // Mastodon's `SpoilerButton`: what hid the media, then how to show it.
@@ -215,12 +216,12 @@ export function MediaAttachments({
           <span className="bg-background/85 flex flex-col items-center rounded-md px-3 py-1.5 text-sm">
             <span className="font-medium">
               {filteredBy.length > 0
-                ? `Matches filter “${filteredBy.join(', ')}”`
+                ? t({ id: 'eunha.media_attachments.matches_filter', defaultMessage: 'Matches filter “{filters}”' }, { filters: filteredBy.join(', ') })
                 : sensitive
-                  ? 'Sensitive content'
-                  : 'Media hidden'}
+                  ? t({ id: 'status.sensitive_warning', defaultMessage: 'Sensitive content' })
+                  : t({ id: 'status.media_hidden', defaultMessage: 'Media hidden' })}
             </span>
-            <span className="text-muted-foreground text-xs">Click to show</span>
+            <span className="text-muted-foreground text-xs">{t({ id: 'status.media.show', defaultMessage: 'Click to show' })}</span>
           </span>
         </button>
       )}

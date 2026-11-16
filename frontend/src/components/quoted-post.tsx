@@ -16,14 +16,16 @@ import { PreviewCard } from '@/components/preview-card.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { useReadingPreferences } from '../reading-preferences.ts'
+import { currentLocale, t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 // A quote that isn't accepted shows a status message in place of the embedded
 // post. Copy mirrors Mastodon's web client (quote.tsx): pending quotes stay
 // hidden until the original author's server approves them, so the quoted
 // content is never revealed early.
 const QUOTE_PLACEHOLDER: Record<string, string> = {
-  pending: 'Post pending',
-  revoked: 'Post removed by author',
+  get pending() { return t({ id: 'status.quote_error.pending_approval', defaultMessage: 'Post pending' }) },
+  get revoked() { return t({ id: 'status.quote_error.revoked', defaultMessage: 'Post removed by author' }) },
 }
 
 // A quote of someone the reader blocked or muted names them, and can be shown
@@ -31,11 +33,11 @@ const QUOTE_PLACEHOLDER: Record<string, string> = {
 function hiddenByReader(quote: Quote, account: mastodon.v1.Account): string | null {
   switch (quote.state) {
     case 'blocked_account':
-      return `This post is hidden because you've blocked @${account.acct}.`
+      return t({ id: 'status.quote_error.blocked_account_hint.title', defaultMessage: 'This post is hidden because you\'ve blocked @{name}.' }, { name: account.acct })
     case 'blocked_domain':
-      return `This post is hidden because you've blocked ${account.acct.split('@')[1]}.`
+      return t({ id: 'status.quote_error.blocked_domain_hint.title', defaultMessage: 'This post is hidden because you\'ve blocked {domain}.' }, { domain: account.acct.split('@')[1] })
     case 'muted_account':
-      return `This post is hidden because you've muted @${account.acct}.`
+      return t({ id: 'status.quote_error.muted_account_hint.title', defaultMessage: 'This post is hidden because you\'ve muted @{name}.' }, { name: account.acct })
     default:
       return null
   }
@@ -94,12 +96,11 @@ function PendingInfo() {
       <PopoverTrigger
         render={<Button variant="link" size="sm" className="h-auto p-0 text-xs" />}
       >
-        Learn more
+        {t({ id: 'learn_more_link.learn_more', defaultMessage: 'Learn more' })}
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 text-xs">
         <p>
-          On Mastodon, you can control whether someone can quote you. This post is pending
-          while we're getting the original author's approval.
+          {t({ id: 'status.quote_error.pending_approval_popout.body', defaultMessage: 'On Mastodon, you can control whether someone can quote you. This post is pending while we\'\'re getting the original author\'\'s approval.' })}
         </p>
       </PopoverContent>
     </Popover>
@@ -118,11 +119,11 @@ function QuotePlaceholder({
 }) {
   return (
     <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 rounded-md border px-3 py-2 text-xs">
-      <span>{message ?? QUOTE_PLACEHOLDER[quote?.state ?? ''] ?? 'Post unavailable'}</span>
+      <span>{message ?? QUOTE_PLACEHOLDER[quote?.state ?? ''] ?? t({ id: 'status.quote_error.not_available', defaultMessage: 'Post unavailable' })}</span>
       {!message && quote?.state === 'pending' && <PendingInfo />}
       {onShow && (
         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onShow}>
-          Show anyway
+          {t({ id: 'content_warning.show', defaultMessage: 'Show anyway' })}
         </Button>
       )}
     </div>
@@ -163,7 +164,6 @@ function quoteFilters(
   }
 }
 
-const listFormat = new Intl.ListFormat('en', { type: 'conjunction' })
 
 // The post embedded by a quote. Like Mastodon, the quoted post is only rendered
 // once the quote is accepted; other states (pending approval, revoked, deleted,
@@ -191,7 +191,10 @@ export function QuotedStatus({
   const quoted = quotedStatusOf(quote)
   const accountHidden = useAccountHidden(quoted?.account ?? null, token)
   const filters = quoted ? quoteFilters(quoted, filterContext) : NO_FILTERS
-  const filteredMessage = `Hidden due to your filter “${listFormat.format(filters.titles)}”`
+  const filteredMessage = t(
+    { id: 'status.quote_error.filtered_details', defaultMessage: 'Hidden due to your filter “{filters}”' },
+    { filters: new Intl.ListFormat(currentLocale(), { type: 'conjunction' }).format(filters.titles) },
+  )
   const hiddenMessage = quoted && hiddenByReader(quote, quoted.account)
 
   // In the order Mastodon's `useQuoteError` tries them.
@@ -199,7 +202,7 @@ export function QuotedStatus({
   if (filters.action === 'hide') {
     return (
       <QuotePlaceholder
-        message={detailed ? 'Hidden due to one of your filters' : filteredMessage}
+        message={detailed ? t({ id: 'status.quote_error.filtered', defaultMessage: 'Hidden due to one of your filters' }) : filteredMessage}
       />
     )
   }
@@ -211,13 +214,13 @@ export function QuotedStatus({
     return <QuotePlaceholder message={hiddenMessage} onShow={() => setRevealed(true)} />
   }
   if (!quoted || (quote.state !== 'accepted' && !hiddenMessage)) {
-    return <QuotePlaceholder message="Post unavailable" />
+    return <QuotePlaceholder message={t({ id: 'status.quote_error.not_available', defaultMessage: 'Post unavailable' })} />
   }
   if (accountHidden && !accountRevealed) {
     const domain = getCachedInstance()?.domain ?? window.location.hostname
     return (
       <QuotePlaceholder
-        message={`This account has been hidden by the moderators of ${domain}.`}
+        message={t({ id: 'status.quote_error.limited_account_hint.title', defaultMessage: 'This account has been hidden by the moderators of {domain}.' }, { domain })}
         onShow={() => setAccountRevealed(true)}
       />
     )
@@ -251,7 +254,7 @@ function NestedQuote({ quote, token }: { quote: Quote; token?: string }) {
   }
   return (
     <p className="text-muted-foreground mt-1 text-xs">
-      Quoted a post by @{quoted.account.acct}
+      {t({ id: 'status.quote_post_author', defaultMessage: 'Quoted a post by @{name}' }, { name: quoted.account.acct })}
     </p>
   )
 }
@@ -264,7 +267,11 @@ function NestedQuoteLink({ quote, token, linked }: { quote: Quote; token?: strin
   const label = (
     <>
       <strong className="font-semibold">
-        Post from <DisplayName account={quoted.account} />
+        <FormattedMessage
+          id='status.quote.nested.title'
+          defaultMessage='Post from {author}'
+          values={{ author: <DisplayName account={quoted.account} /> }}
+        />
       </strong>
       {' • '}
       <RelativeTime value={quoted.createdAt} />
@@ -320,7 +327,7 @@ function CompactBody({
   if (status.spoilerText) {
     return (
       <AnimateEmoji className="text-muted-foreground mt-1 text-sm">
-        Content:{'\u00a0'}
+        {t({ id: 'compose.quote.spoiler', defaultMessage: 'Content:' })}{'\u00a0'}
         <EmojiText text={status.spoilerText} emojis={status.emojis} />
       </AnimateEmoji>
     )
@@ -329,7 +336,7 @@ function CompactBody({
   return (
     <>
       {status.inReplyToAccountId === status.account.id && (
-        <p className="text-muted-foreground mt-1 text-xs">Continued thread</p>
+        <p className="text-muted-foreground mt-1 text-xs">{t({ id: 'status.continued_thread', defaultMessage: 'Continued thread' })}</p>
       )}
       {html.trim() && (
         <EmojiHtml
@@ -341,7 +348,10 @@ function CompactBody({
       )}
       {status.poll && (
         <p className="text-muted-foreground mt-1 text-sm">
-          Poll • {status.poll.expired ? 'Closed' : 'Accepting responses'}
+          {t(
+            { id: 'compose.quote.poll', defaultMessage: 'Poll {sep} {isOpen, select, open {Accepting responses} other {Closed}}' },
+            { sep: '•', isOpen: status.poll.expired ? 'closed' : 'open' },
+          )}
         </p>
       )}
       {status.mediaAttachments.length > 0 && (
@@ -455,13 +465,19 @@ export function QuotedPost({
       </div>
       {filteredBy.length > 0 && (
         <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 text-sm">
-          <span>Matches filter “{filteredBy.join(', ')}”</span>
+          <span>
+            <FormattedMessage
+              id='filter_warning.matches_filter'
+              defaultMessage='Matches filter “<span>{title}</span>”'
+              values={{ title: filteredBy.join(', '), span: (chunks) => <span>{chunks}</span> }}
+            />
+          </span>
           <button
             type="button"
             onClick={() => setShowDespiteFilter(!showDespiteFilter)}
             className="text-primary text-xs font-medium underline"
           >
-            {showDespiteFilter ? 'Hide post' : 'Show anyway'}
+            {showDespiteFilter ? t({ id: 'content_warning.hide', defaultMessage: 'Hide post' }) : t({ id: 'content_warning.show', defaultMessage: 'Show anyway' })}
           </button>
         </div>
       )}
@@ -478,7 +494,7 @@ export function QuotedPost({
             onClick={() => setOpened(!expanded)}
             className="text-primary ml-2 text-xs font-medium underline"
           >
-            {expanded ? 'Show less' : 'Show more'}
+            {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'content_warning.show_more', defaultMessage: 'Show more' })}
           </button>
         </AnimateEmoji>
       )}

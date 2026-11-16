@@ -9,6 +9,7 @@ import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 export default function Bookmarks() {
   const token = getToken()
@@ -29,9 +30,9 @@ export default function Bookmarks() {
         <Card>
           <CardContent className="space-y-3 py-6 text-center">
             <p className="text-muted-foreground text-sm">
-              Sign in to see the posts you have bookmarked.
+              {t({ id: 'eunha.bookmarks.sign_in_to_see_the_posts', defaultMessage: 'Sign in to see the posts you have bookmarked.' })}
             </p>
-            <Button onClick={() => void beginLogin()}>Sign in</Button>
+            <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>
           </CardContent>
         </Card>
       </div>
@@ -41,7 +42,7 @@ export default function Bookmarks() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-2 text-lg font-bold">Bookmarks</h1>
+      <h1 className="mb-2 text-lg font-bold">{t({ id: 'column.bookmarks', defaultMessage: 'Bookmarks' })}</h1>
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
       <div className="space-y-2">
         {statuses === null && !feed.error && (
@@ -61,7 +62,7 @@ export default function Bookmarks() {
         )}
         {statuses?.length === 0 && (
           <p className="text-muted-foreground text-sm">
-            Nothing bookmarked yet. The bookmark button on a post saves it here.
+            {t({ id: 'eunha.bookmarks.nothing_bookmarked_yet_the_bookmark_button', defaultMessage: 'Nothing bookmarked yet. The bookmark button on a post saves it here.' })}
           </p>
         )}
         <InfiniteScroll

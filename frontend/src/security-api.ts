@@ -1,3 +1,4 @@
+import { t } from '@/i18n.tsx'
 // Account security: what Mastodon offers only as web forms (two-factor
 // authentication, security keys, sessions, authorized apps, sign-in history),
 // served by eunha under /api/eunha/v1/.
@@ -27,7 +28,7 @@ async function call<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) {
-    let message = `Request failed (${res.status})`
+    let message = t({ id: 'eunha.api.request_failed', defaultMessage: 'Request failed ({status})' }, { status: res.status })
     try {
       const json = (await res.json()) as { error?: string }
       if (json.error) message = json.error
@@ -142,7 +143,7 @@ export async function addSecurityKey(
       authenticatorSelection: options.authenticatorSelection,
     },
   })) as PublicKeyCredential | null
-  if (!credential) throw new SecurityError(0, 'No security key was created')
+  if (!credential) throw new SecurityError(0, t({ id: 'eunha.two_factor_settings.no_security_key_created', defaultMessage: 'No security key was created' }))
   const response = credential.response as AuthenticatorAttestationResponse
   return call<WebauthnCredential>(`${TFA}/webauthn_credentials`, token, 'POST', {
     nickname,

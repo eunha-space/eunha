@@ -15,25 +15,27 @@ import { RelativeTime } from '@/components/relative-time.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
-const ORIGINS = { all: 'Anywhere', local: 'Local', remote: 'Remote' }
+const ORIGINS = { get all() { return t({ id: 'eunha.admin.accounts.anywhere', defaultMessage: 'Anywhere' }) }, get local() { return t({ id: 'mastodon.admin.accounts.location.local', defaultMessage: 'Local' }) }, get remote() { return t({ id: 'mastodon.admin.accounts.location.remote', defaultMessage: 'Remote' }) } }
 const STATUSES = {
-  all: 'Any status',
-  active: 'Active',
-  pending: 'Pending review',
+  get all() { return t({ id: 'eunha.admin.accounts.any_status', defaultMessage: 'Any status' }) },
+  get active() { return t({ id: 'mastodon.admin.accounts.moderation.active', defaultMessage: 'Active' }) },
+  get pending() { return t({ id: 'mastodon.admin.accounts.pending', defaultMessage: 'Pending review' }) },
   sensitized: 'Force-sensitive',
-  silenced: 'Limited',
-  disabled: 'Frozen',
-  suspended: 'Suspended',
+  get silenced() { return t({ id: 'about.domain_blocks.silenced.title', defaultMessage: 'Limited' }) },
+  get disabled() { return t({ id: 'mastodon.admin.accounts.disabled', defaultMessage: 'Frozen' }) },
+  get suspended() { return t({ id: 'about.domain_blocks.suspended.title', defaultMessage: 'Suspended' }) },
 }
-const ROLES = { all: 'Any role', staff: 'Moderators and admins' }
+const ROLES = { get all() { return t({ id: 'eunha.admin.accounts.any_role', defaultMessage: 'Any role' }) }, get staff() { return t({ id: 'eunha.admin.accounts.moderators_and_admins', defaultMessage: 'Moderators and admins' }) } }
 
 // The text filters `GET /api/v2/admin/accounts` takes, in Mastodon's order.
 const TEXT_FILTERS: { key: keyof AccountFilters; label: string; remoteOnly?: boolean }[] = [
-  { key: 'username', label: 'Username' },
-  { key: 'display_name', label: 'Display name' },
-  { key: 'by_domain', label: 'Domain', remoteOnly: true },
-  { key: 'email', label: 'Email' },
+  { key: 'username', get label() { return t({ id: 'mastodon.admin.accounts.username', defaultMessage: 'Username' }) } },
+  { key: 'display_name', get label() { return t({ id: 'account_edit.display_name.title', defaultMessage: 'Display name' }) } },
+  { key: 'by_domain', get label() { return t({ id: 'mastodon.admin.accounts.by_domain', defaultMessage: 'Domain' }) }, remoteOnly: true },
+  { key: 'email', get label() { return t({ id: 'email_subscriptions.email', defaultMessage: 'Email' }) } },
   { key: 'ip', label: 'IP' },
 ]
 
@@ -58,7 +60,11 @@ function AccountRowItem({ account }: { account: AdminAccount }) {
           <span className="block">{account.domain}</span>
         )}
         <span className="block">
-          Joined <RelativeTime value={account.created_at} />
+          <FormattedMessage
+            id='eunha.admin.accounts.joined'
+            defaultMessage='Joined {when}'
+            values={{ when: <RelativeTime value={account.created_at} /> }}
+          />
         </span>
       </div>
       {account.domain === null && account.approved === false && account.invite_request && (
@@ -123,12 +129,12 @@ export default function Accounts() {
   }
 
   return (
-    <AdminLayout title="Accounts" permission="manage_users">
+    <AdminLayout title={t({ id: 'mastodon.admin.accounts.title', defaultMessage: 'Accounts' })} permission="manage_users">
       <div className="mb-3 space-y-2">
         <div className="grid gap-2 sm:grid-cols-3">
-          <ChoiceSelect label="Location" value={origin} items={ORIGINS} onChange={(v) => set('origin', v)} />
-          <ChoiceSelect label="Status" value={status} items={STATUSES} onChange={(v) => set('status', v)} />
-          <ChoiceSelect label="Role" value={role} items={ROLES} onChange={(v) => set('permissions', v)} />
+          <ChoiceSelect label={t({ id: 'mastodon.admin.accounts.location.title', defaultMessage: 'Location' })} value={origin} items={ORIGINS} onChange={(v) => set('origin', v)} />
+          <ChoiceSelect label={t({ id: 'mastodon.admin.email_subscriptions.accounts.status', defaultMessage: 'Status' })} value={status} items={STATUSES} onChange={(v) => set('status', v)} />
+          <ChoiceSelect label={t({ id: 'mastodon.admin.accounts.role', defaultMessage: 'Role' })} value={role} items={ROLES} onChange={(v) => set('permissions', v)} />
         </div>
         <form onSubmit={search} className="grid gap-2 sm:grid-cols-3">
           {TEXT_FILTERS.filter((f) => !f.remoteOnly || origin === 'remote').map((f) => (
@@ -141,7 +147,7 @@ export default function Accounts() {
             />
           ))}
           <div className="flex gap-2">
-            <Button type="submit">Search</Button>
+            <Button type="submit">{t({ id: 'navigation_bar.search', defaultMessage: 'Search' })}</Button>
             {key && (
               <Button
                 type="button"
@@ -149,7 +155,7 @@ export default function Accounts() {
                 render={<Link to="/admin/accounts" />}
                 onClick={() => setDraft({})}
               >
-                Reset
+                {t({ id: 'mastodon.admin.accounts.reset', defaultMessage: 'Reset' })}
               </Button>
             )}
           </div>
@@ -163,7 +169,7 @@ export default function Accounts() {
         {feed.items?.map((a) => <AccountRowItem key={a.id} account={a} />)}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No accounts match.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.accounts.no_accounts_match', defaultMessage: 'No accounts match.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

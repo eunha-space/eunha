@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { ChoiceSelect } from '@/components/admin/admin-common.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-const EXPIRIES = { '604800': '7 days', '86400': '1 day', '0': 'Never' }
+const EXPIRIES = { '604800': '7 days', '86400': '1 day', get '0'() { return t({ id: 'mastodon.invites.expires_in_prompt', defaultMessage: 'Never' }) } }
 
 export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
   const token = getToken()
@@ -40,7 +41,7 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
       })
       .catch(() => {
         if (!cancelled)
-          setError('Could not load members. Try again before granting invites.')
+          setError(t({ id: 'eunha.invite_grant_form.could_not_load_members_try_again', defaultMessage: 'Could not load members. Try again before granting invites.' }))
       })
     return () => {
       cancelled = true
@@ -57,12 +58,12 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
     number >= 1 &&
     number <= 25
   const items = {
-    '': 'Choose a recipient',
-    everyone: `All local users (${members?.length ?? 0})`,
+    '': t({ id: 'eunha.invite_grant_form.choose_a_recipient', defaultMessage: 'Choose a recipient' }),
+    everyone: t({ id: 'eunha.invite_grant_form.all_local_users', defaultMessage: 'All local users ({count})' }, { count: members?.length ?? 0 }),
     ...Object.fromEntries((members ?? []).map((m) => [m.id, `@${m.acct}`])),
   }
   const visibleItems = {
-    '': 'Choose a recipient',
+    '': t({ id: 'eunha.invite_grant_form.choose_a_recipient', defaultMessage: 'Choose a recipient' }),
     everyone: items.everyone,
     ...Object.fromEntries(
       (members ?? [])
@@ -88,9 +89,9 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
       setResult(r)
       setReview(false)
       onGranted?.()
-      toast.success(`Granted ${r.granted} invites to ${r.accounts} local users`)
+      toast.success(t({ id: 'eunha.invite_grant_form.granted_invites_to_local_users', defaultMessage: 'Granted {granted} invites to {accounts} local users' }, { granted: r.granted, accounts: r.accounts }))
     } catch {
-      setError('Could not grant invites. Please try again.')
+      setError(t({ id: 'eunha.invite_grant_form.could_not_grant_invites_please_try', defaultMessage: 'Could not grant invites. Please try again.' }))
     } finally {
       setPending(false)
     }
@@ -98,13 +99,12 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
   return (
     <section
       className="mb-6 space-y-4 rounded-lg border p-4"
-      aria-label="Grant invites"
+      aria-label={t({ id: 'eunha.invite_grant_form.grant_invites', defaultMessage: 'Grant invites' })}
     >
       <div>
-        <h2 className="text-base font-semibold">Grant invites</h2>
+        <h2 className="text-base font-semibold">{t({ id: 'eunha.invite_grant_form.grant_invites', defaultMessage: 'Grant invites' })}</h2>
         <p className="text-muted-foreground text-sm">
-          Give members people to bring along. Their invitees join the tree under
-          them.
+          {t({ id: 'eunha.invite_grant_form.give_members_people_to_bring_along', defaultMessage: 'Give members people to bring along. Their invitees join the tree under them.' })}
         </p>
       </div>
       {error && (
@@ -116,7 +116,7 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
               variant="outline"
               onClick={() => setRetry((n) => n + 1)}
             >
-              Try again
+              {t({ id: 'bundle_column_error.retry', defaultMessage: 'Try again' })}
             </Button>
           )}
         </p>
@@ -124,11 +124,16 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
       {result ? (
         <div className="space-y-3" role="status">
           <h3 className="font-medium">
-            {result.granted} invites granted to {result.accounts} local{' '}
-            {result.accounts === 1 ? 'user' : 'users'}
+            {t(
+              {
+                id: 'eunha.invite_grant_form.granted',
+                defaultMessage: '{granted} invites granted to {accounts, plural, one {# local user} other {# local users}}',
+              },
+              { granted: result.granted, accounts: result.accounts },
+            )}
           </h3>
           <p className="text-muted-foreground text-sm">
-            Links are ready on each recipient’s Your invites page.
+            {t({ id: 'eunha.invite_grant_form.links_are_ready_on_each_recipient', defaultMessage: 'Links are ready on each recipient’s Your invites page.' })}
           </p>
           <Button
             variant="outline"
@@ -137,32 +142,32 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
               setRetry((n) => n + 1)
             }}
           >
-            Grant more invites
+            {t({ id: 'eunha.invite_grant_form.grant_more_invites', defaultMessage: 'Grant more invites' })}
           </Button>
         </div>
       ) : review ? (
         <>
-          <h3 className="font-medium">Review grant</h3>
+          <h3 className="font-medium">{t({ id: 'eunha.invite_grant_form.review_grant', defaultMessage: 'Review grant' })}</h3>
           <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-            <dt className="text-muted-foreground">Recipients</dt>
+            <dt className="text-muted-foreground">{t({ id: 'eunha.invite_grant_form.recipients', defaultMessage: 'Recipients' })}</dt>
             <dd>
               {recipient === 'everyone'
-                ? `All local users (${recipients})`
+                ? t({ id: 'eunha.invite_grant_form.all_local_users_recipients', defaultMessage: 'All local users ({recipients})' }, { recipients })
                 : `@${selected?.acct}`}
             </dd>
-            <dt className="text-muted-foreground">People each can invite</dt>
+            <dt className="text-muted-foreground">{t({ id: 'eunha.invite_grant_form.people_each_can_invite', defaultMessage: 'People each can invite' })}</dt>
             <dd>{number}</dd>
-            <dt className="text-muted-foreground">Links to create</dt>
-            <dd>{number * recipients} single-use links</dd>
-            <dt className="text-muted-foreground">Expires after</dt>
+            <dt className="text-muted-foreground">{t({ id: 'eunha.invite_grant_form.links_to_create', defaultMessage: 'Links to create' })}</dt>
+            <dd>
+              {t({ id: 'eunha.invite_grant_form.single_use_links', defaultMessage: '{count} single-use links' }, { count: number * recipients })}
+            </dd>
+            <dt className="text-muted-foreground">{t({ id: 'eunha.invite_grant_form.expires_after', defaultMessage: 'Expires after' })}</dt>
             <dd>{EXPIRIES[expiry as keyof typeof EXPIRIES]}</dd>
-            <dt className="text-muted-foreground">Admission</dt>
-            <dd>No staff approval needed. Email confirmation required.</dd>
+            <dt className="text-muted-foreground">{t({ id: 'eunha.invite_grant_form.admission', defaultMessage: 'Admission' })}</dt>
+            <dd>{t({ id: 'eunha.invite_grant_form.no_staff_approval_needed_email_confirmation', defaultMessage: 'No staff approval needed. Email confirmation required.' })}</dd>
           </dl>
           <p className="text-muted-foreground text-xs">
-            Existing links and member roles stay unchanged. Bulk grants include
-            eligible local users at submission time; future users are not
-            included.
+            {t({ id: 'eunha.invite_grant_form.existing_links_and_member_roles_stay', defaultMessage: 'Existing links and member roles stay unchanged. Bulk grants include eligible local users at submission time; future users are not included.' })}
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -170,10 +175,12 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
               disabled={pending}
               onClick={() => setReview(false)}
             >
-              Back
+              {t({ id: 'column_back_button.label', defaultMessage: 'Back' })}
             </Button>
             <Button disabled={!ready || pending} onClick={submit}>
-              {pending ? 'Granting…' : `Grant ${number * recipients} invites`}
+              {pending
+                ? t({ id: 'eunha.invite_grant_form.granting', defaultMessage: 'Granting…' })
+                : t({ id: 'eunha.invite_grant_form.grant', defaultMessage: 'Grant {count} invites' }, { count: number * recipients })}
             </Button>
           </div>
         </>
@@ -183,28 +190,27 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
             <AccountListSkeleton count={3} />
           )}
           <div className="space-y-1">
-            <Label htmlFor="grant-search">Search members</Label>
+            <Label htmlFor="grant-search">{t({ id: 'eunha.invite_grant_form.search_members', defaultMessage: 'Search members' })}</Label>
             <Input
               id="grant-search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Username"
+              placeholder={t({ id: 'mastodon.admin.accounts.username', defaultMessage: 'Username' })}
             />
           </div>
           <ChoiceSelect
-            label="Recipient"
+            label={t({ id: 'eunha.invite_grant_form.recipient', defaultMessage: 'Recipient' })}
             items={visibleItems}
             value={recipient}
             onChange={setRecipient}
             className="w-full"
           />
           <p className="text-muted-foreground text-xs">
-            All local users includes confirmed, approved, functional members and
-            staff. Remote and unavailable accounts are excluded.
+            {t({ id: 'eunha.invite_grant_form.all_local_users_includes_confirmed_approved', defaultMessage: 'All local users includes confirmed, approved, functional members and staff. Remote and unavailable accounts are excluded.' })}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="grant-count">People each member can invite</Label>
+              <Label htmlFor="grant-count">{t({ id: 'eunha.invite_grant_form.people_each_member_can_invite', defaultMessage: 'People each member can invite' })}</Label>
               <Input
                 id="grant-count"
                 type="number"
@@ -215,11 +221,11 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
                 onChange={(e) => setCount(e.target.value)}
               />
               <p className="text-muted-foreground text-xs">
-                One single-use link per person. Choose 1–25.
+                {t({ id: 'eunha.invite_grant_form.one_single_use_link_per_person', defaultMessage: 'One single-use link per person. Choose 1–25.' })}
               </p>
             </div>
             <ChoiceSelect
-              label="Links expire after"
+              label={t({ id: 'eunha.invite_grant_form.links_expire_after', defaultMessage: 'Links expire after' })}
               items={EXPIRIES}
               value={expiry}
               onChange={setExpiry}
@@ -227,18 +233,29 @@ export function InviteGrantForm({ onGranted }: { onGranted?: () => void }) {
             />
           </div>
           <p className="text-muted-foreground text-sm">
-            No staff approval needed for these invites. Email confirmation is
-            still required.
+            {t({ id: 'eunha.invite_grant_form.no_staff_approval_needed_for_these', defaultMessage: 'No staff approval needed for these invites. Email confirmation is still required.' })}
           </p>
           {ready && (
             <p role="status" className="text-sm">
-              Create {number * recipients} single-use links for {recipients}{' '}
-              local {recipients === 1 ? 'user' : 'users'}
-              {selected ? ` (@${selected.acct})` : ''}.
+              {selected
+                ? t(
+                    {
+                      id: 'eunha.invite_grant_form.summary_one',
+                      defaultMessage: 'Create {links} single-use links for {recipients, plural, one {# local user} other {# local users}} (@{acct}).',
+                    },
+                    { links: number * recipients, recipients, acct: selected.acct },
+                  )
+                : t(
+                    {
+                      id: 'eunha.invite_grant_form.summary',
+                      defaultMessage: 'Create {links} single-use links for {recipients, plural, one {# local user} other {# local users}}.',
+                    },
+                    { links: number * recipients, recipients },
+                  )}
             </p>
           )}
           <Button disabled={!ready} onClick={() => setReview(true)}>
-            Review grant
+            {t({ id: 'eunha.invite_grant_form.review_grant', defaultMessage: 'Review grant' })}
           </Button>
         </>
       )}

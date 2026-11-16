@@ -30,14 +30,16 @@ import { Label } from '@/components/ui/label.tsx'
 import { Separator } from '@/components/ui/separator.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { FormSkeleton, RowsSkeleton, TextSkeleton } from '@/components/skeletons.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 // Mastodon's admin pages for terms of service, at its own paths, on the REST
 // endpoints eunha serves for its forms. All of them are `manage_settings`'.
 
 const TABS = [
-  { to: '/admin/terms_of_service', label: 'Current', end: true },
-  { to: '/admin/terms_of_service/draft', label: 'Draft' },
-  { to: '/admin/terms_of_service/history', label: 'History' },
+  { to: '/admin/terms_of_service', get label() { return t({ id: 'mastodon.admin.terms_of_service.current', defaultMessage: 'Current' }) }, end: true },
+  { to: '/admin/terms_of_service/draft', get label() { return t({ id: 'mastodon.admin.terms_of_service.draft', defaultMessage: 'Draft' }) } },
+  { to: '/admin/terms_of_service/history', get label() { return t({ id: 'mastodon.admin.terms_of_service.history', defaultMessage: 'History' }) } },
 ]
 
 function Layout({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
@@ -86,10 +88,10 @@ export function AdminTermsOfServiceIndex() {
 
   return (
     <Layout
-      title="Terms of Service"
+      title={t({ id: 'terms_of_service.title', defaultMessage: 'Terms of Service' })}
       actions={
         <Button size="sm" variant="outline" render={<Link to="/admin/terms_of_service/generate" />}>
-          Use template
+          {t({ id: 'mastodon.admin.terms_of_service.generate', defaultMessage: 'Use template' })}
         </Button>
       }
     >
@@ -98,16 +100,14 @@ export function AdminTermsOfServiceIndex() {
       {terms === null && (
         <div className="space-y-3">
           <p className="text-sm">
-            You don't currently have any terms of service configured. Terms of service are
-            meant to provide clarity and protect you from potential liabilities in disputes
-            with your users.
+            {t({ id: 'mastodon.admin.terms_of_service.no_terms_of_service_html', defaultMessage: 'You don\'\'t currently have any terms of service configured. Terms of service are meant to provide clarity and protect you from potential liabilities in disputes with your users.' })}
           </p>
           <div className="flex gap-2">
             <Button size="sm" render={<Link to="/admin/terms_of_service/draft" />}>
-              Use your own
+              {t({ id: 'mastodon.admin.terms_of_service.create', defaultMessage: 'Use your own' })}
             </Button>
             <Button size="sm" variant="outline" render={<Link to="/admin/terms_of_service/generate" />}>
-              Use template
+              {t({ id: 'mastodon.admin.terms_of_service.generate', defaultMessage: 'Use template' })}
             </Button>
           </div>
         </div>
@@ -117,17 +117,17 @@ export function AdminTermsOfServiceIndex() {
           <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="secondary">
               {terms.effective || !terms.effective_date
-                ? 'Live'
-                : `Live, effective ${formatPolicyDate(terms.effective_date)}`}
+                ? t({ id: 'mastodon.admin.terms_of_service.live', defaultMessage: 'Live' })
+                : t({ id: 'mastodon.admin.terms_of_service.going_live_on_html', defaultMessage: 'Live, effective {date}' }, { date: formatPolicyDate(terms.effective_date) })}
             </Badge>
-            {terms.published_at && <span>Published on {day(terms.published_at)}</span>}
+            {terms.published_at && <span>{t({ id: 'mastodon.admin.terms_of_service.published_on_html', defaultMessage: 'Published on {date}' }, { date: day(terms.published_at) })}</span>}
             <span>·</span>
             {terms.notification_sent_at ? (
-              <span>Users notified on {day(terms.notification_sent_at)}</span>
+              <span>{t({ id: 'mastodon.admin.terms_of_service.notified_on_html', defaultMessage: 'Users notified on {date}' }, { date: day(terms.notification_sent_at) })}</span>
             ) : (
               terms.id && (
                 <Link className="text-primary" to={`/admin/terms_of_service/${terms.id}/preview`}>
-                  Notify users
+                  {t({ id: 'mastodon.admin.terms_of_service.notify_users', defaultMessage: 'Notify users' })}
                 </Link>
               )
             )}
@@ -138,7 +138,7 @@ export function AdminTermsOfServiceIndex() {
             </CardContent>
           </Card>
           <Separator />
-          <h2 className="font-semibold">What's changed</h2>
+          <h2 className="font-semibold">{t({ id: 'mastodon.admin.terms_of_service.changelog', defaultMessage: 'What\'\'s changed' })}</h2>
           <PolicyText html={terms.changelog_html} />
         </div>
       )}
@@ -176,10 +176,10 @@ export function AdminTermsOfServiceDraft() {
         action_type: actionType,
       })
       if (saved.published_at) {
-        toast.success('Published the terms of service.')
+        toast.success(t({ id: 'eunha.admin.terms_of_service.published_the_terms_of_service', defaultMessage: 'Published the terms of service.' }))
         navigate('/admin/terms_of_service')
       } else {
-        toast.success('Saved the draft.')
+        toast.success(t({ id: 'eunha.admin.terms_of_service.saved_the_draft', defaultMessage: 'Saved the draft.' }))
       }
     } catch (e) {
       setRefusal(errorMessage(e))
@@ -189,7 +189,7 @@ export function AdminTermsOfServiceDraft() {
   }
 
   return (
-    <Layout title="Terms of Service">
+    <Layout title={t({ id: 'terms_of_service.title', defaultMessage: 'Terms of Service' })}>
       <AdminError error={error} />
       {draft === undefined && !error && <FormSkeleton fields={3} />}
       {draft && (
@@ -202,8 +202,8 @@ export function AdminTermsOfServiceDraft() {
         >
           {refusal && <p className="text-destructive text-sm">{refusal}</p>}
           <div className="space-y-1">
-            <Label htmlFor="tos-text">Terms of Service</Label>
-            <p className="text-muted-foreground text-xs">Can be structured with Markdown syntax.</p>
+            <Label htmlFor="tos-text">{t({ id: 'terms_of_service.title', defaultMessage: 'Terms of Service' })}</Label>
+            <p className="text-muted-foreground text-xs">{t({ id: 'mastodon.simple_form.hints.terms_of_service.changelog', defaultMessage: 'Can be structured with Markdown syntax.' })}</p>
             <Textarea
               id="tos-text"
               rows={14}
@@ -213,8 +213,8 @@ export function AdminTermsOfServiceDraft() {
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="tos-changelog">What's changed?</Label>
-            <p className="text-muted-foreground text-xs">Can be structured with Markdown syntax.</p>
+            <Label htmlFor="tos-changelog">{t({ id: 'mastodon.simple_form.labels.terms_of_service.changelog', defaultMessage: 'What\'\'s changed?' })}</Label>
+            <p className="text-muted-foreground text-xs">{t({ id: 'mastodon.simple_form.hints.terms_of_service.changelog', defaultMessage: 'Can be structured with Markdown syntax.' })}</p>
             <Textarea
               id="tos-changelog"
               rows={6}
@@ -224,10 +224,9 @@ export function AdminTermsOfServiceDraft() {
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="tos-effective-date">Effective date</Label>
+            <Label htmlFor="tos-effective-date">{t({ id: 'mastodon.simple_form.labels.terms_of_service.effective_date', defaultMessage: 'Effective date' })}</Label>
             <p className="text-muted-foreground text-xs">
-              A reasonable timeframe can range anywhere from 10 to 30 days from the date you
-              notify your users.
+              {t({ id: 'mastodon.simple_form.hints.terms_of_service.effective_date', defaultMessage: 'A reasonable timeframe can range anywhere from 10 to 30 days from the date you notify your users.' })}
             </p>
             <Input
               id="tos-effective-date"
@@ -239,18 +238,18 @@ export function AdminTermsOfServiceDraft() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" variant="secondary" disabled={busy}>
-              Save draft
+              {t({ id: 'mastodon.admin.terms_of_service.save_draft', defaultMessage: 'Save draft' })}
             </Button>
             <ConfirmButton
               variant="default"
               destructive={false}
               disabled={busy}
-              title="Publish these terms of service?"
-              description="Published terms cannot be edited. They become the current terms on their effective date."
-              confirmLabel="Publish"
+              title={t({ id: 'eunha.admin.terms_of_service.publish_these_terms_of_service', defaultMessage: 'Publish these terms of service?' })}
+              description={t({ id: 'eunha.admin.terms_of_service.published_terms_cannot_be_edited_they', defaultMessage: 'Published terms cannot be edited. They become the current terms on their effective date.' })}
+              confirmLabel={t({ id: 'compose.publish', defaultMessage: 'Publish' })}
               onConfirm={() => save('publish')}
             >
-              Publish
+              {t({ id: 'compose.publish', defaultMessage: 'Publish' })}
             </ConfirmButton>
           </div>
         </form>
@@ -265,12 +264,12 @@ export function AdminTermsOfServiceHistory() {
   const { value: history, error } = useLoad(getTermsOfServiceHistory, [])
 
   return (
-    <Layout title="Terms of Service">
+    <Layout title={t({ id: 'terms_of_service.title', defaultMessage: 'Terms of Service' })}>
       <AdminError error={error} />
       {history === undefined && !error && <RowsSkeleton />}
       {history?.length === 0 && (
         <p className="text-muted-foreground text-sm">
-          There are no recorded changes of the terms of service yet.
+          {t({ id: 'mastodon.admin.terms_of_service.no_history', defaultMessage: 'There are no recorded changes of the terms of service yet.' })}
         </p>
       )}
       {!!history?.length && (
@@ -300,48 +299,48 @@ export function AdminTermsOfServiceHistory() {
 const GENERATOR_FIELDS: { key: keyof TermsOfServiceGenerator; label: string; hint: string }[] = [
   {
     key: 'domain',
-    label: 'Domain',
-    hint: 'Unique identification of the online service you are providing.',
+    get label() { return t({ id: 'mastodon.admin.instances.by_domain', defaultMessage: 'Domain' }) },
+    get hint() { return t({ id: 'mastodon.simple_form.hints.terms_of_service_generator.domain', defaultMessage: 'Unique identification of the online service you are providing.' }) },
   },
   {
     key: 'min_age',
-    label: 'Minimum age',
-    hint: 'Should not be below the minimum age required by the laws of your jurisdiction.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.min_age', defaultMessage: 'Minimum age' }) },
+    get hint() { return t({ id: 'mastodon.simple_form.hints.terms_of_service_generator.min_age', defaultMessage: 'Should not be below the minimum age required by the laws of your jurisdiction.' }) },
   },
   {
     key: 'jurisdiction',
-    label: 'Legal jurisdiction',
-    hint: "List the country where whoever pays the bills lives. If it's a company or other entity, list the country where it's incorporated, and the city, region, territory or state as appropriate.",
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.jurisdiction', defaultMessage: 'Legal jurisdiction' }) },
+    get hint() { return t({ id: 'eunha.admin.terms_of_service.list_the_country_where_whoever_pays', defaultMessage: 'List the country where whoever pays the bills lives. If it\'\'s a company or other entity, list the country where it\'\'s incorporated, and the city, region, territory or state as appropriate.' }) },
   },
   {
     key: 'choice_of_law',
-    label: 'Choice of Law',
-    hint: 'City, region, territory or state the internal substantive laws of which shall govern any and all claims.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.choice_of_law', defaultMessage: 'Choice of Law' }) },
+    get hint() { return t({ id: 'mastodon.simple_form.hints.terms_of_service_generator.choice_of_law', defaultMessage: 'City, region, territory or state the internal substantive laws of which shall govern any and all claims.' }) },
   },
   {
     key: 'admin_email',
-    label: 'Email address for legal notices',
-    hint: 'Legal notices include counternotices, court orders, takedown requests, and law enforcement requests.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.admin_email', defaultMessage: 'Email address for legal notices' }) },
+    get hint() { return t({ id: 'mastodon.simple_form.hints.terms_of_service_generator.admin_email', defaultMessage: 'Legal notices include counternotices, court orders, takedown requests, and law enforcement requests.' }) },
   },
   {
     key: 'dmca_address',
-    label: 'Physical address for DMCA/copyright notices',
-    hint: 'For US operators, use the address registered in the DMCA Designated Agent Directory.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.dmca_address', defaultMessage: 'Physical address for DMCA/copyright notices' }) },
+    get hint() { return t({ id: 'eunha.admin.terms_of_service.for_us_operators_use_the_address', defaultMessage: 'For US operators, use the address registered in the DMCA Designated Agent Directory.' }) },
   },
   {
     key: 'dmca_email',
-    label: 'Email address for DMCA/copyright notices',
-    hint: 'Can be the same email used for "Email address for legal notices" above.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.dmca_email', defaultMessage: 'Email address for DMCA/copyright notices' }) },
+    get hint() { return t({ id: 'eunha.admin.terms_of_service.can_be_the_same_email_used', defaultMessage: 'Can be the same email used for "Email address for legal notices" above.' }) },
   },
   {
     key: 'arbitration_address',
-    label: 'Physical address for arbitration notices',
-    hint: 'Can be the same as Physical address above, or "N/A" if using email.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.arbitration_address', defaultMessage: 'Physical address for arbitration notices' }) },
+    get hint() { return t({ id: 'eunha.admin.terms_of_service.can_be_the_same_as_physical', defaultMessage: 'Can be the same as Physical address above, or "N/A" if using email.' }) },
   },
   {
     key: 'arbitration_website',
-    label: 'Website for submitting arbitration notices',
-    hint: 'Can be a web form, or "N/A" if using email.',
+    get label() { return t({ id: 'mastodon.simple_form.labels.terms_of_service_generator.arbitration_website', defaultMessage: 'Website for submitting arbitration notices' }) },
+    get hint() { return t({ id: 'eunha.admin.terms_of_service.can_be_a_web_form_or', defaultMessage: 'Can be a web form, or "N/A" if using email.' }) },
   },
 ]
 
@@ -365,7 +364,7 @@ export function AdminTermsOfServiceGenerate() {
         GENERATOR_FIELDS.map(({ key }) => [key, fields[key] ?? null]),
       ) as unknown as TermsOfServiceGenerator
       await generateTermsOfService(token, params)
-      toast.success('Generated a draft from the template.')
+      toast.success(t({ id: 'eunha.admin.terms_of_service.generated_a_draft_from_the_template', defaultMessage: 'Generated a draft from the template.' }))
       navigate('/admin/terms_of_service/draft')
     } catch (e) {
       setRefusal(errorMessage(e))
@@ -375,7 +374,7 @@ export function AdminTermsOfServiceGenerate() {
   }
 
   return (
-    <Layout title="Terms of Service Setup">
+    <Layout title={t({ id: 'mastodon.admin.terms_of_service.generates.title', defaultMessage: 'Terms of Service Setup' })}>
       <AdminError error={error} />
       {defaults && (
         <form
@@ -386,14 +385,14 @@ export function AdminTermsOfServiceGenerate() {
           }}
         >
           <p className="text-sm">
-            The terms of service template provided is for informational purposes only, and
-            should not be construed as legal advice on any subject matter. Please consult with
-            your own legal counsel on your situation and specific legal questions you have.
+            {t({ id: 'mastodon.admin.terms_of_service.generates.explanation_html', defaultMessage: 'The terms of service template provided is for informational purposes only, and should not be construed as legal advice on any subject matter. Please consult with your own legal counsel on your situation and specific legal questions you have.' })}
           </p>
           <p className="text-sm">
-            <strong>The generated terms of service will not be published automatically.</strong>{' '}
-            You will have a chance to review the results. Please fill in the necessary details
-            to proceed.
+            <FormattedMessage
+              id='mastodon.admin.terms_of_service.generates.chance_to_review_html'
+              defaultMessage='<strong>The generated terms of service will not be published automatically.</strong> You will have a chance to review the results. Please fill in the necessary details to proceed.'
+              values={{ strong: (chunks) => <strong>{chunks}</strong> }}
+            />
           </p>
           <Separator />
           {refusal && <p className="text-destructive text-sm">{refusal}</p>}
@@ -409,7 +408,7 @@ export function AdminTermsOfServiceGenerate() {
             </div>
           ))}
           <Button type="submit" disabled={busy}>
-            {busy ? 'Generating…' : 'Generate'}
+            {busy ? t({ id: 'eunha.common.generating', defaultMessage: 'Generating…' }) : t({ id: 'mastodon.admin.terms_of_service.generates.action', defaultMessage: 'Generate' })}
           </Button>
         </form>
       )}
@@ -429,15 +428,21 @@ export function AdminTermsOfServicePreview() {
   const terms: AdminTermsOfService | undefined = preview?.terms_of_service
 
   return (
-    <Layout title="Preview terms of service notification">
+    <Layout title={t({ id: 'mastodon.admin.terms_of_service.preview.title', defaultMessage: 'Preview terms of service notification' })}>
       <AdminError error={error} />
       {preview === undefined && !error && <TextSkeleton />}
       {preview && terms && (
         <div className="space-y-4">
           <p className="text-sm">
-            The email will be sent to <strong>{count.toLocaleString()} users</strong> who have
-            signed up before {day(terms.published_at)}. The following text will be included in
-            the e-mail:
+            <FormattedMessage
+              id='mastodon.admin.terms_of_service.preview.explanation_html'
+              defaultMessage='The email will be sent to <strong>{display_count} users</strong> who have signed up before {date}. The following text will be included in the e-mail:'
+              values={{
+                display_count: count.toLocaleString(currentLocale()),
+                date: day(terms.published_at),
+                strong: (chunks) => <strong>{chunks}</strong>,
+              }}
+            />
           </p>
           <Card>
             <CardContent className="py-4">
@@ -453,7 +458,7 @@ export function AdminTermsOfServicePreview() {
                 setTesting(true)
                 try {
                   await testTermsOfService(token, id)
-                  toast.success('Sent a preview to your email address.')
+                  toast.success(t({ id: 'eunha.admin.terms_of_service.sent_a_preview_to_your_email', defaultMessage: 'Sent a preview to your email address.' }))
                 } catch (e) {
                   toast.error(errorMessage(e))
                 } finally {
@@ -461,22 +466,25 @@ export function AdminTermsOfServicePreview() {
                 }
               }}
             >
-              Send preview to yourself
+              {t({ id: 'eunha.admin.terms_of_service.send_preview_to_yourself', defaultMessage: 'Send preview to yourself' })}
             </Button>
             <ConfirmButton
               variant="default"
               destructive={false}
-              title="Are you sure?"
-              description={`Every one of the ${count.toLocaleString()} users will be emailed. Users who were not active in the year before these terms were published will be shown them when they next sign in instead.`}
-              confirmLabel={count === 1 ? 'Send 1 email' : `Send ${count.toLocaleString()} emails`}
+              title={t({ id: 'mastodon.admin.accounts.are_you_sure', defaultMessage: 'Are you sure?' })}
+              description={t(
+                { id: 'eunha.admin.terms_of_service.every_user_emailed', defaultMessage: 'Every one of the {count, number} users will be emailed. Users who were not active in the year before these terms were published will be shown them when they next sign in instead.' },
+                { count },
+              )}
+              confirmLabel={t({ id: 'eunha.admin.terms_of_service.send_emails', defaultMessage: '{count, plural, one {Send # email} other {Send # emails}}' }, { count })}
               onConfirm={async () => {
                 if (!token) return
                 await distributeTermsOfService(token, id)
-                toast.success('Notifying users.')
+                toast.success(t({ id: 'eunha.admin.terms_of_service.notifying_users', defaultMessage: 'Notifying users.' }))
                 navigate('/admin/terms_of_service')
               }}
             >
-              {count === 1 ? 'Send 1 email' : `Send ${count.toLocaleString()} emails`}
+              {t({ id: 'eunha.admin.terms_of_service.send_emails', defaultMessage: '{count, plural, one {Send # email} other {Send # emails}}' }, { count })}
             </ConfirmButton>
           </div>
         </div>

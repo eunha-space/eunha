@@ -7,6 +7,7 @@ import { getPreferences, updatePreferences, type Preferences } from '../security
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 interface AccountPrivacy {
   discoverable: boolean
@@ -74,7 +75,7 @@ export function PrivacySettings({ token }: { token: string }) {
       await restClient(token).v1.accounts.updateCredentials(changes)
     } catch {
       setAccount(previous)
-      toast.error('Could not save the setting')
+      toast.error(t({ id: 'eunha.privacy_settings.could_not_save_the_setting', defaultMessage: 'Could not save the setting' }))
     }
   }
 
@@ -82,49 +83,49 @@ export function PrivacySettings({ token }: { token: string }) {
     try {
       setPrefs(await updatePreferences(token, changes))
     } catch {
-      toast.error('Could not save the setting')
+      toast.error(t({ id: 'eunha.privacy_settings.could_not_save_the_setting', defaultMessage: 'Could not save the setting' }))
     }
   }
 
   return (
     <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="font-semibold">Privacy and reach</h2>
+      <h2 className="font-semibold">{t({ id: 'navigation_bar.privacy_and_reach', defaultMessage: 'Privacy and reach' })}</h2>
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Reach</h3>
+        <h3 className="text-sm font-semibold">{t({ id: 'mastodon.privacy.reach', defaultMessage: 'Reach' })}</h3>
         <Toggle
-          label="Feature profile and posts in discovery algorithms"
+          label={t({ id: 'eunha.privacy_settings.feature_profile_and_posts_in_discovery', defaultMessage: 'Feature profile and posts in discovery algorithms' })}
           checked={account.discoverable}
           onChange={(on) => void saveAccount({ discoverable: on })}
         />
         <Toggle
-          label="Automatically accept new followers"
+          label={t({ id: 'mastodon.simple_form.labels.account.unlocked', defaultMessage: 'Automatically accept new followers' })}
           checked={!account.locked}
           onChange={(on) => void saveAccount({ locked: !on })}
         />
         <Toggle
-          label="Show who you follow and who follows you on your profile"
+          label={t({ id: 'eunha.privacy_settings.show_who_you_follow_and_who', defaultMessage: 'Show who you follow and who follows you on your profile' })}
           checked={!account.hideCollections}
           onChange={(on) => void saveAccount({ hideCollections: !on })}
         />
       </div>
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Search</h3>
+        <h3 className="text-sm font-semibold">{t({ id: 'navigation_bar.search', defaultMessage: 'Search' })}</h3>
         <Toggle
-          label="Include public posts in search results"
+          label={t({ id: 'mastodon.simple_form.labels.account.indexable', defaultMessage: 'Include public posts in search results' })}
           checked={account.indexable}
           onChange={(on) => void saveAccount({ indexable: on })}
         />
         <Toggle
-          label="Include profile page in search engines"
-          hint="When off, search engines such as Google are asked not to index your profile."
+          label={t({ id: 'mastodon.simple_form.labels.settings.indexable', defaultMessage: 'Include profile page in search engines' })}
+          hint={t({ id: 'eunha.privacy_settings.when_off_search_engines_such_as', defaultMessage: 'When off, search engines such as Google are asked not to index your profile.' })}
           checked={!prefs.noindex}
           onChange={(on) => void savePrefs({ noindex: !on })}
         />
       </div>
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Privacy</h3>
+        <h3 className="text-sm font-semibold">{t({ id: 'footer.privacy_policy_short', defaultMessage: 'Privacy' })}</h3>
         <Toggle
-          label="Display from which app you sent a post"
+          label={t({ id: 'mastodon.simple_form.labels.settings.show_application', defaultMessage: 'Display from which app you sent a post' })}
           checked={prefs.show_application}
           onChange={(on) => void savePrefs({ show_application: on })}
         />

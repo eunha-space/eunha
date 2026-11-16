@@ -19,16 +19,24 @@ import {
   SelectValue,
 } from '@/components/ui/select.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import type { MessageDescriptor } from 'react-intl'
 
 // `simple_form.labels.notification_emails.*`, in the order Mastodon's
 // notifications page lists them.
-const NOTIFICATION_EMAILS: [string, string][] = [
-  ['follow', 'Someone followed you'],
-  ['follow_request', 'Someone requested to follow you'],
-  ['reblog', 'Someone boosted your post'],
-  ['favourite', 'Someone favourited your post'],
-  ['mention', 'Someone mentioned you'],
-  ['quote', 'Someone quoted you'],
+const NOTIFICATION_EMAILS: [string, MessageDescriptor][] = [
+  ['follow', { id: 'mastodon.simple_form.labels.notification_emails.follow', defaultMessage: 'Someone followed you' }],
+  [
+    'follow_request',
+    { id: 'mastodon.simple_form.labels.notification_emails.follow_request', defaultMessage: 'Someone requested to follow you' },
+  ],
+  ['reblog', { id: 'mastodon.simple_form.labels.notification_emails.reblog', defaultMessage: 'Someone boosted your post' }],
+  [
+    'favourite',
+    { id: 'mastodon.simple_form.labels.notification_emails.favourite', defaultMessage: 'Someone favourited your post' },
+  ],
+  ['mention', { id: 'mastodon.simple_form.labels.notification_emails.mention', defaultMessage: 'Someone mentioned you' }],
+  ['quote', { id: 'mastodon.simple_form.labels.notification_emails.quote', defaultMessage: 'Someone quoted you' }],
 ]
 
 /**
@@ -56,7 +64,7 @@ export function MailPreferences({ token }: { token: string }) {
     try {
       setPrefs(await updatePreferences(token, changes))
     } catch {
-      toast.error('Could not save the setting')
+      toast.error(t({ id: 'eunha.mail_preferences.could_not_save_the_setting', defaultMessage: 'Could not save the setting' }))
     }
   }
 
@@ -72,16 +80,16 @@ export function MailPreferences({ token }: { token: string }) {
 
   return (
     <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="font-semibold">Email notifications</h2>
+      <h2 className="font-semibold">{t({ id: 'mastodon.settings.notifications', defaultMessage: 'Email notifications' })}</h2>
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Email me when</h3>
+        <h3 className="text-sm font-semibold">{t({ id: 'eunha.mail_preferences.email_me_when', defaultMessage: 'Email me when' })}</h3>
         {NOTIFICATION_EMAILS.map(([key, label]) => (
           <Label key={key} className="text-sm font-normal">
             <Switch
               checked={prefs.notification_emails[key] === true}
               onCheckedChange={(on) => void save({ notification_emails: { [key]: on } })}
             />
-            {label}
+            {t(label)}
           </Label>
         ))}
       </div>
@@ -91,17 +99,16 @@ export function MailPreferences({ token }: { token: string }) {
             checked={prefs.always_send_emails}
             onCheckedChange={(on) => void save({ always_send_emails: on })}
           />
-          Always send e-mail notifications
+          {t({ id: 'mastodon.simple_form.labels.defaults.setting_always_send_emails', defaultMessage: 'Always send e-mail notifications' })}
         </Label>
         <p className="text-muted-foreground pl-10 text-xs">
-          Normally e-mail notifications won't be sent when you are actively using
-          Mastodon
+          {t({ id: 'mastodon.simple_form.hints.defaults.setting_always_send_emails', defaultMessage: 'Normally e-mail notifications won\'\'t be sent when you are actively using Mastodon' })}
         </p>
       </div>
-      <h3 className="text-sm font-semibold">Time zone</h3>
+      <h3 className="text-sm font-semibold">{t({ id: 'mastodon.simple_form.labels.user.time_zone', defaultMessage: 'Time zone' })}</h3>
       <div className="space-y-1">
         <Label htmlFor="time-zone" className="text-sm font-normal">
-          Times in the emails you receive are written in this zone.
+          {t({ id: 'eunha.mail_preferences.times_in_the_emails_you_receive', defaultMessage: 'Times in the emails you receive are written in this zone.' })}
         </Label>
         <Select
           items={items}
@@ -110,7 +117,7 @@ export function MailPreferences({ token }: { token: string }) {
             if (typeof v === 'string') void save({ time_zone: v })
           }}
         >
-          <SelectTrigger id="time-zone" className="w-full" aria-label="Time zone">
+          <SelectTrigger id="time-zone" className="w-full" aria-label={t({ id: 'mastodon.simple_form.labels.user.time_zone', defaultMessage: 'Time zone' })}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

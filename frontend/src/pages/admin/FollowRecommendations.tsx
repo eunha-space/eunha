@@ -15,11 +15,12 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-const STATUSES = { active: 'Active', suppressed: 'Suppressed' }
+const STATUSES = { get active() { return t({ id: 'mastodon.admin.webhooks.enabled', defaultMessage: 'Active' }) }, get suppressed() { return t({ id: 'mastodon.admin.follow_recommendations.suppressed', defaultMessage: 'Suppressed' }) } }
 const REASONS: Record<string, string> = {
-  most_followed: 'Most followed',
-  most_interactions: 'Most interactions',
+  get most_followed() { return t({ id: 'eunha.admin.follow_recommendations.most_followed', defaultMessage: 'Most followed' }) },
+  get most_interactions() { return t({ id: 'eunha.admin.follow_recommendations.most_interactions', defaultMessage: 'Most interactions' }) },
 }
 
 /**
@@ -53,7 +54,7 @@ export default function FollowRecommendations() {
   const toggle = async (item: AdminFollowRecommendation) => {
     try {
       await setFollowRecommendationsSuppressed(token ?? '', [item.account.id], !item.suppressed)
-      toast.success(item.suppressed ? 'Recommended again.' : 'Suppressed.')
+      toast.success(item.suppressed ? t({ id: 'eunha.admin.follow_recommendations.recommended_again', defaultMessage: 'Recommended again.' }) : t({ id: 'eunha.common.suppressed', defaultMessage: 'Suppressed.' }))
       load()
     } catch (e) {
       toast.error(errorMessage(e))
@@ -61,18 +62,15 @@ export default function FollowRecommendations() {
   }
 
   return (
-    <AdminLayout title="Follow recommendations" permission="manage_taxonomies">
+    <AdminLayout title={t({ id: 'mastodon.admin.follow_recommendations.title', defaultMessage: 'Follow recommendations' })} permission="manage_taxonomies">
       <p className="text-muted-foreground mb-3 text-sm">
-        Follow recommendations help new users quickly find interesting content. When a user has
-        not interacted with others enough to form personalized follow recommendations, these
-        accounts are recommended instead. They are re-calculated daily from a mix of the accounts
-        with the highest recent engagements and the most local followers for a given language.
+        {t({ id: 'eunha.admin.follow_recommendations.follow_recommendations_help_new_users_quickly', defaultMessage: 'Follow recommendations help new users quickly find interesting content. When a user has not interacted with others enough to form personalized follow recommendations, these accounts are recommended instead. They are re-calculated daily from a mix of the accounts with the highest recent engagements and the most local followers for a given language.' })}
       </p>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <div className="space-y-1">
-          <Label>Status</Label>
+          <Label>{t({ id: 'mastodon.admin.follow_recommendations.status', defaultMessage: 'Status' })}</Label>
           <ChoiceSelect
-            label="Status"
+            label={t({ id: 'mastodon.admin.follow_recommendations.status', defaultMessage: 'Status' })}
             value={status}
             items={STATUSES}
             onChange={(v) => {
@@ -83,7 +81,7 @@ export default function FollowRecommendations() {
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="rec-language">Language</Label>
+          <Label htmlFor="rec-language">{t({ id: 'about.language_label', defaultMessage: 'Language' })}</Label>
           <Input
             id="rec-language"
             className="w-28"
@@ -100,7 +98,7 @@ export default function FollowRecommendations() {
       {items === null && !error && <AccountListSkeleton />}
       {items?.length === 0 && (
         <p className="text-muted-foreground text-sm">
-          {status === 'suppressed' ? 'No accounts are suppressed.' : 'Nothing is recommended yet.'}
+          {status === 'suppressed' ? t({ id: 'eunha.admin.follow_recommendations.no_accounts_are_suppressed', defaultMessage: 'No accounts are suppressed.' }) : t({ id: 'eunha.admin.follow_recommendations.nothing_is_recommended_yet', defaultMessage: 'Nothing is recommended yet.' })}
         </p>
       )}
       <div className="space-y-2">
@@ -116,14 +114,14 @@ export default function FollowRecommendations() {
             ))}
             {item.language && <Badge variant="secondary">{item.language}</Badge>}
             <Button size="xs" variant="outline" onClick={() => void toggle(item)}>
-              {item.suppressed ? 'Restore' : 'Suppress'}
+              {item.suppressed ? t({ id: 'eunha.admin.follow_recommendations.restore', defaultMessage: 'Restore' }) : t({ id: 'eunha.admin.follow_recommendations.suppress', defaultMessage: 'Suppress' })}
             </Button>
           </div>
         ))}
       </div>
       <div className="mt-2 flex gap-2">
         <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>
-          Newer
+          {t({ id: 'mastodon.pagination.newer', defaultMessage: 'Newer' })}
         </Button>
         <Button
           size="sm"
@@ -131,7 +129,7 @@ export default function FollowRecommendations() {
           disabled={(items?.length ?? 0) < 40}
           onClick={() => setPage(page + 1)}
         >
-          Older
+          {t({ id: 'mastodon.pagination.older', defaultMessage: 'Older' })}
         </Button>
       </div>
     </AdminLayout>

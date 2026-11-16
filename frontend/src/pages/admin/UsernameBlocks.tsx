@@ -20,11 +20,12 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { BLOCK_TABS } from './IpBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 // Mastodon's `simple_form` labels for `UsernameBlock#comparison`.
 const COMPARISONS: Record<UsernameComparison, string> = {
-  equals: 'Is equal to',
-  contains: 'Contains',
+  get equals() { return t({ id: 'eunha.admin.username_blocks.is_equal_to', defaultMessage: 'Is equal to' }) },
+  get contains() { return t({ id: 'mastodon.admin.username_blocks.comparison.contains', defaultMessage: 'Contains' }) },
 }
 
 /**
@@ -66,7 +67,7 @@ export default function UsernameBlocks() {
       )
       setUsername('')
       setWithApproval(false)
-      toast.success('Username rule added.')
+      toast.success(t({ id: 'eunha.admin.username_blocks.username_rule_added', defaultMessage: 'Username rule added.' }))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -78,32 +79,32 @@ export default function UsernameBlocks() {
     try {
       const updated = await updateUsernameBlock(token ?? '', block.id, patch)
       setBlocks((list) => (list ?? []).map((b) => (b.id === block.id ? updated : b)))
-      toast.success('Username rule updated.')
+      toast.success(t({ id: 'eunha.admin.username_blocks.username_rule_updated', defaultMessage: 'Username rule updated.' }))
     } catch (err) {
       toast.error(errorMessage(err))
     }
   }
 
   return (
-    <AdminLayout title="Usernames" permission="manage_blocks" sub={BLOCK_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.username_blocks.usernames', defaultMessage: 'Usernames' })} permission="manage_blocks" sub={BLOCK_TABS}>
       <form onSubmit={add} className="mb-4 space-y-2 rounded-lg border p-3">
         <div className="flex flex-wrap gap-2">
           <ChoiceSelect
-            label="Comparison"
+            label={t({ id: 'eunha.admin.username_blocks.comparison', defaultMessage: 'Comparison' })}
             value={comparison}
             items={COMPARISONS}
             onChange={setComparison}
             className="w-40"
           />
           <Input
-            aria-label="Username"
+            aria-label={t({ id: 'mastodon.admin.accounts.username', defaultMessage: 'Username' })}
             placeholder="username"
             className="min-w-0 flex-1"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
           />
           <Button type="submit" disabled={saving || !username.trim()}>
-            Add rule
+            {t({ id: 'mastodon.admin.rules.add_new', defaultMessage: 'Add rule' })}
           </Button>
         </div>
         <Label className="text-sm font-normal">
@@ -111,7 +112,7 @@ export default function UsernameBlocks() {
             checked={withApproval}
             onCheckedChange={(v) => setWithApproval(v === true)}
           />
-          Allow registrations with approval
+          {t({ id: 'mastodon.admin.email_domain_blocks.allow_registrations_with_approval', defaultMessage: 'Allow registrations with approval' })}
         </Label>
       </form>
       <AdminError error={error} />
@@ -124,7 +125,7 @@ export default function UsernameBlocks() {
                 <span className="truncate font-mono text-sm">{b.username}</span>
                 <Badge variant="outline">{COMPARISONS[b.comparison]}</Badge>
                 <Badge variant={b.allow_with_approval ? 'secondary' : 'destructive'}>
-                  {b.allow_with_approval ? 'Needs approval' : 'Blocked'}
+                  {b.allow_with_approval ? t({ id: 'eunha.admin.username_blocks.needs_approval', defaultMessage: 'Needs approval' }) : t({ id: 'account.blocked', defaultMessage: 'Blocked' })}
                 </Badge>
               </div>
             </div>
@@ -137,33 +138,33 @@ export default function UsernameBlocks() {
                 })
               }
             >
-              {b.comparison === 'equals' ? 'Match containing' : 'Match exactly'}
+              {b.comparison === 'equals' ? t({ id: 'eunha.admin.username_blocks.match_containing', defaultMessage: 'Match containing' }) : t({ id: 'eunha.admin.username_blocks.match_exactly', defaultMessage: 'Match exactly' })}
             </Button>
             <Button
               size="xs"
               variant="outline"
               onClick={() => void toggle(b, { allow_with_approval: !b.allow_with_approval })}
             >
-              {b.allow_with_approval ? 'Block outright' : 'Allow with approval'}
+              {b.allow_with_approval ? t({ id: 'eunha.admin.username_blocks.block_outright', defaultMessage: 'Block outright' }) : t({ id: 'eunha.admin.username_blocks.allow_with_approval', defaultMessage: 'Allow with approval' })}
             </Button>
             <ConfirmButton
               size="xs"
-              title={`Remove the rule for ${b.username}?`}
-              description="Sign-ups with matching usernames are no longer refused."
-              confirmLabel="Remove"
+              title={t({ id: 'eunha.admin.username_blocks.remove_the_rule_for', defaultMessage: 'Remove the rule for {username}?' }, { username: b.username })}
+              description={t({ id: 'eunha.admin.username_blocks.sign_ups_with_matching_usernames_are', defaultMessage: 'Sign-ups with matching usernames are no longer refused.' })}
+              confirmLabel={t({ id: 'tag.remove', defaultMessage: 'Remove' })}
               onConfirm={async () => {
                 await deleteUsernameBlock(token ?? '', b.id)
                 setBlocks((list) => (list ?? []).filter((x) => x.id !== b.id))
-                toast.success('Username rule removed.')
+                toast.success(t({ id: 'eunha.admin.username_blocks.username_rule_removed', defaultMessage: 'Username rule removed.' }))
               }}
             >
-              Remove
+              {t({ id: 'tag.remove', defaultMessage: 'Remove' })}
             </ConfirmButton>
           </div>
         ))}
       </div>
       {blocks?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No usernames are blocked.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.username_blocks.no_usernames_are_blocked', defaultMessage: 'No usernames are blocked.' })}</p>
       )}
     </AdminLayout>
   )

@@ -11,6 +11,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 function Version({
   edit,
@@ -44,7 +46,7 @@ function Version({
         // Mastodon's `CompareHistoryModal` lists the version's options as
         // they read then, each beside an empty choice, with no counts.
         <AnimateEmoji className="mt-2">
-          <div role="list" aria-label="Poll options" className="space-y-1">
+          <div role="list" aria-label={t({ id: 'eunha.status_history.poll_options', defaultMessage: 'Poll options' })} className="space-y-1">
             {poll.options.map((option, i) => (
               <div role="listitem" key={`${option.title}-${i}`} className="flex items-center gap-2 text-sm">
                 <span
@@ -103,7 +105,7 @@ export default function StatusHistory() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="text-lg font-bold">Edit history</h1>
+      <h1 className="text-lg font-bold">{t({ id: 'eunha.status_history.edit_history', defaultMessage: 'Edit history' })}</h1>
       <div className="text-muted-foreground mb-3 flex items-center gap-2 text-sm">
         {author && (
           <Avatar className="size-5" {...avatar.hover}>
@@ -115,7 +117,11 @@ export default function StatusHistory() {
           to={`/@${handle}/${id}`}
           className="text-foreground no-underline hover:underline"
         >
-          {author ? <DisplayName account={author} /> : handle}’s post
+          <FormattedMessage
+            id='eunha.status_history.post_by'
+            defaultMessage='{name}’s post'
+            values={{ name: author ? <DisplayName account={author} /> : handle }}
+          />
         </Link>
       </div>
 
@@ -131,10 +137,10 @@ export default function StatusHistory() {
               edit={edit}
               label={
                 i === 0
-                  ? 'Current version'
+                  ? t({ id: 'eunha.status_history.current_version', defaultMessage: 'Current version' })
                   : i === newestFirst.length - 1
-                    ? 'Original'
-                    : `Version ${newestFirst.length - i}`
+                    ? t({ id: 'eunha.status_history.original', defaultMessage: 'Original' })
+                    : t({ id: 'eunha.status_history.version', defaultMessage: 'Version {number}' }, { number: newestFirst.length - i })
               }
             />
           ))}
@@ -142,7 +148,7 @@ export default function StatusHistory() {
       )}
       {newestFirst?.length === 0 && (
         <p className="text-muted-foreground text-sm">
-          This post has no recorded history.
+          {t({ id: 'eunha.status_history.this_post_has_no_recorded_history', defaultMessage: 'This post has no recorded history.' })}
         </p>
       )}
     </div>

@@ -48,13 +48,16 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
+import type { MessageDescriptor } from 'react-intl'
 
 // Mastodon's `deletes.warning.*`, shown before the challenge.
-const WARNINGS = [
-  'You will not be able to restore or reactivate your account',
-  'Your username will remain unavailable',
-  'Your posts and other data will be permanently removed',
-  'Content that has been cached by other servers may persist',
+const WARNINGS: MessageDescriptor[] = [
+  { id: 'mastodon.deletes.warning.irreversible', defaultMessage: 'You will not be able to restore or reactivate your account' },
+  { id: 'mastodon.deletes.warning.username_unavailable', defaultMessage: 'Your username will remain unavailable' },
+  { id: 'mastodon.deletes.warning.data_removal', defaultMessage: 'Your posts and other data will be permanently removed' },
+  { id: 'mastodon.deletes.warning.caches', defaultMessage: 'Content that has been cached by other servers may persist' },
 ]
 
 function DeleteAccount({ token }: { token: string }) {
@@ -75,14 +78,14 @@ function DeleteAccount({ token }: { token: string }) {
       await logout()
       clearMe()
       setConfirming(false)
-      toast.success('Your account was successfully deleted')
+      toast.success(t({ id: 'mastodon.deletes.success_msg', defaultMessage: 'Your account was successfully deleted' }))
       window.location.assign('/')
     } catch (e) {
       setConfirming(false)
       toast.error(
         e instanceof ApiError && e.status === 401
-          ? 'The information you entered was not correct'
-          : 'Could not delete your account',
+          ? t({ id: 'mastodon.deletes.challenge_not_passed', defaultMessage: 'The information you entered was not correct' })
+          : t({ id: 'eunha.settings.could_not_delete_your_account', defaultMessage: 'Could not delete your account' }),
       )
     } finally {
       setDeleting(false)
@@ -92,14 +95,14 @@ function DeleteAccount({ token }: { token: string }) {
   return (
     <section className="border-destructive/40 space-y-3 rounded-lg border p-4">
       <div>
-        <h2 className="text-destructive font-semibold">Delete account</h2>
+        <h2 className="text-destructive font-semibold">{t({ id: 'mastodon.auth.delete_account', defaultMessage: 'Delete account' })}</h2>
         <p className="text-muted-foreground text-sm">
-          Before proceeding, please read these notes carefully:
+          {t({ id: 'mastodon.deletes.warning.before', defaultMessage: 'Before proceeding, please read these notes carefully:' })}
         </p>
       </div>
       <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
         {WARNINGS.map((warning) => (
-          <li key={warning}>{warning}</li>
+          <li key={warning.id}>{t(warning)}</li>
         ))}
       </ul>
       <form
@@ -110,7 +113,7 @@ function DeleteAccount({ token }: { token: string }) {
         }}
       >
         <div className="space-y-1">
-          <Label htmlFor="delete-username">Confirm username</Label>
+          <Label htmlFor="delete-username">{t({ id: 'eunha.settings.confirm_username', defaultMessage: 'Confirm username' })}</Label>
           <Input
             id="delete-username"
             autoComplete="off"
@@ -119,12 +122,15 @@ function DeleteAccount({ token }: { token: string }) {
             required
           />
           <p className="text-muted-foreground text-xs">
-            Please type <code>{username}</code> to confirm the account you want
-            to delete.
+            <FormattedMessage
+              id='mastodon.deletes.confirm_username_hint_html'
+              defaultMessage='Please type <code>{username}</code> to confirm the account you want to delete'
+              values={{ username, code: (chunks) => <code>{chunks}</code> }}
+            />
           </p>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="delete-password">Current password</Label>
+          <Label htmlFor="delete-password">{t({ id: 'mastodon.simple_form.labels.defaults.current_password', defaultMessage: 'Current password' })}</Label>
           <Input
             id="delete-password"
             type="password"
@@ -134,7 +140,7 @@ function DeleteAccount({ token }: { token: string }) {
             required
           />
           <p className="text-muted-foreground text-xs">
-            Enter your current password to verify your identity.
+            {t({ id: 'eunha.settings.enter_your_current_password_to_verify', defaultMessage: 'Enter your current password to verify your identity.' })}
           </p>
         </div>
         <Button
@@ -142,27 +148,26 @@ function DeleteAccount({ token }: { token: string }) {
           variant="destructive"
           disabled={!typedUsername.trim() || !password}
         >
-          Delete account
+          {t({ id: 'mastodon.auth.delete_account', defaultMessage: 'Delete account' })}
         </Button>
       </form>
 
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+            <AlertDialogTitle>{t({ id: 'eunha.settings.delete_your_account', defaultMessage: 'Delete your account?' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              This cannot be undone. Your posts and other data are removed, and
-              your username stays unavailable.
+              {t({ id: 'eunha.settings.this_cannot_be_undone_your_posts', defaultMessage: 'This cannot be undone. Your posts and other data are removed, and your username stays unavailable.' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={deleting}
               onClick={submit}
             >
-              {deleting ? 'Deleting…' : 'Delete account'}
+              {deleting ? t({ id: 'eunha.common.deleting', defaultMessage: 'Deleting…' }) : t({ id: 'mastodon.auth.delete_account', defaultMessage: 'Delete account' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -192,7 +197,7 @@ function EmailSubscriptions({ token }: { token: string }) {
     try {
       setOwn(await setOwnEmailSubscriptions(token, on))
     } catch {
-      toast.error('Could not save the setting')
+      toast.error(t({ id: 'eunha.settings.could_not_save_the_setting', defaultMessage: 'Could not save the setting' }))
     } finally {
       setSaving(false)
     }
@@ -200,21 +205,19 @@ function EmailSubscriptions({ token }: { token: string }) {
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Send posts via email</h2>
+      <h2 className="font-semibold">{t({ id: 'mastodon.privacy.email_subscriptions', defaultMessage: 'Send posts via email' })}</h2>
       <p className="text-muted-foreground text-sm">
-        Add an email sign-up form to your profile that appears for logged-out users. When
-        visitors enter their email address and opt in, they get email updates for your public
-        posts.
+        {t({ id: 'eunha.settings.add_an_email_sign_up_form', defaultMessage: 'Add an email sign-up form to your profile that appears for logged-out users. When visitors enter their email address and opt in, they get email updates for your public posts.' })}
       </p>
       {(own.subscribers > 0 || own.enabled) && (
         <p className="text-sm">
-          {own.enabled ? 'Active' : 'Inactive'} · {own.subscribers}{' '}
+          {own.enabled ? t({ id: 'mastodon.email_subscriptions.active', defaultMessage: 'Active' }) : t({ id: 'mastodon.email_subscriptions.inactive', defaultMessage: 'Inactive' })} · {own.subscribers}{' '}
           {own.subscribers === 1 ? 'subscriber' : 'subscribers'}
         </p>
       )}
       <Label className="text-sm font-normal">
         <Switch checked={own.enabled} disabled={saving} onCheckedChange={toggle} />
-        Offer email subscriptions on my profile
+        {t({ id: 'eunha.settings.offer_email_subscriptions_on_my_profile', defaultMessage: 'Offer email subscriptions on my profile' })}
       </Label>
     </section>
   )
@@ -237,15 +240,15 @@ function PostingLanguageSettings({ token }: { token: string }) {
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Default post language</h2>
-      <PostLanguagePicker label="Default post language" allowDefault value={language} disabled={saving}
+      <h2 className="font-semibold">{t({ id: 'eunha.settings.default_post_language', defaultMessage: 'Default post language' })}</h2>
+      <PostLanguagePicker label={t({ id: 'eunha.settings.default_post_language', defaultMessage: 'Default post language' })} allowDefault value={language} disabled={saving}
         onChange={async (value) => {
           setSaving(true)
           try {
             const account = await setDefaultPostLanguage(token, value)
             setLanguage(account.source.language ?? '')
           } catch {
-            toast.error('Could not save the default post language')
+            toast.error(t({ id: 'eunha.settings.could_not_save_the_default_post', defaultMessage: 'Could not save the default post language' }))
           } finally {
             setSaving(false)
           }
@@ -256,10 +259,10 @@ function PostingLanguageSettings({ token }: { token: string }) {
 
 // `statuses.quote_policies.*`, in the order Mastodon's `UserSettings` lists
 // `default_quote_policy`'s values.
-const QUOTE_POLICIES: [QuotePolicy, string][] = [
-  ['public', 'Anyone'],
-  ['followers', 'Followers only'],
-  ['nobody', 'Just me'],
+const QUOTE_POLICIES: [QuotePolicy, MessageDescriptor][] = [
+  ['public', { id: 'mastodon.statuses.quote_policies.public', defaultMessage: 'Anyone' }],
+  ['followers', { id: 'mastodon.statuses.quote_policies.followers', defaultMessage: 'Followers only' }],
+  ['nobody', { id: 'mastodon.statuses.quote_policies.nobody', defaultMessage: 'Just me' }],
 ]
 
 /**
@@ -284,16 +287,16 @@ function QuotePolicySettings({ token }: { token: string }) {
   if (!account) return failed ? null : <SectionSkeleton rows={1} />
 
   const hint = account.privacy === 'private'
-    ? "Followers-only posts authored on Mastodon can't be quoted by others."
+    ? t({ id: 'mastodon.simple_form.hints.defaults.setting_default_quote_policy_private', defaultMessage: 'Followers-only posts authored on Mastodon can\'\'t be quoted by others.' })
     : account.privacy === 'unlisted'
-      ? 'When people quote you, their post will also be hidden from trending timelines.'
+      ? t({ id: 'mastodon.simple_form.hints.defaults.setting_default_quote_policy_unlisted', defaultMessage: 'When people quote you, their post will also be hidden from trending timelines.' })
       : null
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Who can quote</h2>
+      <h2 className="font-semibold">{t({ id: 'compose.visibility.quote_policy', defaultMessage: 'Who can quote' })}</h2>
       <Select
-        items={QUOTE_POLICIES.map(([value, label]) => ({ value, label }))}
+        items={QUOTE_POLICIES.map(([value, label]) => ({ value, label: t(label) }))}
         value={account.policy}
         disabled={saving || account.privacy === 'private'}
         onValueChange={async (value) => {
@@ -305,19 +308,19 @@ function QuotePolicySettings({ token }: { token: string }) {
             // The composer reads the default from the cached account.
             await loadMe(token)
           } catch {
-            toast.error('Could not save who can quote')
+            toast.error(t({ id: 'eunha.settings.could_not_save_who_can_quote', defaultMessage: 'Could not save who can quote' }))
           } finally {
             setSaving(false)
           }
         }}
       >
-        <SelectTrigger className="w-full" aria-label="Who can quote">
+        <SelectTrigger className="w-full" aria-label={t({ id: 'compose.visibility.quote_policy', defaultMessage: 'Who can quote' })}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>
             {QUOTE_POLICIES.map(([value, label]) => (
-              <SelectItem key={value} value={value}>{label}</SelectItem>
+              <SelectItem key={value} value={value}>{t(label)}</SelectItem>
             ))}
           </SelectGroup>
         </SelectContent>
@@ -341,30 +344,30 @@ export default function Settings() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-1 text-lg font-bold">Settings</h1>
+      <h1 className="mb-1 text-lg font-bold">{t({ id: 'tabs_bar.settings', defaultMessage: 'Settings' })}</h1>
       <p className="text-muted-foreground mb-4 text-sm">
-        {me ? `Signed in as @${me.acct}` : 'Your account'}
+        {me ? t({ id: 'eunha.settings.signed_in_as', defaultMessage: 'Signed in as @{acct}' }, { acct: me.acct }) : t({ id: 'eunha.settings.your_account', defaultMessage: 'Your account' })}
       </p>
 
       {!token ? (
         <div className="space-y-2">
           <p className="text-muted-foreground text-sm">
-            Sign in to manage your account.
+            {t({ id: 'eunha.settings.sign_in_to_manage_your_account', defaultMessage: 'Sign in to manage your account.' })}
           </p>
           <Button size="sm" onClick={() => beginLogin()}>
-            Sign in
+            {t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}
           </Button>
         </div>
       ) : (
         <div className="space-y-4">
           {/* Password changes still live on the server-rendered account pages. */}
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Password</h2>
+            <h2 className="font-semibold">{t({ id: 'mastodon.activerecord.attributes.user.password', defaultMessage: 'Password' })}</h2>
             <p className="text-muted-foreground text-sm">
-              Change your password on the account page.
+              {t({ id: 'eunha.settings.change_your_password_on_the_account', defaultMessage: 'Change your password on the account page.' })}
             </p>
             <Button variant="secondary" size="sm" render={<a href="/account/password" />}>
-              <KeyRound /> Change password
+              <KeyRound /> {t({ id: 'mastodon.devise.mailer.reset_password_instructions.action', defaultMessage: 'Change password' })}
             </Button>
           </section>
 
@@ -389,18 +392,18 @@ export default function Settings() {
           <QuotePolicySettings token={token} />
 
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Collections</h2>
-            <Button variant="outline" size="sm" render={<Link to="/collections" />}>Manage collections</Button>
+            <h2 className="font-semibold">{t({ id: 'navigation_bar.collections', defaultMessage: 'Collections' })}</h2>
+            <Button variant="outline" size="sm" render={<Link to="/collections" />}>{t({ id: 'eunha.settings.manage_collections', defaultMessage: 'Manage collections' })}</Button>
           </section>
 
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Content filters</h2>
-            <Button variant="outline" size="sm" render={<Link to="/filters" />}>Manage filters</Button>
+            <h2 className="font-semibold">{t({ id: 'eunha.settings.content_filters', defaultMessage: 'Content filters' })}</h2>
+            <Button variant="outline" size="sm" render={<Link to="/filters" />}>{t({ id: 'eunha.settings.manage_filters', defaultMessage: 'Manage filters' })}</Button>
           </section>
 
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Appearance</h2>
-            <Label htmlFor="color-palette">Color palette</Label>
+            <h2 className="font-semibold">{t({ id: 'mastodon.settings.appearance', defaultMessage: 'Appearance' })}</h2>
+            <Label htmlFor="color-palette">{t({ id: 'eunha.settings.color_palette', defaultMessage: 'Color palette' })}</Label>
             <Select
               items={PALETTES}
               value={palette}
@@ -418,11 +421,9 @@ export default function Settings() {
           </section>
 
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Layout</h2>
+            <h2 className="font-semibold">{t({ id: 'eunha.settings.layout', defaultMessage: 'Layout' })}</h2>
             <p className="text-muted-foreground text-sm">
-              Show several timelines side by side instead of one column. Stored
-              in this browser, and only used on a wide one — a narrow screen
-              stays on the single column whatever this says.
+              {t({ id: 'eunha.settings.show_several_timelines_side_by_side', defaultMessage: 'Show several timelines side by side instead of one column. Stored in this browser, and only used on a wide one — a narrow screen stays on the single column whatever this says.' })}
             </p>
             <Label className="text-sm font-normal">
               <Switch
@@ -432,28 +433,27 @@ export default function Settings() {
                   setAdvanced(on)
                 }}
               />
-              Advanced layout
+              {t({ id: 'eunha.settings.advanced_layout', defaultMessage: 'Advanced layout' })}
             </Label>
           </section>
 
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Blocked and muted</h2>
+            <h2 className="font-semibold">{t({ id: 'eunha.settings.blocked_and_muted', defaultMessage: 'Blocked and muted' })}</h2>
             <p className="text-muted-foreground text-sm">
-              Review the accounts you have blocked or muted, and undo either.
+              {t({ id: 'eunha.settings.review_the_accounts_you_have_blocked', defaultMessage: 'Review the accounts you have blocked or muted, and undo either.' })}
             </p>
             <Button variant="secondary" size="sm" render={<Link to="/blocked" />}>
-              <Ban /> Blocked and muted
+              <Ban /> {t({ id: 'eunha.settings.blocked_and_muted', defaultMessage: 'Blocked and muted' })}
             </Button>
           </section>
 
           <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">Import and export</h2>
+            <h2 className="font-semibold">{t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' })}</h2>
             <p className="text-muted-foreground text-sm">
-              Download your follows, lists, blocks and the rest, or an archive of your
-              posts and media; bring lists in from another server.
+              {t({ id: 'eunha.settings.download_your_follows_lists_blocks_and', defaultMessage: 'Download your follows, lists, blocks and the rest, or an archive of your posts and media; bring lists in from another server.' })}
             </p>
             <Button variant="secondary" size="sm" render={<Link to="/settings/export" />}>
-              <ArrowLeftRight /> Import and export
+              <ArrowLeftRight /> {t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' })}
             </Button>
           </section>
 

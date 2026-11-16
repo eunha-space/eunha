@@ -12,6 +12,7 @@ import {
   useAnnouncements,
 } from '@/components/announcements.tsx'
 import PublicTimeline from './PublicTimeline.tsx'
+import { t } from '@/i18n.tsx'
 
 // Signed out there is no home timeline, and what a visitor arrived to look at
 // is the instance's own posts — so "/" is the local timeline rather than a
@@ -48,7 +49,7 @@ function HomeTimeline() {
         {/* "Following", not "Home": the rail already says where you are, and
             this names what the feed actually is. Upstream keeps "Home" as the
             column's accessible label for the same reason. */}
-        <ColumnHeader title="Following">
+        <ColumnHeader title={t({ id: 'account.following', defaultMessage: 'Following' })}>
           {announcements.items.length > 0 && (
             <AnnouncementsButton
               unread={announcements.unread}
@@ -64,7 +65,7 @@ function HomeTimeline() {
             update={announcements.update}
           />
         )}
-        <section aria-label="Home" className="space-y-2 p-3">
+        <section aria-label={t({ id: 'column.home', defaultMessage: 'Home' })} className="space-y-2 p-3">
           <StatusFeed
             kind="home"
             token={token}

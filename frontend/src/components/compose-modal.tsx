@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { dismiss, isDismissed } from '@/lib/dismissed.ts'
 import { cn } from '@/lib/utils.ts'
 import { mayQuote } from '@/lib/statuses.ts'
+import { t } from '@/i18n.tsx'
 
 type ComposeOptions = {
   replyTo?: mastodon.v1.Status | null
@@ -125,7 +126,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
       setMinimized(false)
       if (replyTo?.id !== options?.replyTo?.id || quoteOf?.id !== options?.quoteOf?.id
           || messageTo?.id !== nextMessage?.id || (messageTo === undefined) !== (nextMessage === undefined)) {
-        toast.info('Finish or close your current draft to start another.')
+        toast.info(t({ id: 'eunha.compose_modal.finish_or_close_your_current_draft', defaultMessage: 'Finish or close your current draft to start another.' }))
       }
       return
     }
@@ -156,13 +157,13 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
     }
     if (drafting) {
       const refusal = draftInfo.current.direct
-        ? 'Quoting is not allowed with direct mentions.'
+        ? t({ id: 'quote_error.private_mentions', defaultMessage: 'Quoting is not allowed with direct mentions.' })
         : draftInfo.current.poll
-          ? 'Quoting is not allowed with polls.'
+          ? t({ id: 'quote_error.poll', defaultMessage: 'Quoting is not allowed with polls.' })
           : draftInfo.current.media
-            ? 'Quoting is not allowed with media attachments.'
+            ? t({ id: 'quote_error.upload', defaultMessage: 'Quoting is not allowed with media attachments.' })
             : quoteOf
-              ? 'Only one quote at a time is allowed.'
+              ? t({ id: 'quote_error.quote', defaultMessage: 'Only one quote at a time is allowed.' })
               : null
       if (refusal) {
         setMinimized(false)
@@ -171,7 +172,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
       }
     }
     if (!mayQuote(quoted)) {
-      toast.error('You are not authorized to quote this post.')
+      toast.error(t({ id: 'quote_error.unauthorized', defaultMessage: 'You are not authorized to quote this post.' }))
       return
     }
     if (quoted.visibility === 'unlisted' && !isDismissed(QUIET_POST_HINT)) {
@@ -202,9 +203,9 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Quoting quiet public posts</AlertDialogTitle>
+            <AlertDialogTitle>{t({ id: 'confirmations.quiet_post_quote_info.title', defaultMessage: 'Quoting quiet public posts' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              When quoting a quiet public post, your post will be hidden from trending timelines.
+              {t({ id: 'confirmations.quiet_post_quote_info.message', defaultMessage: 'When quoting a quiet public post, your post will be hidden from trending timelines.' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -214,7 +215,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                 if (quietQuote) addQuote(quietQuote)
               }}
             >
-              Don't remind me again
+              {t({ id: 'confirmations.quiet_post_quote_info.dismiss', defaultMessage: 'Don\'\'t remind me again' })}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
@@ -222,7 +223,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                 if (quietQuote) addQuote(quietQuote)
               }}
             >
-              Got it
+              {t({ id: 'remove_quote_hint.button_label', defaultMessage: 'Got it' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -236,9 +237,9 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Draft in progress</AlertDialogTitle>
+            <AlertDialogTitle>{t({ id: 'compose.quote_modal.title', defaultMessage: 'Draft in progress' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              You have a draft already in progress. What would you like to do?
+              {t({ id: 'compose.cancel_modal.body', defaultMessage: 'You have a draft already in progress. What would you like to do?' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2">
@@ -248,7 +249,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                 if (draftQuote) addQuote(draftQuote)
               }}
             >
-              Add quote to existing draft
+              {t({ id: 'compose.quote_modal.add', defaultMessage: 'Add quote to existing draft' })}
             </Button>
             <Button
               variant="destructive"
@@ -257,9 +258,9 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                 if (draftQuote) begin(draftQuote)
               }}
             >
-              Delete draft and start a new post
+              {t({ id: 'compose.quote_modal.delete', defaultMessage: 'Delete draft and start a new post' })}
             </Button>
-            <AlertDialogCancel variant="ghost">Go back</AlertDialogCancel>
+            <AlertDialogCancel variant="ghost">{t({ id: 'compose.quote_modal.cancel', defaultMessage: 'Go back' })}</AlertDialogCancel>
           </div>
         </AlertDialogContent>
       </AlertDialog>
@@ -294,18 +295,18 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
               >
                 <h2 id={headingId} className="text-sm font-semibold">
                   {type === 'reply'
-                    ? 'Reply'
+                    ? t({ id: 'status.reply', defaultMessage: 'Reply' })
                     : isMessage
-                      ? 'New message'
+                      ? t({ id: 'compose_form.message.title.new', defaultMessage: 'New message' })
                       : quoteOf
-                        ? 'Quote post'
-                        : 'New post'}
+                        ? t({ id: 'keyboard_shortcuts.quote', defaultMessage: 'Quote post' })
+                        : t({ id: 'compose.post.title.new', defaultMessage: 'New post' })}
                 </h2>
                 <div className="flex items-center">
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={minimized ? 'Expand composer' : 'Minimise composer'}
+                    aria-label={minimized ? t({ id: 'eunha.compose_modal.expand_composer', defaultMessage: 'Expand composer' }) : t({ id: 'eunha.compose_modal.minimise_composer', defaultMessage: 'Minimise composer' })}
                     onClick={() => setMinimized((m) => !m)}
                   >
                     {minimized ? <Maximize2 /> : <Minus />}
@@ -313,7 +314,7 @@ export function ComposeModalProvider({ children }: { children: ReactNode }) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Close"
+                    aria-label={t({ id: 'lightbox.close', defaultMessage: 'Close' })}
                     onClick={close}
                   >
                     <X />

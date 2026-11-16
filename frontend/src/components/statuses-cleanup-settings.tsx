@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/select.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import type { MessageDescriptor } from 'react-intl'
 
 // `statuses_cleanup.min_age`, by `ALLOWED_MIN_STATUS_AGE`.
 const AGES = [
@@ -40,13 +42,13 @@ type KeepField =
   | 'keep_polls'
   | 'keep_media'
 
-const EXCEPTIONS: [KeepField, string][] = [
-  ['keep_pinned', 'Keep pinned posts'],
-  ['keep_direct', 'Keep direct messages'],
-  ['keep_self_fav', 'Keep posts you favorited'],
-  ['keep_self_bookmark', 'Keep posts you bookmarked'],
-  ['keep_polls', 'Keep polls'],
-  ['keep_media', 'Keep posts with media attachments'],
+const EXCEPTIONS: [KeepField, MessageDescriptor][] = [
+  ['keep_pinned', { id: 'mastodon.statuses_cleanup.keep_pinned', defaultMessage: 'Keep pinned posts' }],
+  ['keep_direct', { id: 'mastodon.statuses_cleanup.keep_direct', defaultMessage: 'Keep direct messages' }],
+  ['keep_self_fav', { id: 'mastodon.statuses_cleanup.keep_self_fav', defaultMessage: 'Keep posts you favorited' }],
+  ['keep_self_bookmark', { id: 'mastodon.statuses_cleanup.keep_self_bookmark', defaultMessage: 'Keep posts you bookmarked' }],
+  ['keep_polls', { id: 'mastodon.statuses_cleanup.keep_polls', defaultMessage: 'Keep polls' }],
+  ['keep_media', { id: 'mastodon.statuses_cleanup.keep_media', defaultMessage: 'Keep posts with media attachments' }],
 ]
 
 /**
@@ -89,9 +91,9 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
           min_reblogs: minReblogs.trim() === '' ? null : Number(minReblogs),
         }),
       )
-      toast.success('Changes saved')
+      toast.success(t({ id: 'eunha.statuses_cleanup_settings.changes_saved', defaultMessage: 'Changes saved' }))
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Could not save the changes')
+      toast.error(error instanceof Error ? error.message : t({ id: 'eunha.statuses_cleanup_settings.could_not_save_the_changes', defaultMessage: 'Could not save the changes' }))
     } finally {
       setBusy(false)
     }
@@ -101,7 +103,7 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
 
   return (
     <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="font-semibold">Automated post deletion</h2>
+      <h2 className="font-semibold">{t({ id: 'navigation_bar.automated_deletion', defaultMessage: 'Automated post deletion' })}</h2>
       <form className="space-y-4" onSubmit={(event) => void save(event)}>
         <div className="space-y-0.5">
           <Label className="text-sm font-normal">
@@ -109,18 +111,16 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
               checked={policy.enabled}
               onCheckedChange={(enabled) => change({ enabled })}
             />
-            Automatically delete old posts
+            {t({ id: 'mastodon.statuses_cleanup.enabled', defaultMessage: 'Automatically delete old posts' })}
           </Label>
           <p className="text-muted-foreground pl-10 text-xs">
-            Deletes your posts once they reach the age below, unless they match one of
-            the exceptions. Deleted posts cannot be brought back. This runs at low
-            priority, so a post may stay a while after reaching that age.
+            {t({ id: 'eunha.statuses_cleanup_settings.deletes_your_posts_once_they_reach', defaultMessage: 'Deletes your posts once they reach the age below, unless they match one of the exceptions. Deleted posts cannot be brought back. This runs at low priority, so a post may stay a while after reaching that age.' })}
           </p>
         </div>
 
         <div className="space-y-1">
           <Label htmlFor="cleanup-age" className="text-sm font-normal">
-            Age threshold
+            {t({ id: 'mastodon.statuses_cleanup.min_age_label', defaultMessage: 'Age threshold' })}
           </Label>
           <Select
             items={AGES.map(({ value, label }) => ({ value: String(value), label }))}
@@ -130,7 +130,7 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
               if (typeof value === 'string') change({ min_status_age: Number(value) })
             }}
           >
-            <SelectTrigger id="cleanup-age" className="w-full" aria-label="Age threshold">
+            <SelectTrigger id="cleanup-age" className="w-full" aria-label={t({ id: 'mastodon.statuses_cleanup.min_age_label', defaultMessage: 'Age threshold' })}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -146,7 +146,7 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold">Exceptions</h3>
+          <h3 className="text-sm font-semibold">{t({ id: 'mastodon.statuses_cleanup.exceptions', defaultMessage: 'Exceptions' })}</h3>
           {EXCEPTIONS.map(([field, label]) => (
             <Label key={field} className="text-sm font-normal">
               <Switch
@@ -154,22 +154,22 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
                 disabled={off}
                 onCheckedChange={(on) => change({ [field]: on })}
               />
-              {label}
+              {t(label)}
             </Label>
           ))}
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold">Exceptions based on interactions</h3>
+          <h3 className="text-sm font-semibold">{t({ id: 'mastodon.statuses_cleanup.interaction_exceptions', defaultMessage: 'Exceptions based on interactions' })}</h3>
           <div className="space-y-1">
             <Label htmlFor="cleanup-favs" className="text-sm font-normal">
-              Keep posts favorited at least
+              {t({ id: 'mastodon.statuses_cleanup.min_favs', defaultMessage: 'Keep posts favorited at least' })}
             </Label>
             <Input
               id="cleanup-favs"
               type="number"
               min={1}
-              placeholder="Ignore favorites"
+              placeholder={t({ id: 'mastodon.statuses_cleanup.ignore_favs', defaultMessage: 'Ignore favorites' })}
               value={minFavs}
               disabled={off}
               onChange={(event) => setMinFavs(event.target.value)}
@@ -177,26 +177,25 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor="cleanup-reblogs" className="text-sm font-normal">
-              Keep posts boosted at least
+              {t({ id: 'mastodon.statuses_cleanup.min_reblogs', defaultMessage: 'Keep posts boosted at least' })}
             </Label>
             <Input
               id="cleanup-reblogs"
               type="number"
               min={1}
-              placeholder="Ignore boosts"
+              placeholder={t({ id: 'mastodon.statuses_cleanup.ignore_reblogs', defaultMessage: 'Ignore boosts' })}
               value={minReblogs}
               disabled={off}
               onChange={(event) => setMinReblogs(event.target.value)}
             />
           </div>
           <p className="text-muted-foreground text-xs">
-            Leave blank to delete posts whatever their number of favorites or boosts. A
-            post that briefly passes the number may be kept even if it later falls below.
+            {t({ id: 'eunha.statuses_cleanup_settings.leave_blank_to_delete_posts_whatever', defaultMessage: 'Leave blank to delete posts whatever their number of favorites or boosts. A post that briefly passes the number may be kept even if it later falls below.' })}
           </p>
         </div>
 
         <Button type="submit" size="sm" disabled={busy}>
-          Save changes
+          {t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' })}
         </Button>
       </form>
     </section>

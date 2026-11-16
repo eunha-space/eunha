@@ -16,6 +16,7 @@ import {
   inviteExpiry,
   inviteStatus,
   availableInviteCount,
+  inviteStatusLabel,
 } from '../lib/invites.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
@@ -32,9 +33,10 @@ import {
   SelectValue,
 } from '@/components/ui/select.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
 const MAX_USES = {
-  '0': 'Unlimited uses',
+  get '0'() { return t({ id: 'eunha.invites.unlimited_uses', defaultMessage: 'Unlimited uses' }) },
   '1': '1 use',
   '5': '5 uses',
   '10': '10 uses',
@@ -43,7 +45,7 @@ const MAX_USES = {
   '100': '100 uses',
 }
 const EXPIRES_IN = {
-  '0': 'Never expires',
+  get '0'() { return t({ id: 'eunha.invites.never_expires', defaultMessage: 'Never expires' }) },
   '1800': '30 minutes',
   '3600': '1 hour',
   '21600': '6 hours',
@@ -53,11 +55,11 @@ const EXPIRES_IN = {
 }
 function approval(invite: Invite) {
   return invite.bypass_approval
-    ? 'No staff approval needed'
-    : 'Follows instance approval rules'
+    ? t({ id: 'eunha.invites.no_staff_approval_needed', defaultMessage: 'No staff approval needed' })
+    : t({ id: 'eunha.invites.follows_instance_approval_rules', defaultMessage: 'Follows instance approval rules' })
 }
 function grantLabel(invite: Invite) {
-  return `${invite.grant?.granted_by ? `From @${invite.grant.granted_by}` : 'From staff'} · ${inviteDate(invite.grant?.created_at ?? invite.created_at).toLocaleString()}`
+  return `${invite.grant?.granted_by ? t({ id: 'eunha.invites.from', defaultMessage: 'From @{granted_by}' }, { granted_by: invite.grant.granted_by }) : t({ id: 'eunha.invites.from_staff', defaultMessage: 'From staff' })} · ${inviteDate(invite.grant?.created_at ?? invite.created_at).toLocaleString(currentLocale())}`
 }
 function InviteRow({
   invite,
@@ -77,7 +79,7 @@ function InviteRow({
     <div className="space-y-2 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          aria-label="Invite link"
+          aria-label={t({ id: 'eunha.invites.invite_link', defaultMessage: 'Invite link' })}
           readOnly
           value={invite.url}
           className="min-w-0 flex-1 font-mono text-xs"
@@ -88,14 +90,14 @@ function InviteRow({
           onClick={() => onCopy(invite)}
           disabled={status !== 'Available'}
         >
-          <Copy /> Copy
+          <Copy /> {t({ id: 'mastodon.generic.copy', defaultMessage: 'Copy' })}
         </Button>
         {status === 'Available' && (
           <Button
             disabled={pending}
             size="sm"
             variant="ghost"
-            aria-label="Revoke invite"
+            aria-label={t({ id: 'eunha.invites.revoke_invite', defaultMessage: 'Revoke invite' })}
             onClick={() => onRevoke(invite.id)}
           >
             <Trash2 />
@@ -104,18 +106,19 @@ function InviteRow({
       </div>
       <div className="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs">
         <Badge variant="outline">
-          {status === 'Used' ? 'Fully used' : status}
+          {status === 'Used' ? t({ id: 'eunha.invites.fully_used', defaultMessage: 'Fully used' }) : inviteStatusLabel(status)}
         </Badge>
         <span>
-          {invite.uses}
-          {invite.max_uses != null ? ` / ${invite.max_uses}` : ''} used
+          {invite.max_uses != null
+            ? t({ id: 'eunha.invites.uses_of_max', defaultMessage: '{uses} / {max} used' }, { uses: invite.uses, max: invite.max_uses })
+            : t({ id: 'eunha.invites.uses_used', defaultMessage: '{uses} used' }, { uses: invite.uses })}
         </span>
         <span>{inviteExpiry(invite)}</span>
         <span>{approval(invite)}</span>
         {copied && status === 'Available' && (
-          <span>Copied this visit · still available</span>
+          <span>{t({ id: 'eunha.invites.copied_this_visit_still_available', defaultMessage: 'Copied this visit · still available' })}</span>
         )}
-        {invite.autofollow && <span>New members follow you</span>}
+        {invite.autofollow && <span>{t({ id: 'eunha.invites.new_members_follow_you', defaultMessage: 'New members follow you' })}</span>}
       </div>
       <JoinedThrough invite={invite} />
     </div>
@@ -129,16 +132,16 @@ function JoinedThrough({ invite }: { invite: Invite }) {
   return (
     <p className="text-muted-foreground text-xs">
       {(accounts.length > 0 || hidden > 0) && <>
-        Joined:{' '}
+        {t({ id: 'eunha.invites.joined', defaultMessage: 'Joined:' })}{' '}
         {accounts.map((account, i) => (
           <span key={account.id}>
             {i > 0 && ', '}
             <Link to={`/@${account.acct}`}>@{account.acct}</Link>
           </span>
         ))}
-        {hidden > 0 && `${accounts.length ? ', ' : ''}${hidden} ${hidden === 1 ? 'member who hides' : 'members who hide'} their network`}
+        {hidden > 0 && (accounts.length ? ', ' : '') + t({ id: 'eunha.invites.hidden_members', defaultMessage: '{count, plural, one {# member who hides} other {# members who hide}} their network' }, { count: hidden })}
       </>}
-      {pending > 0 && `${accounts.length || hidden ? ' · ' : ''}${pending} not finished joining (awaiting confirmation or approval)`}
+      {pending > 0 && (accounts.length || hidden ? ' · ' : '') + t({ id: 'eunha.invites.pending_members', defaultMessage: '{count} not finished joining (awaiting confirmation or approval)' }, { count: pending })}
     </p>
   )
 }
@@ -152,7 +155,7 @@ export default function Invites() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [copied, setCopied] = useState<Set<string>>(new Set())
   const [revoking, setRevoking] = useState<Set<string>>(new Set())
-  const [status, setStatus] = useState('Available')
+  const [status, setStatus] = useState('Available') // i18n-ignore: a filter value
   const [maxUses, setMaxUses] = useState('1')
   const [expiresIn, setExpiresIn] = useState('0')
   const [autofollow, setAutofollow] = useState(false)
@@ -175,7 +178,7 @@ export default function Invites() {
         }
       } catch {
         if (!cancelled && request === sequence)
-          setError('Could not load invites. Please try again.')
+          setError(t({ id: 'eunha.invites.could_not_load_invites_please_try', defaultMessage: 'Could not load invites. Please try again.' }))
       }
     }
     void load()
@@ -186,7 +189,7 @@ export default function Invites() {
       .catch(() => {
         if (!cancelled)
           setPermissionError(
-            'Could not load invite permissions. Reload this page to try again.',
+            t({ id: 'eunha.invites.could_not_load_permissions', defaultMessage: 'Could not load invite permissions. Reload this page to try again.' }),
           )
       })
     const timer = window.setInterval(load, 60_000)
@@ -227,9 +230,8 @@ export default function Invites() {
   const historyGroups = new Map<string, Invite[]>()
   for (const invite of invites ?? [])
     if (
-      (inviteStatus(invite) === 'Used'
-        ? 'Fully used'
-        : inviteStatus(invite)) === status
+      // i18n-ignore: the filter's value, not its text.
+      (inviteStatus(invite) === 'Used' ? 'Fully used' : inviteStatus(invite)) === status
     ) {
       const key = invite.grant?.id ?? 'own'
       historyGroups.set(key, [...(historyGroups.get(key) ?? []), invite])
@@ -241,11 +243,11 @@ export default function Invites() {
       setCopied((c) => new Set(c).add(invite.id))
       toast.success(
         invite.max_uses === 1
-          ? 'Invite link copied. Send it to one person.'
-          : 'Invite link copied',
+          ? t({ id: 'eunha.invites.invite_link_copied_send_it_to', defaultMessage: 'Invite link copied. Send it to one person.' })
+          : t({ id: 'eunha.invites.invite_link_copied', defaultMessage: 'Invite link copied' }),
       )
     } catch {
-      toast.error('Could not copy link')
+      toast.error(t({ id: 'eunha.invites.could_not_copy_link', defaultMessage: 'Could not copy link' }))
     }
   }
   const next = () => {
@@ -268,9 +270,9 @@ export default function Invites() {
         invite,
         ...(prev ?? []).filter((i) => i.id !== invite.id),
       ])
-      toast.success('Invite link created')
+      toast.success(t({ id: 'eunha.invites.invite_link_created', defaultMessage: 'Invite link created' }))
     } catch {
-      toast.error('Could not create invite')
+      toast.error(t({ id: 'eunha.invites.could_not_create_invite', defaultMessage: 'Could not create invite' }))
     } finally {
       setCreating(false)
     }
@@ -293,9 +295,9 @@ export default function Invites() {
               : i,
           ) ?? null,
       )
-      toast.success('Invite revoked')
+      toast.success(t({ id: 'eunha.invites.invite_revoked', defaultMessage: 'Invite revoked' }))
     } catch {
-      toast.error('Could not revoke invite')
+      toast.error(t({ id: 'eunha.invites.could_not_revoke_invite', defaultMessage: 'Could not revoke invite' }))
     } finally {
       setRevoking((s) => {
         const n = new Set(s)
@@ -309,21 +311,21 @@ export default function Invites() {
       <TopBar />
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-bold">Your invites</h1>
+          <h1 className="text-lg font-bold">{t({ id: 'eunha.invites.your_invites', defaultMessage: 'Your invites' })}</h1>
           <p className="text-muted-foreground text-sm">
-            Bring someone you would like to see here.
+            {t({ id: 'eunha.invites.bring_someone_you_would_like_to', defaultMessage: 'Bring someone you would like to see here.' })}
           </p>
         </div>
         <Link to="/invite-tree" className="text-sm underline">
-          Invite tree
+          {t({ id: 'eunha.invites.invite_tree', defaultMessage: 'Invite tree' })}
         </Link>
       </div>
       {!token ? (
         <div className="space-y-2">
           <p className="text-muted-foreground text-sm">
-            Sign in to view your invites.
+            {t({ id: 'eunha.invites.sign_in_to_view_your_invites', defaultMessage: 'Sign in to view your invites.' })}
           </p>
-          <Button onClick={() => beginLogin()}>Sign in</Button>
+          <Button onClick={() => beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>
         </div>
       ) : (
         <>
@@ -338,7 +340,7 @@ export default function Invites() {
               variant="outline"
               render={<Link to="/admin/invites" />}
             >
-              Grant invites
+              {t({ id: 'eunha.invites.grant_invites', defaultMessage: 'Grant invites' })}
             </Button>
           )}
           {error && (
@@ -349,7 +351,7 @@ export default function Invites() {
                 variant="outline"
                 onClick={() => setRetry((n) => n + 1)}
               >
-                Try again
+                {t({ id: 'bundle_column_error.retry', defaultMessage: 'Try again' })}
               </Button>
             </p>
           )}
@@ -359,33 +361,33 @@ export default function Invites() {
           {invites !== null && (
             <section
               className="mb-6 space-y-3 rounded-lg border p-4"
-              aria-label="Share an invite"
+              aria-label={t({ id: 'eunha.invites.share_an_invite', defaultMessage: 'Share an invite' })}
             >
               <h2 className="text-xl font-semibold">
                 {allowance
-                  ? `Invite ${allowance} ${allowance === 1 ? 'person' : 'people'}`
+                  ? t({ id: 'eunha.invites.invite_people', defaultMessage: 'Invite {count, plural, one {# person} other {# people}}' }, { count: allowance })
                   : usable.length
-                    ? `${usable.length} invite ${usable.length === 1 ? 'link' : 'links'} available`
-                    : 'No invites available'}
+                    ? t({ id: 'eunha.invites.links_available', defaultMessage: '{count, plural, one {# invite link} other {# invite links}} available' }, { count: usable.length })
+                    : t({ id: 'eunha.invites.no_invites_available', defaultMessage: 'No invites available' })}
               </h2>
               {selected ? (
                 <>
                   <p className="text-muted-foreground text-sm">
                     {selected.max_uses === 1
-                      ? 'Each link admits one person.'
+                      ? t({ id: 'eunha.invites.each_link_admits_one_person', defaultMessage: 'Each link admits one person.' })
                       : selected.max_uses === null
-                        ? 'This link allows unlimited signups.'
-                        : `This link has ${selected.max_uses - selected.uses} uses remaining.`}
-                    {perms.canInvite ? ' You can also create more links.' : ''}
+                        ? t({ id: 'eunha.invites.this_link_allows_unlimited_signups', defaultMessage: 'This link allows unlimited signups.' })
+                        : t({ id: 'eunha.invites.uses_remaining', defaultMessage: 'This link has {count} uses remaining.' }, { count: selected.max_uses - selected.uses })}
+                    {perms.canInvite ? t({ id: 'eunha.invites.you_can_also_create_more_links', defaultMessage: ' You can also create more links.' }) : ''}
                   </p>
                   <div className="text-muted-foreground flex flex-wrap justify-between gap-2 text-xs">
                     <span>{inviteExpiry(selected)}</span>
                   </div>
                   <p className="text-muted-foreground text-xs">
-                    {approval(selected)} · Email confirmation required
+                    {approval(selected)} · {t({ id: 'eunha.invites.email_confirmation_required', defaultMessage: 'Email confirmation required' })}
                   </p>
                   <Input
-                    aria-label="Selected invite link"
+                    aria-label={t({ id: 'eunha.invites.selected_invite_link', defaultMessage: 'Selected invite link' })}
                     readOnly
                     value={selected.url}
                     className="font-mono text-xs"
@@ -394,30 +396,30 @@ export default function Invites() {
                     <Button disabled={!!error} onClick={() => copy(selected)}>
                       <Copy />
                       {copied.has(selected.id)
-                        ? 'Copy this link again'
-                        : 'Copy invite link'}
+                        ? t({ id: 'eunha.invites.copy_this_link_again', defaultMessage: 'Copy this link again' })
+                        : t({ id: 'eunha.invites.copy_invite_link', defaultMessage: 'Copy invite link' })}
                     </Button>
                     <Button
                       variant="outline"
                       disabled={usable.length < 2 || !!error}
                       onClick={next}
                     >
-                      Choose another link
+                      {t({ id: 'eunha.invites.choose_another_link', defaultMessage: 'Choose another link' })}
                     </Button>
                   </div>
                   <p className="text-muted-foreground text-xs">
-                    {copied.has(selected.id) ? 'Copied this visit. ' : ''}
+                    {copied.has(selected.id) ? t({ id: 'eunha.invites.copied_this_visit', defaultMessage: 'Copied this visit. ' }) : ''}
                     {selected.max_uses === 1
-                      ? 'Send this link to one person. Choose another link for someone else.'
-                      : 'Share this link within its remaining uses.'}{' '}
-                    Copying does not consume a use.
+                      ? t({ id: 'eunha.invites.send_this_link_to_one_person', defaultMessage: 'Send this link to one person. Choose another link for someone else.' })
+                      : t({ id: 'eunha.invites.share_this_link_within_its_remaining', defaultMessage: 'Share this link within its remaining uses.' })}{' '}
+                    {t({ id: 'eunha.invites.copying_does_not_consume', defaultMessage: 'Copying does not consume a use.' })}
                   </p>
                 </>
               ) : (
                 <p className="text-muted-foreground text-sm">
                   {perms.canInvite
-                    ? 'Create an invite link below.'
-                    : 'Staff distribute invites on this instance. Check back when you receive more.'}
+                    ? t({ id: 'eunha.invites.create_an_invite_link_below', defaultMessage: 'Create an invite link below.' })
+                    : t({ id: 'eunha.invites.staff_distribute_invites_on_this_instance', defaultMessage: 'Staff distribute invites on this instance. Check back when you receive more.' })}
                 </p>
               )}
             </section>
@@ -425,12 +427,12 @@ export default function Invites() {
           {perms.canInvite && (
             <details className="mb-6 rounded-lg border p-4">
               <summary className="cursor-pointer font-medium">
-                Create invite link
+                {t({ id: 'eunha.invites.create_invite_link', defaultMessage: 'Create invite link' })}
               </summary>
               <div className="mt-4 space-y-3">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <Label>Uses</Label>
+                    <Label>{t({ id: 'mastodon.invites.table.uses', defaultMessage: 'Uses' })}</Label>
                     <Select
                       items={MAX_USES}
                       value={maxUses}
@@ -438,7 +440,7 @@ export default function Invites() {
                     >
                       <SelectTrigger
                         className="w-full"
-                        aria-label="Maximum uses"
+                        aria-label={t({ id: 'eunha.invites.maximum_uses', defaultMessage: 'Maximum uses' })}
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -454,13 +456,13 @@ export default function Invites() {
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label>Expiry</Label>
+                    <Label>{t({ id: 'eunha.invites.expiry', defaultMessage: 'Expiry' })}</Label>
                     <Select
                       items={EXPIRES_IN}
                       value={expiresIn}
                       onValueChange={(v) => setExpiresIn(v ?? '0')}
                     >
-                      <SelectTrigger className="w-full" aria-label="Expiry">
+                      <SelectTrigger className="w-full" aria-label={t({ id: 'eunha.invites.expiry', defaultMessage: 'Expiry' })}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -480,10 +482,10 @@ export default function Invites() {
                     checked={autofollow}
                     onCheckedChange={setAutofollow}
                   />
-                  New members auto-follow me
+                  {t({ id: 'eunha.invites.new_members_auto_follow_me', defaultMessage: 'New members auto-follow me' })}
                 </label>
                 <Button onClick={create} disabled={creating}>
-                  {creating ? 'Creating…' : 'Create invite link'}
+                  {creating ? t({ id: 'eunha.common.creating', defaultMessage: 'Creating…' }) : t({ id: 'eunha.invites.create_invite_link', defaultMessage: 'Create invite link' })}
                 </Button>
               </div>
             </details>
@@ -492,17 +494,18 @@ export default function Invites() {
           {invites && invites.length > 0 && (
             <details className="mb-6">
               <summary className="cursor-pointer py-2 text-sm font-medium">
-                Manage links{' '}
+                {t({ id: 'eunha.invites.manage_links', defaultMessage: 'Manage links' })}{' '}
                 <span className="text-muted-foreground ml-2 font-normal">
-                  {usable.length} available
+                  {t({ id: 'eunha.invites.count_available', defaultMessage: '{count} available' }, { count: usable.length })}
                 </span>
               </summary>
               <div
                 className="my-3 flex flex-wrap gap-2"
                 role="group"
-                aria-label="Link status"
+                aria-label={t({ id: 'eunha.invites.link_status', defaultMessage: 'Link status' })}
               >
-                {['Available', 'Fully used', 'Expired', 'Unavailable'].map(
+                {/* i18n-ignore: values; the buttons show their labels. */}
+                {(['Available', 'Fully used', 'Expired', 'Unavailable'] as const).map(
                   (s) => (
                     <Button
                       key={s}
@@ -511,7 +514,9 @@ export default function Invites() {
                       aria-pressed={status === s}
                       onClick={() => setStatus(s)}
                     >
-                      {s}
+                      {s === 'Fully used'
+                        ? t({ id: 'eunha.invites.fully_used', defaultMessage: 'Fully used' })
+                        : inviteStatusLabel(s)}
                     </Button>
                   ),
                 )}
@@ -522,7 +527,7 @@ export default function Invites() {
                     <h3 className="text-muted-foreground text-xs">
                       {list[0].grant
                         ? grantLabel(list[0])
-                        : 'Other invite links'}
+                        : t({ id: 'eunha.invites.other_invite_links', defaultMessage: 'Other invite links' })}
                     </h3>
                     {list.map((invite) => (
                       <InviteRow
@@ -538,7 +543,10 @@ export default function Invites() {
                 ))}
                 {historyGroups.size === 0 && (
                   <p className="text-muted-foreground text-sm">
-                    No {status.toLowerCase()} links.
+                    {t(
+                      { id: 'eunha.invites.no_links', defaultMessage: '{status, select, Used {No used links.} Expired {No expired links.} Unavailable {No unavailable links.} other {No available links.}}' },
+                      { status },
+                    )}
                   </p>
                 )}
               </div>

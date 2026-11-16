@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { FEDERATION_TABS } from './DomainBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * Domains allowed to federate. These only matter in Mastodon's limited
@@ -40,7 +41,7 @@ export default function DomainAllows() {
       const allow = await createDomainAllow(token, domain.trim())
       feed.mutate((items) => [allow, ...items.filter((a) => a.id !== allow.id)])
       setDomain('')
-      toast.success(`Allowed ${allow.domain}.`)
+      toast.success(t({ id: 'eunha.admin.domain_allows.allowed', defaultMessage: 'Allowed {domain}.' }, { domain: allow.domain }))
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {
@@ -49,20 +50,19 @@ export default function DomainAllows() {
   }
 
   return (
-    <AdminLayout title="Domain allows" permission="manage_federation" sub={FEDERATION_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.domain_allows.domain_allows', defaultMessage: 'Domain allows' })} permission="manage_federation" sub={FEDERATION_TABS}>
       <p className="text-muted-foreground mb-3 text-sm">
-        Used when federation is limited to an allow list: only the domains here can
-        federate with this server.
+        {t({ id: 'eunha.admin.domain_allows.used_when_federation_is_limited_to', defaultMessage: 'Used when federation is limited to an allow list: only the domains here can federate with this server.' })}
       </p>
       <form onSubmit={add} className="mb-4 flex gap-2">
         <Input
-          aria-label="Domain to allow"
+          aria-label={t({ id: 'eunha.admin.domain_allows.domain_to_allow', defaultMessage: 'Domain to allow' })}
           placeholder="example.com"
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
         />
         <Button type="submit" disabled={saving || !domain.trim()}>
-          Allow
+          {t({ id: 'mastodon.admin.trends.allow', defaultMessage: 'Allow' })}
         </Button>
       </form>
       <AdminError error={feed.error} />
@@ -78,21 +78,21 @@ export default function DomainAllows() {
             </span>
             <ConfirmButton
               size="xs"
-              title={`Stop allowing ${a.domain}?`}
-              description="Under limited federation, the domain can no longer federate with this server."
-              confirmLabel="Remove"
+              title={t({ id: 'eunha.admin.domain_allows.stop_allowing', defaultMessage: 'Stop allowing {domain}?' }, { domain: a.domain })}
+              description={t({ id: 'eunha.admin.domain_allows.under_limited_federation_the_domain_can', defaultMessage: 'Under limited federation, the domain can no longer federate with this server.' })}
+              confirmLabel={t({ id: 'tag.remove', defaultMessage: 'Remove' })}
               onConfirm={async () => {
                 await deleteDomainAllow(token ?? '', a.id)
                 feed.mutate((items) => items.filter((x) => x.id !== a.id))
-                toast.success(`Removed ${a.domain}.`)
+                toast.success(t({ id: 'eunha.admin.domain_allows.removed', defaultMessage: 'Removed {domain}.' }, { domain: a.domain }))
               }}
             >
-              Remove
+              {t({ id: 'tag.remove', defaultMessage: 'Remove' })}
             </ConfirmButton>
           </div>
         ))}
         {feed.items?.length === 0 && (
-          <p className="text-muted-foreground text-sm">No domains are allowed.</p>
+          <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.domain_allows.no_domains_are_allowed', defaultMessage: 'No domains are allowed.' })}</p>
         )}
       </div>
       <InfiniteScroll

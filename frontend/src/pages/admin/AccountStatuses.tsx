@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * An account's public and unlisted posts as a moderator sees them: Mastodon's
@@ -54,7 +55,7 @@ export default function AccountStatuses() {
         status_ids: selected,
         report_id: reportId,
       })
-      toast.success('Added to the report.')
+      toast.success(t({ id: 'eunha.admin.account_statuses.added_to_the_report', defaultMessage: 'Added to the report.' }))
       if (result.id) navigate(`/admin/reports/${result.id}`)
     } catch (e) {
       toast.error(errorMessage(e))
@@ -67,17 +68,17 @@ export default function AccountStatuses() {
 
   return (
     <AdminLayout
-      title={acct ? `Posts by @${acct}` : 'Posts'}
+      title={acct ? t({ id: 'eunha.admin.account_statuses.posts_by', defaultMessage: 'Posts by @{acct}' }, { acct }) : t({ id: 'account.posts', defaultMessage: 'Posts' })}
       permission="manage_users"
       actions={
         <Button size="sm" disabled={busy || selected.length === 0} onClick={() => void report()}>
-          {reportId ? `Add to report #${reportId}` : 'Report'} ({selected.length})
+          {reportId ? t({ id: 'eunha.admin.account_statuses.add_to_report', defaultMessage: 'Add to report #{reportId}' }, { reportId }) : t({ id: 'mastodon.admin.collections.batch.report', defaultMessage: 'Report' })} ({selected.length})
         </Button>
       }
     >
       <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
-        <Link to={`/admin/accounts/${id}`}>Back to account</Link>
-        {reportId && <Link to={`/admin/reports/${reportId}`}>Back to report</Link>}
+        <Link to={`/admin/accounts/${id}`}>{t({ id: 'eunha.admin.account_statuses.back_to_account', defaultMessage: 'Back to account' })}</Link>
+        {reportId && <Link to={`/admin/reports/${reportId}`}>{t({ id: 'eunha.admin.account_statuses.back_to_report', defaultMessage: 'Back to report' })}</Link>}
         <Label className="font-normal">
           <Checkbox
             checked={media}
@@ -88,7 +89,7 @@ export default function AccountStatuses() {
               setParams(next, { replace: true })
             }}
           />
-          With media
+          {t({ id: 'mastodon.admin.statuses.with_media', defaultMessage: 'With media' })}
         </Label>
       </div>
       <AdminError error={feed.error} />
@@ -100,7 +101,7 @@ export default function AccountStatuses() {
           <div key={s.id} className="flex items-start gap-2">
             <Checkbox
               className="mt-3"
-              aria-label="Select post"
+              aria-label={t({ id: 'eunha.admin.account_statuses.select_post', defaultMessage: 'Select post' })}
               checked={selected.includes(s.id)}
               onCheckedChange={(v) =>
                 setSelected((ids) => (v === true ? [...ids, s.id] : ids.filter((x) => x !== s.id)))
@@ -109,13 +110,13 @@ export default function AccountStatuses() {
             <div className="min-w-0 flex-1 space-y-1">
               <AdminStatus status={s} />
               <Link className="text-xs" to={`/admin/accounts/${id}/statuses/${s.id}`}>
-                Open
+                {t({ id: 'mastodon.admin.collections.open', defaultMessage: 'Open' })}
               </Link>
             </div>
           </div>
         ))}
       </div>
-      {feed.items?.length === 0 && <p className="text-muted-foreground text-sm">No posts.</p>}
+      {feed.items?.length === 0 && <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.account_statuses.no_posts', defaultMessage: 'No posts.' })}</p>}
       <InfiniteScroll
         onLoadMore={feed.loadMore}
         loading={feed.loadingMore}

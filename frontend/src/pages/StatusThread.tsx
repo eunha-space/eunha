@@ -11,6 +11,7 @@ import { useComposeModal } from '@/components/compose-modal.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Pencil } from 'lucide-react'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 export default function StatusThread() {
   const { id = '' } = useParams()
@@ -73,7 +74,7 @@ export default function StatusThread() {
             variant="outline"
             onClick={() => openCompose({ replyTo: status, onPosted: () => load() })}
           >
-            <Pencil /> Reply
+            <Pencil /> {t({ id: 'status.reply', defaultMessage: 'Reply' })}
           </Button>
         )}
 

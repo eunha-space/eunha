@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import type { MessageDescriptor } from 'react-intl'
 import { toast } from 'sonner'
 
 import { type Permission } from '../../admin-api.ts'
@@ -23,65 +24,164 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-/** `UserRole::Flags::CATEGORIES`, each privilege with its label and hint. */
-const CATEGORIES: { title: string; privileges: [Permission, string, string][] }[] = [
+/** `UserRole::Flags::CATEGORIES`, each privilege with its label and hint,
+ *  as Mastodon's `admin.roles` messages. */
+const CATEGORIES: {
+  title: MessageDescriptor
+  privileges: [Permission, MessageDescriptor, MessageDescriptor][]
+}[] = [
   {
-    title: 'Invites',
+    title: { id: 'mastodon.admin.roles.categories.invites', defaultMessage: 'Invites' },
     privileges: [
-      ['invite_users', 'Invite Users', 'Allows users to invite new people to the server'],
+      [
+        'invite_users',
+        { id: 'mastodon.admin.roles.privileges.invite_users', defaultMessage: 'Invite Users' },
+        { id: 'mastodon.admin.roles.privileges.invite_users_description', defaultMessage: 'Allows users to invite new people to the server' },
+      ],
       [
         'invite_bypass_approval',
-        'Invite Users without review',
-        'Allows people invited to the server by these users to bypass moderation approval',
+        { id: 'mastodon.admin.roles.privileges.invite_bypass_approval', defaultMessage: 'Invite Users without review' },
+        { id: 'mastodon.admin.roles.privileges.invite_bypass_approval_description', defaultMessage: 'Allows people invited to the server by these users to bypass moderation approval' },
       ],
     ],
   },
   {
-    title: 'Email',
+    title: { id: 'mastodon.admin.roles.categories.email', defaultMessage: 'Email' },
     privileges: [
       [
         'manage_email_subscriptions',
-        'Manage Email Subscriptions',
-        'Allow users with this permission to enable the email newsletter feature for their account',
+        { id: 'mastodon.admin.roles.privileges.manage_email_subscriptions', defaultMessage: 'Manage Email Subscriptions' },
+        { id: 'mastodon.admin.roles.privileges.manage_email_subscriptions_description', defaultMessage: 'Allow users with this permission to enable the email newsletter feature for their account' },
       ],
     ],
   },
   {
-    title: 'Moderation',
+    title: { id: 'mastodon.admin.roles.categories.moderation', defaultMessage: 'Moderation' },
     privileges: [
-      ['view_dashboard', 'View Dashboard', 'Allows users to access the dashboard and various metrics'],
-      ['view_audit_log', 'View Audit Log', 'Allows users to see a history of administrative actions on the server'],
-      ['manage_users', 'Manage Users', "Allows users to view other users' details and perform moderation actions against them"],
-      ['manage_user_access', 'Manage User Access', "Allows users to disable other users' two-factor authentication, change their email address, and reset their password"],
-      ['delete_user_data', 'Delete User Data', "Allows users to delete other users' data without delay"],
-      ['manage_reports', 'Manage Reports', 'Allows users to review reports and perform moderation actions against them'],
-      ['manage_appeals', 'Manage Appeals', 'Allows users to review appeals against moderation actions'],
-      ['manage_federation', 'Manage Federation', 'Allows users to block or allow federation with other domains, and control deliverability'],
-      ['manage_blocks', 'Manage Blocks', 'Allows users to block email providers and IP addresses'],
-      ['manage_taxonomies', 'Manage Taxonomies', 'Allows users to review trending content and update hashtag settings'],
-      ['manage_invites', 'Manage Invites', 'Allows users to browse and deactivate invite links'],
-      ['view_feeds', 'View live and topic feeds', 'Allows users to access the live and topic feeds regardless of server settings'],
+      [
+        'view_dashboard',
+        { id: 'mastodon.admin.roles.privileges.view_dashboard', defaultMessage: 'View Dashboard' },
+        { id: 'mastodon.admin.roles.privileges.view_dashboard_description', defaultMessage: 'Allows users to access the dashboard and various metrics' },
+      ],
+      [
+        'view_audit_log',
+        { id: 'mastodon.admin.roles.privileges.view_audit_log', defaultMessage: 'View Audit Log' },
+        { id: 'mastodon.admin.roles.privileges.view_audit_log_description', defaultMessage: 'Allows users to see a history of administrative actions on the server' },
+      ],
+      [
+        'manage_users',
+        { id: 'mastodon.admin.roles.privileges.manage_users', defaultMessage: 'Manage Users' },
+        { id: 'mastodon.admin.roles.privileges.manage_users_description', defaultMessage: 'Allows users to view other users\' details and perform moderation actions against them' },
+      ],
+      [
+        'manage_user_access',
+        { id: 'mastodon.admin.roles.privileges.manage_user_access', defaultMessage: 'Manage User Access' },
+        { id: 'mastodon.admin.roles.privileges.manage_user_access_description', defaultMessage: 'Allows users to disable other users\' two-factor authentication, change their email address, and reset their password' },
+      ],
+      [
+        'delete_user_data',
+        { id: 'mastodon.admin.roles.privileges.delete_user_data', defaultMessage: 'Delete User Data' },
+        { id: 'mastodon.admin.roles.privileges.delete_user_data_description', defaultMessage: 'Allows users to delete other users\' data without delay' },
+      ],
+      [
+        'manage_reports',
+        { id: 'mastodon.admin.roles.privileges.manage_reports', defaultMessage: 'Manage Reports' },
+        { id: 'mastodon.admin.roles.privileges.manage_reports_description', defaultMessage: 'Allows users to review reports and perform moderation actions against them' },
+      ],
+      [
+        'manage_appeals',
+        { id: 'mastodon.admin.roles.privileges.manage_appeals', defaultMessage: 'Manage Appeals' },
+        { id: 'mastodon.admin.roles.privileges.manage_appeals_description', defaultMessage: 'Allows users to review appeals against moderation actions' },
+      ],
+      [
+        'manage_federation',
+        { id: 'mastodon.admin.roles.privileges.manage_federation', defaultMessage: 'Manage Federation' },
+        { id: 'mastodon.admin.roles.privileges.manage_federation_description', defaultMessage: 'Allows users to block or allow federation with other domains, and control deliverability' },
+      ],
+      [
+        'manage_blocks',
+        { id: 'mastodon.admin.roles.privileges.manage_blocks', defaultMessage: 'Manage Blocks' },
+        { id: 'mastodon.admin.roles.privileges.manage_blocks_description', defaultMessage: 'Allows users to block email providers and IP addresses' },
+      ],
+      [
+        'manage_taxonomies',
+        { id: 'mastodon.admin.roles.privileges.manage_taxonomies', defaultMessage: 'Manage Taxonomies' },
+        { id: 'mastodon.admin.roles.privileges.manage_taxonomies_description', defaultMessage: 'Allows users to review trending content and update hashtag settings' },
+      ],
+      [
+        'manage_invites',
+        { id: 'mastodon.admin.roles.privileges.manage_invites', defaultMessage: 'Manage Invites' },
+        { id: 'mastodon.admin.roles.privileges.manage_invites_description', defaultMessage: 'Allows users to browse and deactivate invite links' },
+      ],
+      [
+        'view_feeds',
+        { id: 'mastodon.admin.roles.privileges.view_feeds', defaultMessage: 'View live and topic feeds' },
+        { id: 'mastodon.admin.roles.privileges.view_feeds_description', defaultMessage: 'Allows users to access the live and topic feeds regardless of server settings' },
+      ],
     ],
   },
   {
-    title: 'Administration',
+    title: { id: 'mastodon.admin.roles.categories.administration', defaultMessage: 'Administration' },
     privileges: [
-      ['manage_settings', 'Manage Settings', 'Allows users to change site settings'],
-      ['manage_rules', 'Manage Rules', 'Allows users to change server rules'],
-      ['manage_roles', 'Manage Roles', 'Allows users to manage and assign roles below theirs'],
-      ['manage_webhooks', 'Manage Webhooks', 'Allows users to set up webhooks for administrative events'],
-      ['manage_custom_emojis', 'Manage Custom Emojis', 'Allows users to manage custom emojis on the server'],
-      ['manage_announcements', 'Manage Announcements', 'Allows users to manage announcements on the server'],
+      [
+        'manage_settings',
+        { id: 'mastodon.admin.roles.privileges.manage_settings', defaultMessage: 'Manage Settings' },
+        { id: 'mastodon.admin.roles.privileges.manage_settings_description', defaultMessage: 'Allows users to change site settings' },
+      ],
+      [
+        'manage_rules',
+        { id: 'mastodon.admin.roles.privileges.manage_rules', defaultMessage: 'Manage Rules' },
+        { id: 'mastodon.admin.roles.privileges.manage_rules_description', defaultMessage: 'Allows users to change server rules' },
+      ],
+      [
+        'manage_roles',
+        { id: 'mastodon.admin.roles.privileges.manage_roles', defaultMessage: 'Manage Roles' },
+        { id: 'mastodon.admin.roles.privileges.manage_roles_description', defaultMessage: 'Allows users to manage and assign roles below theirs' },
+      ],
+      [
+        'manage_webhooks',
+        { id: 'mastodon.admin.roles.privileges.manage_webhooks', defaultMessage: 'Manage Webhooks' },
+        { id: 'mastodon.admin.roles.privileges.manage_webhooks_description', defaultMessage: 'Allows users to set up webhooks for administrative events' },
+      ],
+      [
+        'manage_custom_emojis',
+        { id: 'mastodon.admin.roles.privileges.manage_custom_emojis', defaultMessage: 'Manage Custom Emojis' },
+        { id: 'mastodon.admin.roles.privileges.manage_custom_emojis_description', defaultMessage: 'Allows users to manage custom emojis on the server' },
+      ],
+      [
+        'manage_announcements',
+        { id: 'mastodon.admin.roles.privileges.manage_announcements', defaultMessage: 'Manage Announcements' },
+        { id: 'mastodon.admin.roles.privileges.manage_announcements_description', defaultMessage: 'Allows users to manage announcements on the server' },
+      ],
     ],
   },
   {
-    title: 'DevOps',
-    privileges: [['view_devops', 'DevOps', 'Allows users to access Sidekiq and pgHero dashboards']],
+    title: { id: 'mastodon.admin.roles.categories.devops', defaultMessage: 'DevOps' },
+    privileges: [
+      [
+        'view_devops',
+        { id: 'mastodon.admin.roles.privileges.view_devops', defaultMessage: 'DevOps' },
+        {
+          id: 'mastodon.admin.roles.privileges.view_devops_description',
+          defaultMessage: 'Allows users to access Sidekiq and pgHero dashboards',
+        },
+      ],
+    ],
   },
   {
-    title: 'Special',
-    privileges: [['administrator', 'Administrator', 'Users with this permission will bypass every permission']],
+    title: { id: 'mastodon.admin.roles.categories.special', defaultMessage: 'Special' },
+    privileges: [
+      [
+        'administrator',
+        { id: 'mastodon.admin.roles.privileges.administrator', defaultMessage: 'Administrator' },
+        {
+          id: 'mastodon.admin.roles.privileges.administrator_description',
+          defaultMessage: 'Users with this permission will bypass every permission',
+        },
+      ],
+    ],
   },
 ]
 
@@ -125,7 +225,7 @@ function RoleForm({
     try {
       if (initial) await updateRole(token ?? '', initial.id, params)
       else await createRole(token ?? '', params)
-      toast.success(initial ? 'Role saved.' : 'Role created.')
+      toast.success(initial ? t({ id: 'eunha.admin.roles.role_saved', defaultMessage: 'Role saved.' }) : t({ id: 'eunha.admin.roles.role_created', defaultMessage: 'Role created.' }))
       onSaved()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -139,11 +239,11 @@ function RoleForm({
       {!everyone && (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label htmlFor="role-name">Name</Label>
+            <Label htmlFor="role-name">{t({ id: 'mastodon.admin.tags.name', defaultMessage: 'Name' })}</Label>
             <Input id="role-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="role-color">Badge color</Label>
+            <Label htmlFor="role-color">{t({ id: 'mastodon.simple_form.labels.user_role.color', defaultMessage: 'Badge color' })}</Label>
             <Input
               id="role-color"
               value={color}
@@ -152,7 +252,7 @@ function RoleForm({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="role-position">Priority</Label>
+            <Label htmlFor="role-position">{t({ id: 'mastodon.simple_form.labels.user_role.position', defaultMessage: 'Priority' })}</Label>
             <Input
               id="role-position"
               type="number"
@@ -160,12 +260,11 @@ function RoleForm({
               onChange={(e) => setPosition(e.target.value)}
             />
             <p className="text-muted-foreground text-xs">
-              Higher role decides conflict resolution in certain situations. Certain actions
-              can only be performed on roles with a lower priority.
+              {t({ id: 'eunha.admin.roles.higher_role_decides_conflict_resolution_in', defaultMessage: 'Higher role decides conflict resolution in certain situations. Certain actions can only be performed on roles with a lower priority.' })}
             </p>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="role-collections">Collection limit</Label>
+            <Label htmlFor="role-collections">{t({ id: 'eunha.admin.roles.collection_limit', defaultMessage: 'Collection limit' })}</Label>
             <Input
               id="role-collections"
               type="number"
@@ -176,18 +275,17 @@ function RoleForm({
           </div>
           <Label className="text-sm font-normal">
             <Switch checked={highlighted} onCheckedChange={setHighlighted} />
-            Display role as badge on user profiles
+            {t({ id: 'mastodon.simple_form.labels.user_role.highlighted', defaultMessage: 'Display role as badge on user profiles' })}
           </Label>
           <Label className="text-sm font-normal">
             <Switch checked={require2fa} onCheckedChange={setRequire2fa} />
-            Require two-factor authentication
+            {t({ id: 'mastodon.simple_form.labels.user_role.require_2fa', defaultMessage: 'Require two-factor authentication' })}
           </Label>
         </div>
       )}
       {everyone && (
         <p className="text-muted-foreground text-sm">
-          The base role applies to every user, including those without an assigned role. It may
-          only carry the invite permissions.
+          {t({ id: 'eunha.admin.roles.the_base_role_applies_to_every', defaultMessage: 'The base role applies to every user, including those without an assigned role. It may only carry the invite permissions.' })}
         </p>
       )}
       {CATEGORIES.map((category) => {
@@ -196,8 +294,8 @@ function RoleForm({
         )
         if (privileges.length === 0) return null
         return (
-          <fieldset key={category.title} className="space-y-2">
-            <legend className="text-sm font-semibold">{category.title}</legend>
+          <fieldset key={category.title.id} className="space-y-2">
+            <legend className="text-sm font-semibold">{t(category.title)}</legend>
             {privileges.map(([key, label, hint]) => (
               <Label key={key} className="items-start text-sm font-normal">
                 <Checkbox
@@ -209,8 +307,8 @@ function RoleForm({
                   }
                 />
                 <span>
-                  <span className="font-medium">{label}</span>
-                  <span className="text-muted-foreground block text-xs">{hint}</span>
+                  <span className="font-medium">{t(label)}</span>
+                  <span className="text-muted-foreground block text-xs">{t(hint)}</span>
                 </span>
               </Label>
             ))}
@@ -219,10 +317,10 @@ function RoleForm({
       })}
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={saving}>
-          {initial ? 'Save changes' : 'Add role'}
+          {initial ? t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' }) : t({ id: 'mastodon.admin.roles.add_new', defaultMessage: 'Add role' })}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancel
+          {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
         </Button>
       </div>
     </form>
@@ -260,18 +358,18 @@ export default function Roles() {
 
   return (
     <AdminLayout
-      title="Roles"
+      title={t({ id: 'mastodon.admin.roles.title', defaultMessage: 'Roles' })}
       permission="manage_roles"
       actions={
         editing === null && (
           <Button size="sm" onClick={() => setEditing('new')}>
-            Add role
+            {t({ id: 'mastodon.admin.roles.add_new', defaultMessage: 'Add role' })}
           </Button>
         )
       }
     >
       <p className="text-muted-foreground mb-3 text-sm">
-        With user roles, you can customize which functions and areas your users can access.
+        {t({ id: 'eunha.admin.roles.with_user_roles_you_can_customize', defaultMessage: 'With user roles, you can customize which functions and areas your users can access.' })}
       </p>
       {editing === 'new' && (
         <div className="mb-4">
@@ -310,17 +408,17 @@ export default function Roles() {
                       aria-hidden
                     />
                   )}
-                  {role.everyone ? 'Base role' : role.name}
-                  {role.highlighted && <Badge variant="outline">Badge</Badge>}
-                  {role.require_2fa && <Badge variant="outline">Requires 2FA</Badge>}
+                  {role.everyone ? t({ id: 'eunha.admin.roles.base_role', defaultMessage: 'Base role' }) : role.name}
+                  {role.highlighted && <Badge variant="outline">{t({ id: 'eunha.admin.roles.badge', defaultMessage: 'Badge' })}</Badge>}
+                  {role.require_2fa && <Badge variant="outline">{t({ id: 'eunha.admin.roles.requires_2fa', defaultMessage: 'Requires 2FA' })}</Badge>}
                 </div>
                 <p className="text-muted-foreground text-xs">
                   {role.everyone
-                    ? 'All users'
+                    ? t({ id: 'eunha.admin.roles.all_users', defaultMessage: 'All users' })
                     : `${role.users_count} ${role.users_count === 1 ? 'user' : 'users'}`}
                   {' · '}
                   {role.permissions_as_keys.includes('administrator')
-                    ? 'Administrator'
+                    ? t({ id: 'mastodon.admin.roles.privileges.administrator', defaultMessage: 'Administrator' })
                     : `${role.permissions_as_keys.length} ${
                         role.permissions_as_keys.length === 1 ? 'permission' : 'permissions'
                       }`}
@@ -328,22 +426,22 @@ export default function Roles() {
               </div>
               {role.can_update && (
                 <Button size="xs" variant="outline" onClick={() => setEditing(role.id)}>
-                  Edit
+                  {t({ id: 'status.edit', defaultMessage: 'Edit' })}
                 </Button>
               )}
               {role.can_destroy && (
                 <ConfirmButton
                   size="xs"
-                  title={`Delete ${role.name}?`}
-                  description="Its users are left with the base role."
-                  confirmLabel="Delete"
+                  title={t({ id: 'eunha.admin.roles.delete', defaultMessage: 'Delete {name}?' }, { name: role.name })}
+                  description={t({ id: 'eunha.admin.roles.its_users_are_left_with_the', defaultMessage: 'Its users are left with the base role.' })}
+                  confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                   onConfirm={async () => {
                     await deleteRole(token ?? '', role.id)
-                    toast.success('Role deleted.')
+                    toast.success(t({ id: 'eunha.admin.roles.role_deleted', defaultMessage: 'Role deleted.' }))
                     load()
                   }}
                 >
-                  Delete
+                  {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                 </ConfirmButton>
               )}
             </div>

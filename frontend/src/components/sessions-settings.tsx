@@ -13,8 +13,10 @@ import {
 } from '../security-api.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
-const date = (value: string | null) => (value ? new Date(value).toLocaleString() : '')
+const date = (value: string | null) => (value ? new Date(value).toLocaleString(currentLocale()) : '')
+const day = (value: string) => new Date(value).toLocaleDateString(currentLocale())
 
 // `login_activities.authentication_methods.*`.
 const METHODS: Record<string, string> = {
@@ -38,12 +40,12 @@ function Sessions({ token }: { token: string }) {
   if (!sessions) return failed ? null : <SectionSkeleton rows={3} />
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Sessions</h2>
+      <h2 className="font-semibold">{t({ id: 'mastodon.sessions.title', defaultMessage: 'Sessions' })}</h2>
       <p className="text-muted-foreground text-sm">
-        These are the web browsers currently logged in to your account.
+        {t({ id: 'eunha.sessions_settings.these_are_the_web_browsers_currently', defaultMessage: 'These are the web browsers currently logged in to your account.' })}
       </p>
       {sessions.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No browser is signed in.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.sessions_settings.no_browser_is_signed_in', defaultMessage: 'No browser is signed in.' })}</p>
       ) : (
         <ul className="divide-y rounded border text-sm">
           {sessions.map((session) => (
@@ -52,11 +54,12 @@ function Sessions({ token }: { token: string }) {
                 <span title={session.user_agent}>{session.description}</span>
                 <span className="text-muted-foreground">
                   {' '}
-                  · {session.ip ?? 'unknown address'} · Last activity {date(session.updated_at)}
+                  · {session.ip ?? t({ id: 'eunha.sessions_settings.unknown_address', defaultMessage: 'unknown address' })} ·{' '}
+                  {t({ id: 'mastodon.sessions.activity', defaultMessage: 'Last activity' })} {date(session.updated_at)}
                 </span>
               </span>
               {session.current ? (
-                <span className="text-muted-foreground text-xs">Current session</span>
+                <span className="text-muted-foreground text-xs">{t({ id: 'mastodon.sessions.current_session', defaultMessage: 'Current session' })}</span>
               ) : (
                 <Button
                   size="sm"
@@ -64,13 +67,13 @@ function Sessions({ token }: { token: string }) {
                   onClick={() =>
                     revokeSession(token, session.id)
                       .then(() => {
-                        toast.success('Session successfully revoked')
+                        toast.success(t({ id: 'mastodon.sessions.revoke_success', defaultMessage: 'Session successfully revoked' }))
                         reload()
                       })
-                      .catch(() => toast.error('Could not revoke the session'))
+                      .catch(() => toast.error(t({ id: 'eunha.sessions_settings.could_not_revoke_the_session', defaultMessage: 'Could not revoke the session' })))
                   }
                 >
-                  Revoke
+                  {t({ id: 'mastodon.sessions.revoke', defaultMessage: 'Revoke' })}
                 </Button>
               )}
             </li>
@@ -95,11 +98,9 @@ function AuthorizedApplications({ token }: { token: string }) {
   if (!apps) return failed ? null : <SectionSkeleton rows={3} />
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Authorized apps</h2>
+      <h2 className="font-semibold">{t({ id: 'mastodon.settings.authorized_apps', defaultMessage: 'Authorized apps' })}</h2>
       <p className="text-muted-foreground text-sm">
-        These are applications that can access your account using the API. If there are
-        applications you do not recognize here, or an application is misbehaving, you can revoke
-        its access.
+        {t({ id: 'mastodon.doorkeeper.authorized_applications.index.description_html', defaultMessage: 'These are applications that can access your account using the API. If there are applications you do not recognize here, or an application is misbehaving, you can revoke its access.' })}
       </p>
       <ul className="divide-y rounded border text-sm">
         {apps.map((app) => (
@@ -116,9 +117,10 @@ function AuthorizedApplications({ token }: { token: string }) {
               </span>
               <span className="text-muted-foreground block text-xs">
                 {app.last_used_at
-                  ? `Last used on ${new Date(app.last_used_at).toLocaleDateString()}`
-                  : 'Never used'}{' '}
-                · Authorized on {new Date(app.created_at).toLocaleDateString()}
+                  ? t({ id: 'mastodon.doorkeeper.authorized_applications.index.last_used_at', defaultMessage: 'Last used on {date}' }, { date: day(app.last_used_at) })
+                  : t({ id: 'mastodon.doorkeeper.authorized_applications.index.never_used', defaultMessage: 'Never used' })}{' '}
+                ·{' '}
+                {t({ id: 'mastodon.doorkeeper.authorized_applications.index.authorized_at', defaultMessage: 'Authorized on {date}' }, { date: day(app.created_at) })}
               </span>
               <span className="text-muted-foreground block text-xs">{app.scopes.join(', ')}</span>
             </span>
@@ -127,16 +129,16 @@ function AuthorizedApplications({ token }: { token: string }) {
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  if (!window.confirm('Are you sure?')) return
+                  if (!window.confirm(t({ id: 'mastodon.admin.accounts.are_you_sure', defaultMessage: 'Are you sure?' }))) return
                   revokeAuthorizedApplication(token, app.id)
                     .then(() => {
-                      toast.success('Revoked')
+                      toast.success(t({ id: 'eunha.sessions_settings.revoked', defaultMessage: 'Revoked' }))
                       reload()
                     })
-                    .catch(() => toast.error('Could not revoke the app'))
+                    .catch(() => toast.error(t({ id: 'eunha.sessions_settings.could_not_revoke_the_app', defaultMessage: 'Could not revoke the app' })))
                 }}
               >
-                Revoke
+                {t({ id: 'mastodon.sessions.revoke', defaultMessage: 'Revoke' })}
               </Button>
             )}
           </li>
@@ -162,10 +164,9 @@ function AuthenticationHistory({ token }: { token: string }) {
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Authentication history</h2>
+      <h2 className="font-semibold">{t({ id: 'mastodon.login_activities.title', defaultMessage: 'Authentication history' })}</h2>
       <p className="text-muted-foreground text-sm">
-        If you see activity that you don&apos;t recognize, consider changing your password and
-        enabling two-factor authentication.
+        {t({ id: 'mastodon.login_activities.description_html', defaultMessage: 'If you see activity that you don\'\'t recognize, consider changing your password and enabling two-factor authentication.' })}
       </p>
       {!open ? (
         <Button
@@ -176,10 +177,10 @@ function AuthenticationHistory({ token }: { token: string }) {
             void load()
           }}
         >
-          View authentication history
+          {t({ id: 'eunha.sessions_settings.view_authentication_history', defaultMessage: 'View authentication history' })}
         </Button>
       ) : items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No authentication history available</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'mastodon.login_activities.empty', defaultMessage: 'No authentication history available' })}</p>
       ) : (
         <>
           <ul className="divide-y rounded border text-sm">
@@ -191,8 +192,12 @@ function AuthenticationHistory({ token }: { token: string }) {
                 ''
               return (
                 <li key={item.id} className="p-2">
-                  {item.success ? 'Successful' : 'Failed'} sign-in
-                  {item.success ? '' : ' attempt'} with {method} from {item.ip ?? 'an unknown address'}{' '}
+                  {t(
+                    item.success
+                      ? { id: 'eunha.sessions_settings.successful_sign_in', defaultMessage: 'Successful sign-in with {method} from {ip}' }
+                      : { id: 'eunha.sessions_settings.failed_sign_in', defaultMessage: 'Failed sign-in attempt with {method} from {ip}' },
+                    { method, ip: item.ip ?? t({ id: 'eunha.sessions_settings.an_unknown_address', defaultMessage: 'an unknown address' }) },
+                  )}{' '}
                   <span className="text-muted-foreground">
                     ({item.browser}) · {date(item.created_at)}
                   </span>
@@ -202,7 +207,7 @@ function AuthenticationHistory({ token }: { token: string }) {
           </ul>
           {more && (
             <Button size="sm" variant="ghost" onClick={() => void load(items[items.length - 1].id)}>
-              Older
+              {t({ id: 'mastodon.pagination.older', defaultMessage: 'Older' })}
             </Button>
           )}
         </>

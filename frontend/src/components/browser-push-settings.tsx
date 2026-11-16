@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { errorMessage } from '@/lib/utils.ts'
+import { t } from '@/i18n.tsx'
 
 export function BrowserPushSettings({ token }: { token: string }) {
   const id = getActiveAccountId()
@@ -36,7 +37,7 @@ export function BrowserPushSettings({ token }: { token: string }) {
       try {
         setState(await getBrowserPush(id, token))
       } catch {
-        toast.error('Could not check browser notifications')
+        toast.error(t({ id: 'eunha.browser_push_settings.could_not_check_browser_notifications', defaultMessage: 'Could not check browser notifications' }))
       }
       setBusy(false)
     }
@@ -44,11 +45,11 @@ export function BrowserPushSettings({ token }: { token: string }) {
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Browser notifications</h2>
-      <p className="text-muted-foreground text-sm">Receive alerts for this account when eunha is closed.</p>
+      <h2 className="font-semibold">{t({ id: 'eunha.browser_push_settings.browser_notifications', defaultMessage: 'Browser notifications' })}</h2>
+      <p className="text-muted-foreground text-sm">{t({ id: 'eunha.browser_push_settings.receive_alerts_for_this_account_when', defaultMessage: 'Receive alerts for this account when eunha is closed.' })}</p>
       <Button variant="outline" size="sm" disabled={busy} onClick={() => void run(() =>
         state.enabled ? disableBrowserPush(id, token) : enableBrowserPush(id, token))}>
-        {state.enabled ? 'Disable on this browser' : 'Enable on this browser'}
+        {state.enabled ? t({ id: 'eunha.browser_push_settings.disable_on_this_browser', defaultMessage: 'Disable on this browser' }) : t({ id: 'eunha.browser_push_settings.enable_on_this_browser', defaultMessage: 'Enable on this browser' })}
       </Button>
       {state.enabled && (Object.keys(pushAlertLabels) as (keyof typeof pushAlertLabels)[]).map((alert) => (
         <Label key={alert} className="text-sm font-normal">

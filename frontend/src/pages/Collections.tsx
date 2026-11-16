@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { errorMessage } from '@/lib/utils.ts'
 import { AccountListSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 type Collection = AccountCollection & {
   account_id: string
@@ -32,7 +33,7 @@ async function request<T>(path: string, token: string | null, method = 'GET', bo
   })
   if (!response.ok) {
     const problem = await response.json().catch(() => null) as { error?: string } | null
-    throw new Error(problem?.error ?? 'Could not complete the collection request')
+    throw new Error(problem?.error ?? t({ id: 'eunha.collections.could_not_complete_the_collection_request', defaultMessage: 'Could not complete the collection request' }))
   }
   if (method === 'DELETE') return undefined as T
   return response.json() as Promise<T>
@@ -66,14 +67,14 @@ function CollectionEditor({ token, collection, onSaved }: {
 
   return (
     <form className="space-y-2 rounded-md border p-3" onSubmit={(event) => { event.preventDefault(); void save() }}>
-      <h2 className="font-semibold">{collection ? 'Edit collection' : 'New collection'}</h2>
-      <Input aria-label="Collection name" placeholder="Collection name" value={name}
+      <h2 className="font-semibold">{collection ? t({ id: 'eunha.collections.edit_collection', defaultMessage: 'Edit collection' }) : t({ id: 'collections.new_collection', defaultMessage: 'New collection' })}</h2>
+      <Input aria-label={t({ id: 'eunha.collections.collection_name', defaultMessage: 'Collection name' })} placeholder={t({ id: 'eunha.collections.collection_name', defaultMessage: 'Collection name' })} value={name}
         onChange={(event) => setName(event.target.value)} />
-      <Textarea aria-label="Collection description" placeholder="Description" value={description}
+      <Textarea aria-label={t({ id: 'eunha.collections.collection_description', defaultMessage: 'Collection description' })} placeholder={t({ id: 'collections.collection_description', defaultMessage: 'Description' })} value={description}
         onChange={(event) => setDescription(event.target.value)} />
-      <Label><Switch checked={discoverable} onCheckedChange={setDiscoverable} /> Show on my profile</Label>
-      <Label><Switch checked={sensitive} onCheckedChange={setSensitive} /> Mark as sensitive</Label>
-      <Button type="submit" disabled={busy || !name.trim()}>{collection ? 'Save changes' : 'Create collection'}</Button>
+      <Label><Switch checked={discoverable} onCheckedChange={setDiscoverable} /> {t({ id: 'eunha.collections.show_on_my_profile', defaultMessage: 'Show on my profile' })}</Label>
+      <Label><Switch checked={sensitive} onCheckedChange={setSensitive} /> {t({ id: 'collections.mark_as_sensitive', defaultMessage: 'Mark as sensitive' })}</Label>
+      <Button type="submit" disabled={busy || !name.trim()}>{collection ? t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' }) : t({ id: 'collections.create_collection', defaultMessage: 'Create collection' })}</Button>
     </form>
   )
 }
@@ -91,9 +92,9 @@ function CollectionIndex({ token, accountId }: { token: string; accountId: strin
   }, [accountId, token])
   return (
     <>
-      <h1 className="text-xl font-bold">Collections</h1>
+      <h1 className="text-xl font-bold">{t({ id: 'navigation_bar.collections', defaultMessage: 'Collections' })}</h1>
       <CollectionEditor token={token} onSaved={(id) => navigate(`/collections/${id}`)} />
-      {error && <p role="alert">Could not load collections.</p>}
+      {error && <p role="alert">{t({ id: 'eunha.collections.could_not_load_collections', defaultMessage: 'Could not load collections.' })}</p>}
       {!items && !error && <RowsSkeleton count={3} />}
       {items?.map((collection) => (
         <Link key={collection.id} to={`/collections/${collection.id}`} className="block rounded-md border p-3">
@@ -135,16 +136,16 @@ function CollectionDetail({ id, token, accountId }: { id: string; token: string 
     }
   }
 
-  if (!detail) return error ? <p role="alert">Could not load this collection.</p> : <AccountListSkeleton />
+  if (!detail) return error ? <p role="alert">{t({ id: 'eunha.collections.could_not_load_this_collection', defaultMessage: 'Could not load this collection.' })}</p> : <AccountListSkeleton />
   const { collection, accounts } = detail
   const owner = token && collection.local && accountId === collection.account_id
   return (
     <>
       <h1 className="text-xl font-bold">{collection.name}</h1>
-      {error && <p role="alert">Could not refresh this collection.</p>}
-      {accounts[0] && <Link to={`/@${accounts[0].acct}`}>By @{accounts[0].acct}</Link>}
+      {error && <p role="alert">{t({ id: 'eunha.collections.could_not_refresh_this_collection', defaultMessage: 'Could not refresh this collection.' })}</p>}
+      {accounts[0] && <Link to={`/@${accounts[0].acct}`}>{t({ id: 'collections.by_account', defaultMessage: 'by {account_handle}' }, { account_handle: `@${accounts[0].acct}` })}</Link>}
       {collection.sensitive && !owner && !showSensitive ? (
-        <Button variant="outline" onClick={() => setShowSensitive(true)}>Show sensitive collection</Button>
+        <Button variant="outline" onClick={() => setShowSensitive(true)}>{t({ id: 'eunha.collections.show_sensitive_collection', defaultMessage: 'Show sensitive collection' })}</Button>
       ) : (
         <>
           {collection.description && <p className="whitespace-pre-wrap">{collection.description}</p>}
@@ -154,11 +155,11 @@ function CollectionDetail({ id, token, accountId }: { id: string; token: string 
               <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border p-3">
                 <div>
                   {account ? <Link to={`/@${account.acct}`}>{account.display_name || `@${account.acct}`}</Link>
-                    : <span>Unavailable account</span>}
+                    : <span>{t({ id: 'eunha.collections.unavailable_account', defaultMessage: 'Unavailable account' })}</span>}
                   {item.state !== 'accepted' && <p className="text-muted-foreground text-xs">{item.state}</p>}
                 </div>
                 {owner && <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() =>
-                  request(`/collections/${id}/items/${item.id}`, token, 'DELETE'))}>Remove</Button>}
+                  request(`/collections/${id}/items/${item.id}`, token, 'DELETE'))}>{t({ id: 'tag.remove', defaultMessage: 'Remove' })}</Button>}
               </div>
             )
           })}
@@ -175,19 +176,19 @@ function CollectionDetail({ id, token, accountId }: { id: string; token: string 
               setAcct('')
             })
           }}>
-            <Input aria-label="Account handle" placeholder="@someone@example.social" value={acct}
+            <Input aria-label={t({ id: 'eunha.collections.account_handle', defaultMessage: 'Account handle' })} placeholder="@someone@example.social" value={acct}
               onChange={(event) => setAcct(event.target.value)} />
-            <Button type="submit" disabled={busy || !acct.trim()}>Add account</Button>
+            <Button type="submit" disabled={busy || !acct.trim()}>{t({ id: 'eunha.collections.add_account', defaultMessage: 'Add account' })}</Button>
           </form>
           {confirmDelete ? (
             <div className="flex gap-2">
               <Button variant="destructive" disabled={busy} onClick={() => void run(async () => {
                 await request(`/collections/${id}`, token, 'DELETE')
                 navigate('/collections')
-              })}>Confirm delete collection</Button>
-              <Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              })}>{t({ id: 'eunha.collections.confirm_delete_collection', defaultMessage: 'Confirm delete collection' })}</Button>
+              <Button variant="outline" onClick={() => setConfirmDelete(false)}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</Button>
             </div>
-          ) : <Button variant="outline" onClick={() => setConfirmDelete(true)}>Delete collection</Button>}
+          ) : <Button variant="outline" onClick={() => setConfirmDelete(true)}>{t({ id: 'collections.delete_collection', defaultMessage: 'Delete collection' })}</Button>}
         </>
       )}
     </>
@@ -203,9 +204,9 @@ export default function Collections() {
       <TopBar />
       {id ? /^\d+$/.test(id)
         ? <CollectionDetail key={id} id={id} token={token} accountId={accountId} />
-        : <p>Collection unavailable.</p>
+        : <p>{t({ id: 'eunha.collections.collection_unavailable', defaultMessage: 'Collection unavailable.' })}</p>
         : token && accountId ? <CollectionIndex token={token} accountId={accountId} />
-          : <Button onClick={() => void beginLogin()}>Sign in</Button>}
+          : <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>}
     </div>
   )
 }

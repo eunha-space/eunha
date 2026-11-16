@@ -7,6 +7,7 @@ import { TopBar } from '@/components/top-bar.tsx'
 import { ColumnHeader } from '@/components/column-header.tsx'
 import { StatusFeed } from '@/components/status-feed.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * `remote_live_feed_access` from the instance, or `undefined` until it has
@@ -52,7 +53,7 @@ export default function PublicTimeline({ local }: { local?: boolean } = {}) {
     <>
       <TopBar />
       <div className="column-frame">
-        <ColumnHeader title={isLocal ? 'Local' : 'Federated'} />
+        <ColumnHeader title={isLocal ? t({ id: 'mastodon.admin.accounts.location.local', defaultMessage: 'Local' }) : t({ id: 'eunha.public_timeline.federated', defaultMessage: 'Federated' })} />
         <div className="space-y-2 p-3">
           {visitorOnFederated && remoteAccess === undefined ? (
             <FeedSkeleton />

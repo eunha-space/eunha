@@ -32,22 +32,23 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 export const FEDERATION_TABS = [
-  { to: '/admin/domain_blocks', label: 'Domain blocks' },
-  { to: '/admin/domain_allows', label: 'Domain allows' },
+  { to: '/admin/domain_blocks', get label() { return t({ id: 'mastodon.exports.domain_blocks', defaultMessage: 'Domain blocks' }) } },
+  { to: '/admin/domain_allows', get label() { return t({ id: 'eunha.admin.domain_blocks.domain_allows', defaultMessage: 'Domain allows' }) } },
 ]
 
 // Mastodon's labels for `DomainBlock#severity`, and what each does.
 const SEVERITIES: Record<DomainBlockSeverity, string> = {
-  silence: 'Limit',
-  suspend: 'Suspend',
-  noop: 'None',
+  get silence() { return t({ id: 'mastodon.admin.domain_blocks.new.severity.silence', defaultMessage: 'Limit' }) },
+  get suspend() { return t({ id: 'mastodon.admin.domain_blocks.confirm_suspension.confirm', defaultMessage: 'Suspend' }) },
+  get noop() { return t({ id: 'mastodon.admin.domain_blocks.new.severity.noop', defaultMessage: 'None' }) },
 }
 const SEVERITY_HINTS: Record<DomainBlockSeverity, string> = {
-  silence: "Hides the domain's posts from anyone not following its accounts.",
-  suspend: "Removes everything stored from the domain and refuses its traffic.",
-  noop: 'Only applies the options below.',
+  get silence() { return t({ id: 'eunha.admin.domain_blocks.hides_the_domain_s_posts_from', defaultMessage: 'Hides the domain\'\'s posts from anyone not following its accounts.' }) },
+  get suspend() { return t({ id: 'eunha.admin.domain_blocks.removes_everything_stored_from_the_domain', defaultMessage: 'Removes everything stored from the domain and refuses its traffic.' }) },
+  get noop() { return t({ id: 'eunha.admin.domain_blocks.only_applies_the_options_below', defaultMessage: 'Only applies the options below.' }) },
 }
 
 interface Draft {
@@ -146,13 +147,13 @@ function DomainBlockDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{target ? `Edit block for ${target.domain}` : 'New domain block'}</DialogTitle>
+          <DialogTitle>{target ? t({ id: 'eunha.admin.domain_blocks.edit_block_for', defaultMessage: 'Edit block for {domain}' }, { domain: target.domain }) : t({ id: 'mastodon.admin.domain_blocks.new.title', defaultMessage: 'New domain block' })}</DialogTitle>
           <DialogDescription>{SEVERITY_HINTS[draft.severity]}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {!target && (
             <div className="space-y-1">
-              <Label htmlFor="block-domain">Domain</Label>
+              <Label htmlFor="block-domain">{t({ id: 'mastodon.admin.domain_blocks.domain', defaultMessage: 'Domain' })}</Label>
               <Input
                 id="block-domain"
                 value={draft.domain}
@@ -162,9 +163,9 @@ function DomainBlockDialog({
             </div>
           )}
           <div className="space-y-1">
-            <Label>Severity</Label>
+            <Label>{t({ id: 'mastodon.simple_form.labels.defaults.severity', defaultMessage: 'Severity' })}</Label>
             <ChoiceSelect
-              label="Severity"
+              label={t({ id: 'mastodon.simple_form.labels.defaults.severity', defaultMessage: 'Severity' })}
               value={draft.severity}
               items={SEVERITIES}
               onChange={(v) => set('severity', v)}
@@ -175,47 +176,49 @@ function DomainBlockDialog({
               checked={draft.reject_media}
               onCheckedChange={(v) => set('reject_media', v === true)}
             />
-            Reject media files
+            {t({ id: 'mastodon.admin.domain_blocks.reject_media', defaultMessage: 'Reject media files' })}
           </Label>
           <Label className="text-sm font-normal">
             <Checkbox
               checked={draft.reject_reports}
               onCheckedChange={(v) => set('reject_reports', v === true)}
             />
-            Reject reports
+            {t({ id: 'mastodon.admin.domain_blocks.reject_reports', defaultMessage: 'Reject reports' })}
           </Label>
           <Label className="text-sm font-normal">
             <Checkbox
               checked={draft.obfuscate}
               onCheckedChange={(v) => set('obfuscate', v === true)}
             />
-            Obfuscate the domain name when it is listed publicly
+            {t({ id: 'eunha.admin.domain_blocks.obfuscate_the_domain_name_when_it', defaultMessage: 'Obfuscate the domain name when it is listed publicly' })}
           </Label>
           <div className="space-y-1">
-            <Label htmlFor="block-private">Private comment</Label>
+            <Label htmlFor="block-private">{t({ id: 'mastodon.admin.domain_blocks.private_comment', defaultMessage: 'Private comment' })}</Label>
             <Textarea
               id="block-private"
               rows={2}
               value={draft.private_comment}
-              placeholder="For other moderators"
+              placeholder={t({ id: 'eunha.admin.domain_blocks.for_other_moderators', defaultMessage: 'For other moderators' })}
               onChange={(e) => set('private_comment', e.target.value)}
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="block-public">Public comment</Label>
+            <Label htmlFor="block-public">{t({ id: 'mastodon.admin.domain_blocks.public_comment', defaultMessage: 'Public comment' })}</Label>
             <Textarea
               id="block-public"
               rows={2}
               value={draft.public_comment}
-              placeholder="Shown with the domain on the about page, if listed"
+              placeholder={t({ id: 'eunha.admin.domain_blocks.shown_with_the_domain_on_the', defaultMessage: 'Shown with the domain on the about page, if listed' })}
               onChange={(e) => set('public_comment', e.target.value)}
             />
           </div>
           {conflict && (
             <div className="bg-muted space-y-2 rounded-lg p-3 text-sm">
               <p>
-                {conflict.domain} is already blocked ({SEVERITIES[conflict.severity]}), and
-                this block would not be stricter.
+                {t(
+                  { id: 'eunha.admin.domain_blocks.already_blocked', defaultMessage: '{domain} is already blocked ({severity}), and this block would not be stricter.' },
+                  { domain: conflict.domain, severity: SEVERITIES[conflict.severity] },
+                )}
               </p>
               <Button
                 size="sm"
@@ -226,20 +229,20 @@ function DomainBlockDialog({
                   setConflict(null)
                 }}
               >
-                Edit the existing block instead
+                {t({ id: 'eunha.admin.domain_blocks.edit_the_existing_block_instead', defaultMessage: 'Edit the existing block instead' })}
               </Button>
             </div>
           )}
         </div>
         <DialogFooter>
           <DialogClose render={<Button variant="outline" disabled={saving} />}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </DialogClose>
           <Button
             disabled={saving || (!target && !draft.domain.trim())}
             onClick={() => void save()}
           >
-            {saving ? 'Saving…' : target ? 'Save' : 'Block domain'}
+            {saving ? t({ id: 'eunha.common.saving', defaultMessage: 'Saving…' }) : target ? t({ id: 'lists.save', defaultMessage: 'Save' }) : t({ id: 'eunha.admin.domain_blocks.block_domain', defaultMessage: 'Block domain' })}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -261,17 +264,17 @@ export default function DomainBlocks() {
         ? items.map((b) => (b.id === block.id ? block : b))
         : [block, ...items],
     )
-    toast.success(created ? `Blocked ${block.domain}.` : `Updated ${block.domain}.`)
+    toast.success(created ? t({ id: 'eunha.admin.domain_blocks.blocked', defaultMessage: 'Blocked {domain}.' }, { domain: block.domain }) : t({ id: 'eunha.admin.domain_blocks.updated', defaultMessage: 'Updated {domain}.' }, { domain: block.domain }))
   }
 
   return (
     <AdminLayout
-      title="Domain blocks"
+      title={t({ id: 'mastodon.exports.domain_blocks', defaultMessage: 'Domain blocks' })}
       permission="manage_federation"
       sub={FEDERATION_TABS}
       actions={
         <Button size="sm" onClick={() => setDialog({ editing: null })}>
-          Add domain block
+          {t({ id: 'eunha.admin.domain_blocks.add_domain_block', defaultMessage: 'Add domain block' })}
         </Button>
       }
     >
@@ -287,9 +290,9 @@ export default function DomainBlocks() {
               <Badge variant={b.severity === 'suspend' ? 'destructive' : 'secondary'}>
                 {SEVERITIES[b.severity]}
               </Badge>
-              {b.reject_media && <Badge variant="outline">No media</Badge>}
-              {b.reject_reports && <Badge variant="outline">No reports</Badge>}
-              {b.obfuscate && <Badge variant="outline">Obfuscated</Badge>}
+              {b.reject_media && <Badge variant="outline">{t({ id: 'eunha.admin.domain_blocks.no_media', defaultMessage: 'No media' })}</Badge>}
+              {b.reject_reports && <Badge variant="outline">{t({ id: 'eunha.admin.domain_blocks.no_reports', defaultMessage: 'No reports' })}</Badge>}
+              {b.obfuscate && <Badge variant="outline">{t({ id: 'eunha.admin.domain_blocks.obfuscated', defaultMessage: 'Obfuscated' })}</Badge>}
             </div>
             {b.public_comment && <p className="text-sm">{b.public_comment}</p>}
             {b.private_comment && (
@@ -300,27 +303,27 @@ export default function DomainBlocks() {
                 {formatDate(b.created_at)}
               </span>
               <Button size="xs" variant="outline" onClick={() => setDialog({ editing: b })}>
-                Edit
+                {t({ id: 'status.edit', defaultMessage: 'Edit' })}
               </Button>
               <ConfirmButton
                 size="xs"
-                title={`Unblock ${b.domain}?`}
-                description="The domain can federate with this server again. Anything already removed under a suspension does not come back."
-                confirmLabel="Unblock"
+                title={t({ id: 'eunha.admin.domain_blocks.unblock', defaultMessage: 'Unblock {domain}?' }, { domain: b.domain })}
+                description={t({ id: 'eunha.admin.domain_blocks.the_domain_can_federate_with_this', defaultMessage: 'The domain can federate with this server again. Anything already removed under a suspension does not come back.' })}
+                confirmLabel={t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
                 onConfirm={async () => {
                   await deleteDomainBlock(token ?? '', b.id)
                   feed.mutate((items) => items.filter((x) => x.id !== b.id))
-                  toast.success(`Unblocked ${b.domain}.`)
+                  toast.success(t({ id: 'eunha.admin.domain_blocks.unblocked', defaultMessage: 'Unblocked {domain}.' }, { domain: b.domain }))
                 }}
               >
-                Unblock
+                {t({ id: 'account.unblock_short', defaultMessage: 'Unblock' })}
               </ConfirmButton>
             </div>
           </div>
         ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No domains are blocked.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.domain_blocks.no_domains_are_blocked', defaultMessage: 'No domains are blocked.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

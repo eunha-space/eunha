@@ -10,6 +10,7 @@ import { FollowRequestActions } from '@/components/follow-request-actions.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 async function* emptyPages<T>(): AsyncIterable<T[]> {}
 
@@ -31,14 +32,14 @@ export default function FollowRequests() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-3 text-lg font-bold">Follow requests</h1>
+      <h1 className="mb-3 text-lg font-bold">{t({ id: 'column.follow_requests', defaultMessage: 'Follow requests' })}</h1>
       {!token ? (
         <div className="space-y-2">
           <p className="text-muted-foreground text-sm">
-            Sign in to review your follow requests.
+            {t({ id: 'eunha.follow_requests.sign_in_to_review_your_follow', defaultMessage: 'Sign in to review your follow requests.' })}
           </p>
           <Button size="sm" onClick={() => beginLogin()}>
-            Sign in
+            {t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}
           </Button>
         </div>
       ) : (
@@ -61,7 +62,7 @@ export default function FollowRequests() {
             />
           ))}
           {accounts?.length === 0 && (
-            <p className="text-muted-foreground text-sm">No pending follow requests.</p>
+            <p className="text-muted-foreground text-sm">{t({ id: 'eunha.follow_requests.no_pending_follow_requests', defaultMessage: 'No pending follow requests.' })}</p>
           )}
           <InfiniteScroll
             onLoadMore={feed.loadMore}

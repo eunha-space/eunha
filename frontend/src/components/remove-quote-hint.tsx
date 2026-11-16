@@ -3,6 +3,8 @@ import { MoreHorizontal } from 'lucide-react'
 
 import { dismiss, isDismissed, subscribeDismissed } from '@/lib/dismissed.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 // Mastodon's `RemoveQuoteHint`: on a notification of someone quoting you, it
 // says once where the quote can be taken off your post, then never again.
@@ -44,14 +46,23 @@ export function RemoveQuoteHint({ canShow }: { canShow: boolean }) {
 
   return (
     <div role="note" className="bg-muted/50 space-y-1 rounded-md border p-2.5 text-sm">
-      <p className="font-medium">Want to remove your quoted post?</p>
+      <p className="font-medium">{t({ id: 'remove_quote_hint.title', defaultMessage: 'Want to remove your quoted post?' })}</p>
       <p className="text-muted-foreground">
-        You can do so from the{' '}
-        <MoreHorizontal aria-label="More" className="inline size-4 align-text-bottom" />{' '}
-        options menu.
+        <FormattedMessage
+          id='remove_quote_hint.message'
+          defaultMessage='You can do so from the {icon} options menu.'
+          values={{
+            icon: (
+              <MoreHorizontal
+                aria-label={t({ id: 'navigation_bar.more', defaultMessage: 'More' })}
+                className="inline size-4 align-text-bottom"
+              />
+            ),
+          }}
+        />
       </p>
       <Button variant="ghost" size="sm" onClick={dismissRemoveQuoteHint}>
-        Got it
+        {t({ id: 'remove_quote_hint.button_label', defaultMessage: 'Got it' })}
       </Button>
     </div>
   )

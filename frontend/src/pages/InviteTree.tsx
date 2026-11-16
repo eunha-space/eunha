@@ -12,15 +12,16 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
 const ROOT_REASONS = {
-  no_recorded_inviter: 'No inviter recorded',
-  lineage_unavailable: 'Earlier lineage is unavailable',
+  get no_recorded_inviter() { return t({ id: 'eunha.invite_tree.no_inviter_recorded', defaultMessage: 'No inviter recorded' }) },
+  get lineage_unavailable() { return t({ id: 'eunha.invite_tree.earlier_lineage_is_unavailable', defaultMessage: 'Earlier lineage is unavailable' }) },
 }
 
 const PLACEHOLDER_NAMES = {
-  former_member: 'A former member',
-  hidden_member: 'A member who hides their network',
+  get former_member() { return t({ id: 'eunha.invite_tree.a_former_member', defaultMessage: 'A former member' }) },
+  get hidden_member() { return t({ id: 'eunha.invite_tree.a_member_who_hides_their_network', defaultMessage: 'A member who hides their network' }) },
 }
 
 function nameOf(node: InviteNode): string {
@@ -114,7 +115,7 @@ function TreeNode(props: NodeProps) {
       <div className={`rounded-lg p-2 ${focused === node.id ? 'bg-muted ring-primary ring-2' : ''}`}>
         <div className="flex min-w-0 items-center gap-2">
           {node.children.length > 0 ? <Button size="icon-sm" variant="ghost" tabIndex={-1}
-            aria-label={`${open ? 'Collapse' : 'Expand'} ${isMember ? `@${node.acct}` : name}`}
+            aria-label={`${open ? t({ id: 'eunha.invite_tree.collapse', defaultMessage: 'Collapse' }) : t({ id: 'eunha.invite_tree.expand', defaultMessage: 'Expand' })} ${isMember ? `@${node.acct}` : name}`}
             disabled={searching} onClick={() => toggle(node.id)}>
             {open ? <ChevronDown /> : <ChevronRight />}
           </Button> : <span className="size-7 shrink-0" />}
@@ -124,7 +125,7 @@ function TreeNode(props: NodeProps) {
               <AvatarFallback>{name.slice(0, 1).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <div className="truncate font-medium">{name}{node.id === me && <span className="text-muted-foreground text-xs"> (you)</span>}</div>
+              <div className="truncate font-medium">{name}{node.id === me && <span className="text-muted-foreground text-xs"> {t({ id: 'eunha.invite_tree.you', defaultMessage: '(you)' })}</span>}</div>
               <div className="text-muted-foreground truncate text-sm">@{node.acct}</div>
             </div>
           </Link> : <div className="text-muted-foreground flex min-w-0 flex-1 items-center gap-2">
@@ -133,12 +134,12 @@ function TreeNode(props: NodeProps) {
           </div>}
         </div>
         <div className="text-muted-foreground ml-9 mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          <span>{count.direct} direct {count.direct === 1 ? 'invitee' : 'invitees'}
-            {count.total > count.direct && `, ${count.total} in all`}</span>
-          {node.joined_at && <time dateTime={node.joined_at}>Joined {new Date(node.joined_at).toLocaleDateString()}</time>}
+          <span>{t({ id: 'eunha.invite_tree.direct_invitees', defaultMessage: '{count, plural, one {# direct invitee} other {# direct invitees}}' }, { count: count.direct })}
+            {count.total > count.direct && t({ id: 'eunha.invite_tree.in_all', defaultMessage: ', {count} in all' }, { count: count.total })}</span>
+          {node.joined_at && <time dateTime={node.joined_at}>{t({ id: 'eunha.invite_tree.joined_on', defaultMessage: 'Joined {date}' }, { date: new Date(node.joined_at).toLocaleDateString(currentLocale()) })}</time>}
           {node.root_reason && <span>{ROOT_REASONS[node.root_reason]}</span>}
           {canGrant && isMember && <Link to={`/admin/invites?grant_to=${encodeURIComponent(node.id)}`} className="underline"
-            tabIndex={active === node.id ? 0 : -1} aria-label={`Hand out invites to @${node.acct}`}>Hand out invites</Link>}
+            tabIndex={active === node.id ? 0 : -1} aria-label={t({ id: 'eunha.invite_tree.hand_out_invites_to', defaultMessage: 'Hand out invites to @{acct}' }, { acct: node.acct })}>{t({ id: 'eunha.invite_tree.hand_out_invites', defaultMessage: 'Hand out invites' })}</Link>}
         </div>
       </div>
       {node.children.length > 0 && open && (
@@ -189,7 +190,7 @@ export default function InviteTree() {
       if (!live) return
       if (effectiveView === 'mine' && result.members.length === 0) { setNoBranch(true); return }
       setTrees(current => ({ ...current, [effectiveView]: result }))
-    }).catch(() => { if (live) setError('Could not load the invite tree. Please try again.') })
+    }).catch(() => { if (live) setError(t({ id: 'eunha.invite_tree.could_not_load_the_invite_tree', defaultMessage: 'Could not load the invite tree. Please try again.' })) })
     return () => { live = false }
   }, [token, effectiveView, reload])
   useEffect(() => {
@@ -294,28 +295,28 @@ export default function InviteTree() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-2 text-lg font-bold">Invite tree</h1>
-      <p className="text-muted-foreground mb-3 text-sm">Who joined through whose invite. A former member stands in for an inviter no longer here, and members who hide their network appear without their name.</p>
-      <Button variant="outline" size="sm" render={<Link to="/invites" />} className="mb-4">Your invites</Button>
-      {!token ? <div className="space-y-2"><p className="text-sm">Sign in to view the invite tree.</p><Button onClick={() => beginLogin()}>Sign in</Button></div> : <>
-        {error && <div role="alert" className="text-destructive mb-3 text-sm">{error} <Button size="sm" variant="outline" onClick={() => setReload(n => n + 1)}>Try again</Button></div>}
+      <h1 className="mb-2 text-lg font-bold">{t({ id: 'eunha.invite_tree.invite_tree', defaultMessage: 'Invite tree' })}</h1>
+      <p className="text-muted-foreground mb-3 text-sm">{t({ id: 'eunha.invite_tree.who_joined_through_whose_invite_a', defaultMessage: 'Who joined through whose invite. A former member stands in for an inviter no longer here, and members who hide their network appear without their name.' })}</p>
+      <Button variant="outline" size="sm" render={<Link to="/invites" />} className="mb-4">{t({ id: 'eunha.invite_tree.your_invites', defaultMessage: 'Your invites' })}</Button>
+      {!token ? <div className="space-y-2"><p className="text-sm">{t({ id: 'eunha.invite_tree.sign_in_to_view_the_invite', defaultMessage: 'Sign in to view the invite tree.' })}</p><Button onClick={() => beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button></div> : <>
+        {error && <div role="alert" className="text-destructive mb-3 text-sm">{error} <Button size="sm" variant="outline" onClick={() => setReload(n => n + 1)}>{t({ id: 'bundle_column_error.retry', defaultMessage: 'Try again' })}</Button></div>}
         {!tree && !error && <AccountListSkeleton count={6} />}
         {tree && <>
-          <p className="text-muted-foreground mb-3 text-sm">{tree.total} {tree.total === 1 ? 'member' : 'members'} in the instance</p>
+          <p className="text-muted-foreground mb-3 text-sm">{t({ id: 'eunha.invite_tree.members_in_instance', defaultMessage: '{count, plural, one {# member} other {# members}} in the instance' }, { count: tree.total })}</p>
           <div className="mb-3 flex flex-wrap gap-2">
             <Button size="sm" variant={effectiveView === 'mine' ? 'secondary' : 'outline'} aria-pressed={effectiveView === 'mine'} disabled={noBranch}
-              onClick={() => setView('mine')}>My branch</Button>
-            <Button size="sm" variant={effectiveView === 'all' ? 'secondary' : 'outline'} aria-pressed={effectiveView === 'all'} onClick={() => setView('all')}>Whole instance</Button>
-            <Button size="sm" variant="outline" disabled={!me || !parents.has(me)} onClick={findMe}>Find me</Button>
-            <Button size="sm" variant="ghost" disabled={searching} onClick={() => { setExpanded(new Set()); update({ member: null }) }}>Collapse all</Button>
+              onClick={() => setView('mine')}>{t({ id: 'eunha.invite_tree.my_branch', defaultMessage: 'My branch' })}</Button>
+            <Button size="sm" variant={effectiveView === 'all' ? 'secondary' : 'outline'} aria-pressed={effectiveView === 'all'} onClick={() => setView('all')}>{t({ id: 'eunha.invite_tree.whole_instance', defaultMessage: 'Whole instance' })}</Button>
+            <Button size="sm" variant="outline" disabled={!me || !parents.has(me)} onClick={findMe}>{t({ id: 'eunha.invite_tree.find_me', defaultMessage: 'Find me' })}</Button>
+            <Button size="sm" variant="ghost" disabled={searching} onClick={() => { setExpanded(new Set()); update({ member: null }) }}>{t({ id: 'eunha.invite_tree.collapse_all', defaultMessage: 'Collapse all' })}</Button>
           </div>
           <div className="mb-3 space-y-1">
-            <Label htmlFor="tree-search">Search members</Label>
-            <Input id="tree-search" value={query} onChange={e => update({ q: e.target.value || null, member: null }, true)} placeholder={effectiveView === 'mine' ? 'Search your branch' : 'Search the whole instance'} />
+            <Label htmlFor="tree-search">{t({ id: 'eunha.invite_tree.search_members', defaultMessage: 'Search members' })}</Label>
+            <Input id="tree-search" value={query} onChange={e => update({ q: e.target.value || null, member: null }, true)} placeholder={effectiveView === 'mine' ? t({ id: 'eunha.invite_tree.search_your_branch', defaultMessage: 'Search your branch' }) : t({ id: 'eunha.invite_tree.search_the_whole_instance', defaultMessage: 'Search the whole instance' })} />
           </div>
-          {tree.members.length === 0 ? <p className="text-muted-foreground text-sm">No members yet.</p>
-            : roots.length === 0 ? <p role="status" className="text-muted-foreground text-sm">No matching members in this view.</p>
-            : <ul role="tree" aria-label="Invite lineage" aria-busy={loading} className="space-y-1" onKeyDown={onKeyDown}>{roots.map(node => <TreeNode key={node.id} node={node} level={1}
+          {tree.members.length === 0 ? <p className="text-muted-foreground text-sm">{t({ id: 'lists.no_members_yet', defaultMessage: 'No members yet.' })}</p>
+            : roots.length === 0 ? <p role="status" className="text-muted-foreground text-sm">{t({ id: 'eunha.invite_tree.no_matching_members_in_this_view', defaultMessage: 'No matching members in this view.' })}</p>
+            : <ul role="tree" aria-label={t({ id: 'eunha.invite_tree.invite_lineage', defaultMessage: 'Invite lineage' })} aria-busy={loading} className="space-y-1" onKeyDown={onKeyDown}>{roots.map(node => <TreeNode key={node.id} node={node} level={1}
               {...{ isOpen, toggle, counts, searching, canGrant, me, focused }} active={current} setActive={setActive} />)}</ul>}
         </>}
       </>}

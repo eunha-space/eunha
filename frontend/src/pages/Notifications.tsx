@@ -28,6 +28,8 @@ import { Button } from '@/components/ui/button.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { DisplayName } from '@/components/emoji.tsx'
 import { NotificationsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 function describe(type: string): { icon: ReactNode; verb: string } {
   switch (type) {
@@ -62,13 +64,13 @@ function describe(type: string): { icon: ReactNode; verb: string } {
 
 // Mastodon's `notification.moderation_warning.action_*`.
 const WARNING_TEXT: Record<mastodon.v1.AccountWarningAction, string> = {
-  none: 'You have received a moderation warning.',
-  disable: 'Your account has been disabled.',
-  mark_statuses_as_sensitive: 'Some of your posts have been marked as sensitive.',
-  delete_statuses: 'Some of your posts have been removed.',
-  sensitive: 'Your posts will be marked as sensitive from now on.',
-  silence: 'Your account has been limited.',
-  suspend: 'Your account has been suspended.',
+  get none() { return t({ id: 'mastodon.notification_fallbacks.moderation_warning.title', defaultMessage: 'You have received a moderation warning.' }) },
+  get disable() { return t({ id: 'notification.moderation_warning.action_disable', defaultMessage: 'Your account has been disabled.' }) },
+  get mark_statuses_as_sensitive() { return t({ id: 'notification.moderation_warning.action_mark_statuses_as_sensitive', defaultMessage: 'Some of your posts have been marked as sensitive.' }) },
+  get delete_statuses() { return t({ id: 'notification.moderation_warning.action_delete_statuses', defaultMessage: 'Some of your posts have been removed.' }) },
+  get sensitive() { return t({ id: 'notification.moderation_warning.action_sensitive', defaultMessage: 'Your posts will be marked as sensitive from now on.' }) },
+  get silence() { return t({ id: 'notification.moderation_warning.action_silence', defaultMessage: 'Your account has been limited.' }) },
+  get suspend() { return t({ id: 'notification.moderation_warning.action_suspend', defaultMessage: 'Your account has been suspended.' }) },
 }
 
 // Mastodon's `notification.relationships_severance_event.*`.
@@ -76,13 +78,13 @@ function severanceText(event: mastodon.v1.RelationshipSeveranceEvent): string {
   const lost = `${event.followersCount} of your followers and ${event.followingCount} accounts you follow`
   switch (event.type) {
     case 'account_suspension':
-      return `A moderator has suspended ${event.targetName}, so you can no longer receive updates from them or interact with them.`
+      return t({ id: 'eunha.notifications.a_moderator_has_suspended_so_you', defaultMessage: 'A moderator has suspended {targetName}, so you can no longer receive updates from them or interact with them.' }, { targetName: event.targetName })
     case 'domain_block':
-      return `A moderator has blocked ${event.targetName}, including ${lost}.`
+      return t({ id: 'eunha.notifications.a_moderator_has_blocked_including', defaultMessage: 'A moderator has blocked {targetName}, including {lost}.' }, { targetName: event.targetName, lost })
     case 'user_domain_block':
-      return `You have blocked ${event.targetName}, removing ${lost}.`
+      return t({ id: 'eunha.notifications.you_have_blocked_removing', defaultMessage: 'You have blocked {targetName}, removing {lost}.' }, { targetName: event.targetName, lost })
     default:
-      return `Relationships with ${event.targetName} were severed.`
+      return t({ id: 'eunha.notifications.relationships_with_were_severed', defaultMessage: 'Relationships with {targetName} were severed.' }, { targetName: event.targetName })
   }
 }
 
@@ -106,10 +108,10 @@ function SystemNotice({ icon, title, children }: { icon: ReactNode; title: strin
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  spam: 'Spam',
-  legal: 'Legal',
-  violation: 'Rule violation',
-  other: 'Other',
+  get spam() { return t({ id: 'report.categories.spam', defaultMessage: 'Spam' }) },
+  get legal() { return t({ id: 'report.categories.legal', defaultMessage: 'Legal' }) },
+  get violation() { return t({ id: 'report_notification.categories.violation', defaultMessage: 'Rule violation' }) },
+  get other() { return t({ id: 'report.categories.other', defaultMessage: 'Other' }) },
 }
 
 function NotificationItem({
@@ -131,7 +133,7 @@ function NotificationItem({
       <SystemNotice icon={<Gavel className="size-4" />} title={WARNING_TEXT[w.action] ?? w.action}>
         {w.text && <p className="text-muted-foreground text-sm whitespace-pre-wrap">{w.text}</p>}
         <Link to={`/disputes/strikes/${w.id}`} className="text-sm">
-          Learn more
+          {t({ id: 'learn_more_link.learn_more', defaultMessage: 'Learn more' })}
         </Link>
       </SystemNotice>
     )
@@ -140,7 +142,7 @@ function NotificationItem({
     return (
       <SystemNotice
         icon={<UserX className="size-4" />}
-        title={`Relationships with ${n.event.targetName} severed`}
+        title={t({ id: 'eunha.notifications.relationships_with_severed', defaultMessage: 'Relationships with {targetName} severed' }, { targetName: n.event.targetName })}
       >
         <p className="text-muted-foreground text-sm">{severanceText(n.event)}</p>
       </SystemNotice>
@@ -181,7 +183,7 @@ function NotificationItem({
         {header}
         {n.type === 'admin.sign_up' && (
           <Link to={`/admin/accounts/${n.account.id}`} className="text-sm">
-            Review @{n.account.acct}
+            {t({ id: 'eunha.notifications.review_account', defaultMessage: 'Review @{acct}' }, { acct: n.account.acct })}
           </Link>
         )}
         {n.type === 'admin.report' && (
@@ -190,11 +192,15 @@ function NotificationItem({
             className="hover:bg-muted/40 block space-y-0.5 rounded-lg border p-2 text-sm no-underline"
           >
             <span className="block">
-              Report on <span className="font-medium">@{n.report.targetAccount.acct}</span>
+              <FormattedMessage
+                id='eunha.notifications.report_on'
+                defaultMessage='Report on {target}'
+                values={{ target: <span className="font-medium">@{n.report.targetAccount.acct}</span> }}
+              />
               {' · '}
               {CATEGORY_LABELS[n.report.category] ?? n.report.category}
               {n.report.statusIds?.length
-                ? ` · ${n.report.statusIds.length} post${n.report.statusIds.length === 1 ? '' : 's'}`
+                ? ' · ' + t({ id: 'account_edit_tags.tag_status_count', defaultMessage: '{count, plural, one {# post} other {# posts}}' }, { count: n.report.statusIds.length })
                 : ''}
             </span>
             {n.report.comment && (
@@ -296,10 +302,10 @@ export function NotificationsFeed() {
     return (
       <div className="space-y-2">
         <p className="text-muted-foreground text-sm">
-          Sign in to see your notifications.
+          {t({ id: 'eunha.notifications.sign_in_to_see_your_notifications', defaultMessage: 'Sign in to see your notifications.' })}
         </p>
         <Button size="sm" onClick={() => beginLogin()}>
-          Sign in
+          {t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}
         </Button>
       </div>
     )
@@ -325,7 +331,7 @@ export function NotificationsFeed() {
             </TimelineStack>
           )}
           {items?.length === 0 && (
-            <p className="text-muted-foreground text-sm">No notifications yet.</p>
+            <p className="text-muted-foreground text-sm">{t({ id: 'eunha.notifications.no_notifications_yet', defaultMessage: 'No notifications yet.' })}</p>
           )}
           <InfiniteScroll
             onLoadMore={feed.loadMore}
@@ -342,10 +348,10 @@ export default function Notifications() {
     <>
       <TopBar />
       <div className="column-frame">
-        <ColumnHeader title="Notifications" />
+        <ColumnHeader title={t({ id: 'column.notifications', defaultMessage: 'Notifications' })} />
         <div className="space-y-2 p-3">
           <Button variant="outline" size="sm" render={<Link to="/notifications/requests" />}>
-            Notification requests and policy
+            {t({ id: 'eunha.notifications.notification_requests_and_policy', defaultMessage: 'Notification requests and policy' })}
           </Button>
           <NotificationsFeed />
         </div>

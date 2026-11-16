@@ -19,6 +19,7 @@ import { Card, CardContent } from '@/components/ui/card.tsx'
 import { cn, errorMessage } from '@/lib/utils.ts'
 import { AnimateEmoji, EmojiText } from '@/components/emoji.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 // The plain text of a status, for a one-line preview. The API sends HTML and a
 // conversation row is not the place to render it.
@@ -29,7 +30,7 @@ function excerpt(html: string): string {
 }
 
 function participants(accounts: mastodon.v1.Account[]): string {
-  if (accounts.length === 0) return 'You'
+  if (accounts.length === 0) return t({ id: 'eunha.messages.you', defaultMessage: 'You' })
   return accounts.map((a) => a.displayName || a.username).join(', ')
 }
 
@@ -86,7 +87,7 @@ function ConversationRow({
         {conversation.unread && (
           <span
             className="bg-primary absolute -top-0.5 -right-0.5 size-2.5 rounded-full"
-            aria-label="Unread"
+            aria-label={t({ id: 'eunha.messages.unread', defaultMessage: 'Unread' })}
           />
         )}
       </div>
@@ -117,7 +118,7 @@ function ConversationRow({
           {last ? (
             <EmojiText text={excerpt(last.content)} emojis={last.emojis} />
           ) : (
-            'No messages left in this thread.'
+            t({ id: 'eunha.messages.no_messages_left', defaultMessage: 'No messages left in this thread.' })
           )}
         </p>
       </div>
@@ -140,7 +141,7 @@ function ConversationRow({
       <Button
         variant="ghost"
         size="icon"
-        aria-label={`Delete conversation with ${name}`}
+        aria-label={t({ id: 'eunha.messages.delete_conversation_with', defaultMessage: 'Delete conversation with {name}' }, { name })}
         disabled={busy}
         onClick={() => void remove()}
       >
@@ -166,9 +167,9 @@ export function MessagesFeed() {
       <Card>
           <CardContent className="space-y-3 py-6 text-center">
             <p className="text-muted-foreground text-sm">
-              Sign in to read your messages.
+              {t({ id: 'eunha.messages.sign_in_to_read_your_messages', defaultMessage: 'Sign in to read your messages.' })}
             </p>
-          <Button onClick={() => void beginLogin()}>Sign in</Button>
+          <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>
         </CardContent>
       </Card>
     )
@@ -180,13 +181,12 @@ export function MessagesFeed() {
         {/* Opening with `messageTo: null` starts an unaddressed message — the
             recipient is typed into the text, as upstream does from this page. */}
         <Button size="sm" onClick={() => openCompose({ messageTo: null })}>
-          <Plus /> New
+          <Plus /> {t({ id: 'messages.new', defaultMessage: 'New' })}
         </Button>
       </div>
       <p className="text-muted-foreground mb-3 flex items-start gap-1.5 text-xs">
         <LockOpen className="mt-0.5 size-3.5 shrink-0" />
-        Messages are not end-to-end encrypted. Don't share anything here you
-        wouldn't share with the servers involved.
+        {t({ id: 'eunha.messages.messages_are_not_end_to_end', defaultMessage: 'Messages are not end-to-end encrypted. Don\'\'t share anything here you wouldn\'\'t share with the servers involved.' })}
       </p>
 
       {feed.error && <p className="text-destructive text-sm">{feed.error}</p>}
@@ -209,7 +209,7 @@ export function MessagesFeed() {
         ))}
         {conversations?.length === 0 && (
           <p className="text-muted-foreground text-sm">
-            No messages yet. A message you send or receive shows up here.
+            {t({ id: 'eunha.messages.no_messages_yet_a_message_you', defaultMessage: 'No messages yet. A message you send or receive shows up here.' })}
           </p>
         )}
         <InfiniteScroll
@@ -228,7 +228,7 @@ export default function Messages() {
     <>
       <TopBar />
       <div className="column-frame">
-        <ColumnHeader title="Messages" />
+        <ColumnHeader title={t({ id: 'tabs_bar.messages', defaultMessage: 'Messages' })} />
         <div className="p-3">
           <MessagesFeed />
         </div>

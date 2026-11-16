@@ -8,6 +8,7 @@
 // The shapes here are Mastodon's serializers (`REST::Admin::*`), snake_case as
 // they come off the wire.
 import { ApiError } from './eunha-api.ts'
+import { t } from '@/i18n.tsx'
 
 // ── Permissions ────────────────────────────────────────────────────────────
 
@@ -118,7 +119,7 @@ export async function request(
       'error' in parsed &&
       typeof (parsed as { error: unknown }).error === 'string'
         ? (parsed as { error: string }).error
-        : `${method} ${path} failed: ${res.status}`
+        : t({ id: 'eunha.admin_api.failed', defaultMessage: '{method} {path} failed: {status}' }, { method, path, status: res.status })
     throw new AdminApiError(res.status, message, parsed)
   }
   return res

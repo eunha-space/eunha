@@ -2248,17 +2248,16 @@ reviewed_for = "5.0.0-beta.1"
 [[divergence]]
 id = "web-interface-languages"
 kind = "omission"
-summary = "The web client is offered in English and Korean only, and mostly in English"
+summary = "The web client is offered in English and Korean only"
 mastodon = "The web client is translated into every locale Mastodon ships, and the interface language is chosen on the preferences page."
 eunha = """
 The web client's language menu, in the account menu (and beside the theme \
 pill when signed out), offers English and Korean, and saves the choice to \
-`users.locale` as Mastodon's preferences page does. Only the sidebar and the \
-account menu are translated so far; the rest is English. An account whose \
+`users.locale` as Mastodon's preferences page does. An account whose \
 `users.locale` is another of Mastodon's locales sees the browser's language, \
 or English. Messages that mean what one of Mastodon's does carry its id and \
 its translations."""
-why = "Translating the client is under way, a screen at a time; offering a locale eunha has no translations of would show English under its name."
+why = "eunha's own messages are translated by hand, a locale at a time; offering a locale eunha has no translations of would show English under its name."
 evidence = "frontend/e2e/interface-language.spec.ts"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"

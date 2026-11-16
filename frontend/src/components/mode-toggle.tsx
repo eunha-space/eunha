@@ -10,8 +10,8 @@ import { useTheme } from '@/components/theme-provider.tsx'
 
 const messages = defineMessages({
   theme: { id: 'eunha.theme.label', defaultMessage: 'Theme' },
-  light: { id: 'eunha.theme.light', defaultMessage: 'Light' },
-  dark: { id: 'eunha.theme.dark', defaultMessage: 'Dark' },
+  light: { id: 'mastodon.color_scheme.light', defaultMessage: 'Light' },
+  dark: { id: 'mastodon.color_scheme.dark', defaultMessage: 'Dark' },
   system: { id: 'eunha.theme.system', defaultMessage: 'System' },
 })
 

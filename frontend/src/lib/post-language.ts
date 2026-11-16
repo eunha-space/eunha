@@ -1,4 +1,5 @@
 import { extractUrlsWithIndices, Extractor } from '@agulbra/uts58'
+import { currentLocale, t } from '@/i18n.tsx'
 
 // Lande’s ISO 639-3 mapping follows Mastodon’s compose/util/language_detection.js.
 const languageCodes: Record<string, string> = {
@@ -60,7 +61,7 @@ let languages: Promise<PostLanguage[]> | undefined
 
 export function getPostLanguages() {
   languages ??= fetch('/api/eunha/v1/preferences/languages').then(async (response) => {
-    if (!response.ok) throw new Error('Could not load post languages')
+    if (!response.ok) throw new Error(t({ id: 'eunha.post_language.could_not_load_post_languages', defaultMessage: 'Could not load post languages' }))
     return await response.json() as PostLanguage[]
   }).catch((error) => {
     languages = undefined
@@ -109,7 +110,7 @@ export function countPostCharacters(text: string, warning = '', urlLength = 23) 
 
 export function postLanguageName(code: string) {
   try {
-    return new Intl.DisplayNames(navigator.languages, { type: 'language' }).of(code) ?? code
+    return new Intl.DisplayNames([currentLocale()], { type: 'language' }).of(code) ?? code
   } catch {
     return code
   }

@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import type { mastodon } from '../masto.ts'
 import { authorizeFollowRequest, rejectFollowRequest } from '../api.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { t } from '@/i18n.tsx'
 
 export function FollowRequestActions({
   account,
@@ -38,7 +39,7 @@ export function FollowRequestActions({
     <div className="flex items-center gap-2">
       {error && <span className="text-destructive text-xs">{error}</span>}
       <Button size="sm" disabled={pending !== null} onClick={() => run('authorize')}>
-        Accept
+        {t({ id: 'notification_requests.accept', defaultMessage: 'Accept' })}
       </Button>
       <Button
         size="sm"
@@ -46,7 +47,7 @@ export function FollowRequestActions({
         disabled={pending !== null}
         onClick={() => run('reject')}
       >
-        Reject
+        {t({ id: 'follow_request.reject', defaultMessage: 'Reject' })}
       </Button>
     </div>
   )

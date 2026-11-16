@@ -14,12 +14,14 @@ import {
   SelectValue,
 } from '@/components/ui/select.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import type { MessageDescriptor } from 'react-intl'
 
 // `simple_form.labels.defaults.setting_display_media_*`.
-const DISPLAY_MEDIA: [Preferences['display_media'], string][] = [
-  ['default', 'Hide media marked as sensitive'],
-  ['show_all', 'Always show media'],
-  ['hide_all', 'Always hide media'],
+const DISPLAY_MEDIA: [Preferences['display_media'], MessageDescriptor][] = [
+  ['default', { id: 'eunha.timeline_preferences.display_media_default', defaultMessage: 'Hide media marked as sensitive' }],
+  ['show_all', { id: 'eunha.timeline_preferences.display_media_show_all', defaultMessage: 'Always show media' }],
+  ['hide_all', { id: 'eunha.timeline_preferences.display_media_hide_all', defaultMessage: 'Always hide media' }],
 ]
 
 /**
@@ -50,19 +52,19 @@ export function TimelinePreferences({ token }: { token: string }) {
       // Posts shown from here on follow the saved setting.
       applyPreferences(saved)
     } catch {
-      toast.error('Could not save the setting')
+      toast.error(t({ id: 'eunha.timeline_preferences.could_not_save_the_setting', defaultMessage: 'Could not save the setting' }))
     }
   }
 
   return (
     <section className="space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Timelines and posting</h2>
+      <h2 className="font-semibold">{t({ id: 'eunha.timeline_preferences.timelines_and_posting', defaultMessage: 'Timelines and posting' })}</h2>
       <Label className="text-sm font-normal">
         <Switch
           checked={prefs.default_spoiler_field}
           onCheckedChange={(on) => void save({ default_spoiler_field: on })}
         />
-        Open the content warning field when composing
+        {t({ id: 'eunha.timeline_preferences.open_the_content_warning_field_when', defaultMessage: 'Open the content warning field when composing' })}
       </Label>
       <div className="space-y-0.5">
         <Label className="text-sm font-normal">
@@ -70,11 +72,10 @@ export function TimelinePreferences({ token }: { token: string }) {
             checked={prefs.aggregate_reblogs}
             onCheckedChange={(on) => void save({ aggregate_reblogs: on })}
           />
-          Group boosts in timelines
+          {t({ id: 'mastodon.simple_form.labels.defaults.setting_aggregate_reblogs', defaultMessage: 'Group boosts in timelines' })}
         </Label>
         <p className="text-muted-foreground pl-10 text-xs">
-          Do not show new boosts for posts that have been recently boosted (only affects
-          newly-received boosts)
+          {t({ id: 'mastodon.simple_form.hints.defaults.setting_aggregate_reblogs', defaultMessage: 'Do not show new boosts for posts that have been recently boosted (only affects newly-received boosts)' })}
         </p>
       </div>
       <Label className="text-sm font-normal">
@@ -82,32 +83,32 @@ export function TimelinePreferences({ token }: { token: string }) {
           checked={prefs.display_own_posts}
           onCheckedChange={(on) => void save({ display_own_posts: on })}
         />
-        Show my posts in my home feed
+        {t({ id: 'eunha.timeline_preferences.show_my_posts_in_my_home', defaultMessage: 'Show my posts in my home feed' })}
       </Label>
       <Label className="text-sm font-normal">
         <Switch
           checked={prefs.display_own_boosts}
           onCheckedChange={(on) => void save({ display_own_boosts: on })}
         />
-        Show my boosts in my home feed
+        {t({ id: 'eunha.timeline_preferences.show_my_boosts_in_my_home', defaultMessage: 'Show my boosts in my home feed' })}
       </Label>
       <Label className="text-sm font-normal">
         <Switch
           checked={prefs.expand_content_warnings}
           onCheckedChange={(on) => void save({ expand_content_warnings: on })}
         />
-        Always expand posts marked with content warnings
+        {t({ id: 'mastodon.simple_form.labels.defaults.setting_expand_spoilers', defaultMessage: 'Always expand posts marked with content warnings' })}
       </Label>
       <Label className="text-sm font-normal">
         <Switch checked={prefs.auto_play} onCheckedChange={(on) => void save({ auto_play: on })} />
-        Auto-play animated GIFs
+        {t({ id: 'mastodon.simple_form.labels.defaults.setting_auto_play_gif', defaultMessage: 'Auto-play animated GIFs' })}
       </Label>
       <div className="space-y-1">
         <Label htmlFor="display-media" className="text-sm font-normal">
-          Media display
+          {t({ id: 'mastodon.simple_form.labels.defaults.setting_display_media', defaultMessage: 'Media display' })}
         </Label>
         <Select
-          items={Object.fromEntries(DISPLAY_MEDIA)}
+          items={Object.fromEntries(DISPLAY_MEDIA.map(([value, label]) => [value, t(label)]))}
           value={prefs.display_media}
           onValueChange={(v) => {
             if (typeof v === 'string') {
@@ -115,14 +116,14 @@ export function TimelinePreferences({ token }: { token: string }) {
             }
           }}
         >
-          <SelectTrigger id="display-media" className="w-full" aria-label="Media display">
+          <SelectTrigger id="display-media" className="w-full" aria-label={t({ id: 'mastodon.simple_form.labels.defaults.setting_display_media', defaultMessage: 'Media display' })}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {DISPLAY_MEDIA.map(([value, label]) => (
                 <SelectItem key={value} value={value}>
-                  {label}
+                  {t(label)}
                 </SelectItem>
               ))}
             </SelectGroup>

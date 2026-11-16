@@ -24,13 +24,14 @@ import { Button } from '@/components/ui/button.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-const TITLE = 'Fediverse Auxiliary Service Providers'
+const TITLE = { id: 'mastodon.admin.fasp.providers.title', defaultMessage: 'Fediverse Auxiliary Service Providers' }
 
 /** `admin/fasp/shared/_links`: providers, and the debug callbacks. */
 const SUB = [
-  { to: '/admin/fasp/providers', label: 'Providers' },
-  { to: '/admin/fasp/debug/callbacks', label: 'Debug callbacks' },
+  { to: '/admin/fasp/providers', get label() { return t({ id: 'mastodon.admin.fasp.providers.providers', defaultMessage: 'Providers' }) } },
+  { to: '/admin/fasp/debug/callbacks', get label() { return t({ id: 'eunha.admin.fasp.debug_callbacks', defaultMessage: 'Debug callbacks' }) } },
 ]
 
 function capabilityEnabled(provider: AdminFaspProvider, id: string) {
@@ -58,22 +59,21 @@ export function FaspProviders() {
   const debugCall = async (provider: AdminFaspProvider) => {
     try {
       await performFaspDebugCall(token ?? '', provider.id)
-      toast.success('The provider was asked to call back.')
+      toast.success(t({ id: 'eunha.admin.fasp.the_provider_was_asked_to_call', defaultMessage: 'The provider was asked to call back.' }))
     } catch (e) {
       toast.error(errorMessage(e))
     }
   }
 
   return (
-    <AdminLayout title={TITLE} permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t(TITLE)} permission="manage_federation" sub={SUB}>
       <p className="text-muted-foreground mb-3 text-sm">
-        Providers register themselves with this server. Finish a registration only if you started
-        it, and only after comparing its name and key fingerprint with what the provider shows.
+        {t({ id: 'eunha.admin.fasp.providers_register_themselves_with_this_server', defaultMessage: 'Providers register themselves with this server. Finish a registration only if you started it, and only after comparing its name and key fingerprint with what the provider shows.' })}
       </p>
       <AdminError error={error} />
       {providers === null && !error && <RowsSkeleton action />}
       {providers?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No provider has registered yet.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.fasp.no_provider_has_registered_yet', defaultMessage: 'No provider has registered yet.' })}</p>
       )}
       <div className="space-y-2">
         {providers?.map((provider) => (
@@ -86,7 +86,7 @@ export function FaspProviders() {
               <div className="text-muted-foreground truncate text-xs">{provider.base_url}</div>
             </div>
             <Badge variant={provider.confirmed ? 'default' : 'outline'}>
-              {provider.confirmed ? 'Active' : 'Registration requested'}
+              {provider.confirmed ? t({ id: 'mastodon.admin.fasp.providers.active', defaultMessage: 'Active' }) : t({ id: 'mastodon.admin.fasp.providers.registration_requested', defaultMessage: 'Registration requested' })}
             </Badge>
             {provider.confirmed ? (
               <Button
@@ -94,7 +94,7 @@ export function FaspProviders() {
                 variant="outline"
                 render={<Link to={`/admin/fasp/providers/${provider.id}/edit`} />}
               >
-                Edit
+                {t({ id: 'status.edit', defaultMessage: 'Edit' })}
               </Button>
             ) : (
               <Button
@@ -102,7 +102,7 @@ export function FaspProviders() {
                 variant="outline"
                 render={<Link to={`/admin/fasp/providers/${provider.id}/registration/new`} />}
               >
-                Finish registration
+                {t({ id: 'mastodon.admin.fasp.providers.finish_registration', defaultMessage: 'Finish registration' })}
               </Button>
             )}
             {provider.sign_in_url && (
@@ -111,26 +111,26 @@ export function FaspProviders() {
                 variant="outline"
                 render={<a href={provider.sign_in_url} target="_blank" rel="noreferrer" />}
               >
-                Sign in
+                {t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}
               </Button>
             )}
             {capabilityEnabled(provider, 'callback') && (
               <Button size="xs" variant="outline" onClick={() => void debugCall(provider)}>
-                Callback
+                {t({ id: 'mastodon.admin.fasp.providers.callback', defaultMessage: 'Callback' })}
               </Button>
             )}
             <ConfirmButton
               size="xs"
-              title="Delete this provider?"
-              description="Its subscriptions, backfill requests and debug callbacks go with it."
-              confirmLabel="Delete"
+              title={t({ id: 'eunha.admin.fasp.delete_this_provider', defaultMessage: 'Delete this provider?' })}
+              description={t({ id: 'eunha.admin.fasp.its_subscriptions_backfill_requests_and_debug', defaultMessage: 'Its subscriptions, backfill requests and debug callbacks go with it.' })}
+              confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
               onConfirm={async () => {
                 await deleteFaspProvider(token ?? '', provider.id)
-                toast.success('Provider deleted.')
+                toast.success(t({ id: 'eunha.admin.fasp.provider_deleted', defaultMessage: 'Provider deleted.' }))
                 load()
               }}
             >
-              Delete
+              {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
             </ConfirmButton>
           </div>
         ))}
@@ -166,7 +166,7 @@ export function FaspRegistration() {
     setBusy(true)
     try {
       await confirmFaspRegistration(token ?? '', provider.id)
-      toast.success('Registration confirmed. Choose the capabilities to use.')
+      toast.success(t({ id: 'eunha.admin.fasp.registration_confirmed_choose_the_capabilities_to', defaultMessage: 'Registration confirmed. Choose the capabilities to use.' }))
       navigate(`/admin/fasp/providers/${provider.id}/edit`)
     } catch (e) {
       toast.error(errorMessage(e))
@@ -176,38 +176,36 @@ export function FaspRegistration() {
   }
 
   return (
-    <AdminLayout title="Confirm FASP registration" permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.fasp.confirm_fasp_registration', defaultMessage: 'Confirm FASP registration' })} permission="manage_federation" sub={SUB}>
       <AdminError error={error} />
       {provider && (
         <div className="space-y-4">
           <p className="text-sm">
-            You received a registration from a FASP. Reject it if you did not initiate this. If you
-            initiated this, carefully compare name and key fingerprint before confirming the
-            registration.
+            {t({ id: 'mastodon.admin.fasp.providers.registrations.description', defaultMessage: 'You received a registration from a FASP. Reject it if you did not initiate this. If you initiated this, carefully compare name and key fingerprint before confirming the registration.' })}
           </p>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Name</dt>
+            <dt className="text-muted-foreground">{t({ id: 'mastodon.admin.fasp.providers.name', defaultMessage: 'Name' })}</dt>
             <dd className="min-w-0 break-words">{provider.name}</dd>
-            <dt className="text-muted-foreground">Public key fingerprint</dt>
+            <dt className="text-muted-foreground">{t({ id: 'mastodon.admin.fasp.providers.public_key_fingerprint', defaultMessage: 'Public key fingerprint' })}</dt>
             <dd className="min-w-0 font-mono text-xs break-all">
               {provider.provider_public_key_fingerprint}
             </dd>
           </dl>
           <div className="flex flex-wrap gap-2">
             <ConfirmButton
-              title="Reject this registration?"
-              description="The provider is deleted, and has to register again."
-              confirmLabel="Reject"
+              title={t({ id: 'eunha.admin.fasp.reject_this_registration', defaultMessage: 'Reject this registration?' })}
+              description={t({ id: 'eunha.admin.fasp.the_provider_is_deleted_and_has', defaultMessage: 'The provider is deleted, and has to register again.' })}
+              confirmLabel={t({ id: 'follow_request.reject', defaultMessage: 'Reject' })}
               onConfirm={async () => {
                 await deleteFaspProvider(token ?? '', provider.id)
-                toast.success('Registration rejected.')
+                toast.success(t({ id: 'eunha.admin.fasp.registration_rejected', defaultMessage: 'Registration rejected.' }))
                 navigate('/admin/fasp/providers')
               }}
             >
-              Reject
+              {t({ id: 'follow_request.reject', defaultMessage: 'Reject' })}
             </ConfirmButton>
             <Button size="sm" disabled={busy || provider.confirmed} onClick={() => void confirm()}>
-              Confirm
+              {t({ id: 'mastodon.admin.fasp.providers.registrations.confirm', defaultMessage: 'Confirm' })}
             </Button>
           </div>
         </div>
@@ -233,7 +231,7 @@ export function FaspProviderEdit() {
     setSaving(true)
     try {
       await updateFaspCapabilities(token ?? '', provider.id, capabilities)
-      toast.success('Capabilities saved.')
+      toast.success(t({ id: 'eunha.admin.fasp.capabilities_saved', defaultMessage: 'Capabilities saved.' }))
       navigate('/admin/fasp/providers')
     } catch (e) {
       toast.error(errorMessage(e))
@@ -243,7 +241,7 @@ export function FaspProviderEdit() {
   }
 
   return (
-    <AdminLayout title="Edit provider" permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.fasp.edit_provider', defaultMessage: 'Edit provider' })} permission="manage_federation" sub={SUB}>
       <AdminError error={error} />
       {provider && capabilities && (
         <div className="space-y-4">
@@ -251,9 +249,9 @@ export function FaspProviderEdit() {
             <div className="font-medium">{provider.name}</div>
             <div className="text-muted-foreground">{provider.base_url}</div>
           </div>
-          <h2 className="text-sm font-semibold">Select capabilities</h2>
+          <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.fasp.select_capabilities', defaultMessage: 'Select capabilities' })}</h2>
           {capabilities.length === 0 && (
-            <p className="text-muted-foreground text-sm">The provider offers no capabilities.</p>
+            <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.fasp.the_provider_offers_no_capabilities', defaultMessage: 'The provider offers no capabilities.' })}</p>
           )}
           <div className="space-y-2">
             {capabilities.map((capability, index) => (
@@ -273,7 +271,7 @@ export function FaspProviderEdit() {
             ))}
           </div>
           <Button size="sm" disabled={saving} onClick={() => void save()}>
-            Save
+            {t({ id: 'lists.save', defaultMessage: 'Save' })}
           </Button>
         </div>
       )}
@@ -300,11 +298,11 @@ export function FaspDebugCallbacks() {
   useEffect(load, [token])
 
   return (
-    <AdminLayout title="Debug callbacks" permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.fasp.debug_callbacks', defaultMessage: 'Debug callbacks' })} permission="manage_federation" sub={SUB}>
       <AdminError error={error} />
       {callbacks === null && !error && <RowsSkeleton action />}
       {callbacks?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No provider has called back yet.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.fasp.no_provider_has_called_back_yet', defaultMessage: 'No provider has called back yet.' })}</p>
       )}
       <div className="space-y-2">
         {callbacks?.map((callback) => (
@@ -322,15 +320,15 @@ export function FaspDebugCallbacks() {
               </span>
               <ConfirmButton
                 size="xs"
-                title="Delete this callback?"
-                description="Only the record of it is deleted."
-                confirmLabel="Delete"
+                title={t({ id: 'eunha.admin.fasp.delete_this_callback', defaultMessage: 'Delete this callback?' })}
+                description={t({ id: 'eunha.admin.fasp.only_the_record_of_it_is', defaultMessage: 'Only the record of it is deleted.' })}
+                confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                 onConfirm={async () => {
                   await deleteFaspDebugCallback(token ?? '', callback.id)
                   load()
                 }}
               >
-                Delete
+                {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
               </ConfirmButton>
             </div>
             <code className="bg-muted block overflow-x-auto rounded p-2 text-xs break-all whitespace-pre-wrap">

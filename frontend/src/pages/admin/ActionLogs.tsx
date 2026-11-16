@@ -14,11 +14,12 @@ import { ActionLogEntry } from '@/components/admin/action-log-entry.tsx'
 import { ChoiceSelect } from '@/components/admin/admin-common.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 const ALL = 'all'
 
 function choices(list: FilterChoice[]): Record<string, string> {
-  const out: Record<string, string> = { [ALL]: 'All' }
+  const out: Record<string, string> = { [ALL]: t({ id: 'notifications.filter.all', defaultMessage: 'All' }) }
   for (const c of list) out[c.key] = c.label
   return out
 }
@@ -62,16 +63,16 @@ export default function ActionLogs() {
   }
 
   return (
-    <AdminLayout title="Audit log" permission="view_audit_log">
+    <AdminLayout title={t({ id: 'mastodon.admin.action_logs.title', defaultMessage: 'Audit log' })} permission="view_audit_log">
       <div className="mb-3 grid gap-2 sm:grid-cols-2">
         <ChoiceSelect
-          label="Filter by user"
+          label={t({ id: 'mastodon.admin.action_logs.filter_by_user', defaultMessage: 'Filter by user' })}
           value={accountId || ALL}
           items={choices(filters.accounts)}
           onChange={(v) => set('account_id', v)}
         />
         <ChoiceSelect
-          label="Filter by action"
+          label={t({ id: 'mastodon.admin.action_logs.filter_by_action', defaultMessage: 'Filter by action' })}
           value={actionType || ALL}
           items={choices(filters.action_types)}
           onChange={(v) => set('action_type', v)}
@@ -79,13 +80,13 @@ export default function ActionLogs() {
       </div>
       {targetAccountId && (
         <p className="text-muted-foreground mb-2 text-sm">
-          Showing what was done to one account.{' '}
+          {t({ id: 'eunha.admin.action_logs.showing_what_was_done_to_one', defaultMessage: 'Showing what was done to one account.' })}{' '}
           <button
             type="button"
             className="text-primary underline"
             onClick={() => set('target_account_id', '')}
           >
-            Show everything
+            {t({ id: 'eunha.admin.action_logs.show_everything', defaultMessage: 'Show everything' })}
           </button>
         </p>
       )}
@@ -97,7 +98,7 @@ export default function ActionLogs() {
         {feed.items?.map((log) => <ActionLogEntry key={log.id} log={log} />)}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No logs found.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'mastodon.admin.action_logs.empty', defaultMessage: 'No logs found.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

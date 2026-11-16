@@ -22,6 +22,8 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 function WebhookForm({
   initial,
@@ -50,7 +52,7 @@ function WebhookForm({
         setEvents([])
         setTemplate('')
       }
-      toast.success(initial ? 'Webhook saved.' : 'Webhook added.')
+      toast.success(initial ? t({ id: 'eunha.admin.webhooks.webhook_saved', defaultMessage: 'Webhook saved.' }) : t({ id: 'eunha.admin.webhooks.webhook_added', defaultMessage: 'Webhook added.' }))
       onSaved()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -63,7 +65,7 @@ function WebhookForm({
   return (
     <form onSubmit={submit} className="space-y-3 rounded-lg border p-3">
       <div className="space-y-1">
-        <Label htmlFor={`webhook-url-${id}`}>Endpoint URL</Label>
+        <Label htmlFor={`webhook-url-${id}`}>{t({ id: 'mastodon.simple_form.labels.webhook.url', defaultMessage: 'Endpoint URL' })}</Label>
         <Input
           id={`webhook-url-${id}`}
           type="url"
@@ -73,7 +75,7 @@ function WebhookForm({
         />
       </div>
       <fieldset className="space-y-1">
-        <legend className="text-sm font-medium">Enabled events</legend>
+        <legend className="text-sm font-medium">{t({ id: 'mastodon.simple_form.labels.webhook.events', defaultMessage: 'Enabled events' })}</legend>
         <div className="grid gap-1 sm:grid-cols-2">
           {WEBHOOK_EVENTS.map(({ event, permission }) => (
             <Label key={event} className="text-sm font-normal">
@@ -90,27 +92,29 @@ function WebhookForm({
         </div>
       </fieldset>
       <div className="space-y-1">
-        <Label htmlFor={`webhook-template-${id}`}>Payload template</Label>
+        <Label htmlFor={`webhook-template-${id}`}>{t({ id: 'mastodon.simple_form.labels.webhook.template', defaultMessage: 'Payload template' })}</Label>
         <Textarea
           id={`webhook-template-${id}`}
           rows={3}
           className="font-mono text-sm"
           value={template}
-          placeholder='{"text": "Report {{object.id}}"}'
+          placeholder={t({ id: 'eunha.admin.webhooks.text', defaultMessage: '\'{\'"text": "Report \'{\'\'{\'object.id\'}\'\'}\'"\'}\'' })}
           onChange={(e) => setTemplate(e.target.value)}
         />
         <p className="text-muted-foreground text-xs">
-          Leave blank for the default JSON payload. Use {'{{object.id}}'}-style paths into the
-          event to fill in values.
+          {t(
+            { id: 'eunha.admin.webhooks.template_hint', defaultMessage: 'Leave blank for the default JSON payload. Use {example}-style paths into the event to fill in values.' },
+            { example: '{{object.id}}' },
+          )}
         </p>
       </div>
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={saving || !url.trim() || events.length === 0}>
-          {initial ? 'Save changes' : 'Add endpoint'}
+          {initial ? t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' }) : t({ id: 'mastodon.admin.webhooks.add_new', defaultMessage: 'Add endpoint' })}
         </Button>
         {onCancel && (
           <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-            Cancel
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
           </Button>
         )}
       </div>
@@ -152,10 +156,13 @@ export default function Webhooks() {
   }
 
   return (
-    <AdminLayout title="Webhooks" permission="manage_webhooks">
+    <AdminLayout title={t({ id: 'mastodon.admin.webhooks.title', defaultMessage: 'Webhooks' })} permission="manage_webhooks">
       <p className="text-muted-foreground mb-3 text-sm">
-        Webhooks send administrative events to an endpoint of yours, signed with the endpoint’s
-        secret in <code>X-Hub-Signature</code>.
+        <FormattedMessage
+          id='eunha.admin.webhooks.description'
+          defaultMessage='Webhooks send administrative events to an endpoint of yours, signed with the endpoint’s secret in {header}.'
+          values={{ header: <code>X-Hub-Signature</code> }}
+        />
       </p>
       <div className="mb-4">
         <WebhookForm initial={null} onSaved={load} />
@@ -163,7 +170,7 @@ export default function Webhooks() {
       <AdminError error={error} />
       {hooks === null && !error && <RowsSkeleton action />}
       {hooks?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No webhook endpoints configured yet.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.webhooks.no_webhook_endpoints_configured_yet', defaultMessage: 'No webhook endpoints configured yet.' })}</p>
       )}
       <div className="space-y-2">
         {hooks?.map((hook) =>
@@ -182,7 +189,7 @@ export default function Webhooks() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{hook.url}</span>
                 <Badge variant={hook.enabled ? 'default' : 'outline'}>
-                  {hook.enabled ? 'Enabled' : 'Disabled'}
+                  {hook.enabled ? t({ id: 'mastodon.admin.relays.enabled', defaultMessage: 'Enabled' }) : t({ id: 'mastodon.admin.webhooks.disabled', defaultMessage: 'Disabled' })}
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -193,7 +200,7 @@ export default function Webhooks() {
                 ))}
               </div>
               <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                Secret:
+                {t({ id: 'eunha.admin.webhooks.secret', defaultMessage: 'Secret:' })}
                 <code>{revealed.has(hook.id) ? hook.secret : '••••••••••••'}</code>
                 <Button
                   size="xs"
@@ -207,13 +214,13 @@ export default function Webhooks() {
                     })
                   }
                 >
-                  {revealed.has(hook.id) ? 'Hide' : 'Show'}
+                  {revealed.has(hook.id) ? t({ id: 'media_gallery.hide', defaultMessage: 'Hide' }) : t({ id: 'content_warning.show_short', defaultMessage: 'Show' })}
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {hook.can_update && (
                   <Button size="xs" variant="outline" onClick={() => setEditing(hook.id)}>
-                    Edit
+                    {t({ id: 'status.edit', defaultMessage: 'Edit' })}
                   </Button>
                 )}
                 <Button
@@ -223,35 +230,35 @@ export default function Webhooks() {
                     void act(
                       hook.id,
                       hook.enabled ? 'disable' : 'enable',
-                      hook.enabled ? 'Webhook disabled.' : 'Webhook enabled.',
+                      hook.enabled ? t({ id: 'eunha.admin.webhooks.webhook_disabled', defaultMessage: 'Webhook disabled.' }) : t({ id: 'eunha.admin.webhooks.webhook_enabled', defaultMessage: 'Webhook enabled.' }),
                     )
                   }
                 >
-                  {hook.enabled ? 'Disable' : 'Enable'}
+                  {hook.enabled ? t({ id: 'mastodon.admin.webhooks.disable', defaultMessage: 'Disable' }) : t({ id: 'mastodon.admin.webhooks.enable', defaultMessage: 'Enable' })}
                 </Button>
                 <ConfirmButton
                   size="xs"
                   destructive={false}
-                  title="Rotate the secret?"
-                  description="The endpoint must be given the new secret to check signatures."
-                  confirmLabel="Rotate"
-                  onConfirm={() => act(hook.id, 'secret/rotate', 'Secret rotated.')}
+                  title={t({ id: 'eunha.admin.webhooks.rotate_the_secret', defaultMessage: 'Rotate the secret?' })}
+                  description={t({ id: 'eunha.admin.webhooks.the_endpoint_must_be_given_the', defaultMessage: 'The endpoint must be given the new secret to check signatures.' })}
+                  confirmLabel={t({ id: 'eunha.admin.webhooks.rotate', defaultMessage: 'Rotate' })}
+                  onConfirm={() => act(hook.id, 'secret/rotate', t({ id: 'eunha.admin.webhooks.secret_rotated', defaultMessage: 'Secret rotated.' }))}
                 >
-                  Rotate secret
+                  {t({ id: 'mastodon.admin.webhooks.rotate_secret', defaultMessage: 'Rotate secret' })}
                 </ConfirmButton>
                 {hook.can_update && (
                   <ConfirmButton
                     size="xs"
-                    title="Delete this webhook?"
-                    description="The endpoint is no longer called."
-                    confirmLabel="Delete"
+                    title={t({ id: 'eunha.admin.webhooks.delete_this_webhook', defaultMessage: 'Delete this webhook?' })}
+                    description={t({ id: 'eunha.admin.webhooks.the_endpoint_is_no_longer_called', defaultMessage: 'The endpoint is no longer called.' })}
+                    confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                     onConfirm={async () => {
                       await deleteWebhook(token ?? '', hook.id)
-                      toast.success('Webhook deleted.')
+                      toast.success(t({ id: 'eunha.admin.webhooks.webhook_deleted', defaultMessage: 'Webhook deleted.' }))
                       load()
                     }}
                   >
-                    Delete
+                    {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
                   </ConfirmButton>
                 )}
               </div>

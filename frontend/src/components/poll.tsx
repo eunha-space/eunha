@@ -4,6 +4,7 @@ import type { mastodon } from '../masto.ts'
 import { votePoll } from '../api.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { AnimateEmoji, EmojiText } from '@/components/emoji.tsx'
+import { currentLocale, t } from '@/i18n.tsx'
 
 export function Poll({
   poll: initial,
@@ -89,15 +90,18 @@ export function Poll({
       <div className="text-muted-foreground flex items-center gap-3 text-xs">
         {!showResults && (
           <Button size="sm" disabled={busy || !choices.length} onClick={submit}>
-            Vote
+            {t({ id: 'poll.vote', defaultMessage: 'Vote' })}
           </Button>
         )}
         <span>
-          {poll.votesCount} vote{poll.votesCount === 1 ? '' : 's'}
+          {t({ id: 'poll.total_votes', defaultMessage: '{count, plural, one {# vote} other {# votes}}' }, { count: poll.votesCount })}
           {poll.expired
-            ? ' · closed'
+            ? t({ id: 'eunha.poll.closed_suffix', defaultMessage: ' · closed' })
             : poll.expiresAt
-              ? ` · ends ${new Date(poll.expiresAt).toLocaleString()}`
+              ? t(
+                  { id: 'eunha.poll.ends', defaultMessage: ' · ends {date}' },
+                  { date: new Date(poll.expiresAt).toLocaleString(currentLocale()) },
+                )
               : ''}
         </span>
       </div>

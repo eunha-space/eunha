@@ -14,16 +14,18 @@ import { AdminError, AdminLayout } from '@/components/admin/admin-layout.tsx'
 import { formatDate } from '@/components/admin/admin-common.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import type { MessageDescriptor } from 'react-intl'
 
 /** `admin.server_checks.categories`, in the order the page lists them. */
-const CATEGORIES: [ServerCheckCategory, string][] = [
-  ['critical', 'Critical'],
-  ['warning', 'Warnings'],
-  ['suggestion', 'Suggestions'],
-  ['error', 'Errors'],
-  ['unprocessed', 'Unprocessed'],
-  ['completed', 'Completed'],
-  ['ignored', 'Ignored'],
+const CATEGORIES: [ServerCheckCategory, MessageDescriptor][] = [
+  ['critical', { id: 'mastodon.admin.server_checks.categories.critical.title', defaultMessage: 'Critical' }],
+  ['warning', { id: 'mastodon.admin.server_checks.categories.warning.title', defaultMessage: 'Warnings' }],
+  ['suggestion', { id: 'mastodon.admin.server_checks.categories.suggestion.title', defaultMessage: 'Suggestions' }],
+  ['error', { id: 'mastodon.admin.server_checks.categories.error.title', defaultMessage: 'Errors' }],
+  ['unprocessed', { id: 'mastodon.admin.server_checks.categories.unprocessed.title', defaultMessage: 'Unprocessed' }],
+  ['completed', { id: 'mastodon.admin.server_checks.categories.completed.title', defaultMessage: 'Completed' }],
+  ['ignored', { id: 'mastodon.admin.server_checks.categories.ignored.title', defaultMessage: 'Ignored' }],
 ]
 
 /** `Admin::ServerChecksController#index`. */
@@ -51,10 +53,10 @@ export default function ServerChecks() {
   }
 
   return (
-    <AdminLayout title="Server health" permission="view_dashboard">
+    <AdminLayout title={t({ id: 'eunha.admin.server_checks.server_health', defaultMessage: 'Server health' })} permission="view_dashboard">
       <AdminError error={error} />
       <p className="text-muted-foreground text-sm">
-        Recommendations to keep your server safe, welcoming and efficient.
+        {t({ id: 'eunha.admin.server_checks.recommendations_to_keep_your_server_safe', defaultMessage: 'Recommendations to keep your server safe, welcoming and efficient.' })}
       </p>
       {checks === null && !error && <RowsSkeleton action />}
       {checks &&
@@ -63,7 +65,7 @@ export default function ServerChecks() {
           if (inCategory.length === 0) return null
           return (
             <section key={category} className="mt-4 space-y-2">
-              <h2 className="text-sm font-semibold">{label}</h2>
+              <h2 className="text-sm font-semibold">{t(label)}</h2>
               {inCategory.map((check) => (
                 <div key={check.key} className="flex flex-wrap items-center gap-2 rounded-lg border p-3">
                   <div className="min-w-0 flex-1 space-y-1">
@@ -73,21 +75,21 @@ export default function ServerChecks() {
                     )}
                     {check.checked_at && (
                       <p className="text-muted-foreground text-xs">
-                        Last checked {formatDate(check.checked_at)}
+                        {t({ id: 'eunha.admin.server_checks.last_checked', defaultMessage: 'Last checked {date}' }, { date: formatDate(check.checked_at) })}
                       </p>
                     )}
                   </div>
                   {check.setup_url &&
                     (check.setup_url.startsWith('/') ? (
                       <Button size="sm" render={<Link to={check.setup_url} />}>
-                        Set up
+                        {t({ id: 'mastodon.otp_authentication.setup', defaultMessage: 'Set up' })}
                       </Button>
                     ) : (
                       <Button
                         size="sm"
                         render={<a href={check.setup_url} target="_blank" rel="noreferrer" />}
                       >
-                        Set up
+                        {t({ id: 'mastodon.otp_authentication.setup', defaultMessage: 'Set up' })}
                       </Button>
                     ))}
                   <Button
@@ -95,7 +97,7 @@ export default function ServerChecks() {
                     variant="outline"
                     onClick={() => void setIgnored(check.key, !check.ignored)}
                   >
-                    {check.ignored ? 'Restore' : 'Ignore'}
+                    {check.ignored ? t({ id: 'eunha.admin.server_checks.restore', defaultMessage: 'Restore' }) : t({ id: 'notifications.policy.drop', defaultMessage: 'Ignore' })}
                   </Button>
                 </div>
               ))}

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
+import { t } from '@/i18n.tsx'
 
 /*
  * Placeholders shaped like the content they stand in for, built from shadcn's
@@ -12,7 +13,7 @@ import { TimelineStack } from '@/components/timeline-stack.tsx'
 
 function Loading({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div role="status" aria-label="Loading" aria-busy="true" className={className}>
+    <div role="status" aria-label={t({ id: 'combobox.loading', defaultMessage: 'Loading' })} aria-busy="true" className={className}>
       {children}
     </div>
   )

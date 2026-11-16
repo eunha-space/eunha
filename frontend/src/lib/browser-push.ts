@@ -1,13 +1,14 @@
+import { t } from '@/i18n.tsx'
 const endpoint = '/api/v1/push/subscription'
 
 export const pushAlertLabels = {
-  mention: 'Mentions',
-  follow: 'New followers',
-  follow_request: 'Follow requests',
-  favourite: 'Favourites',
-  reblog: 'Boosts',
-  poll: 'Poll results',
-  quote: 'Quotes',
+  get mention() { return t({ id: 'notifications.filter.mentions', defaultMessage: 'Mentions' }) },
+  get follow() { return t({ id: 'eunha.browser_push.new_followers', defaultMessage: 'New followers' }) },
+  get follow_request() { return t({ id: 'column.follow_requests', defaultMessage: 'Follow requests' }) },
+  get favourite() { return t({ id: 'eunha.browser_push.favourites', defaultMessage: 'Favourites' }) },
+  get reblog() { return t({ id: 'notifications.filter.boosts', defaultMessage: 'Boosts' }) },
+  get poll() { return t({ id: 'notifications.filter.polls', defaultMessage: 'Poll results' }) },
+  get quote() { return t({ id: 'mastodon.admin.statuses.quotes', defaultMessage: 'Quotes' }) },
 }
 type Alert = keyof typeof pushAlertLabels
 type Alerts = Partial<Record<string, boolean>>
@@ -38,7 +39,7 @@ async function request(path: string, token: string, method = 'GET', body?: objec
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!response.ok && !(response.status === 404 && path === endpoint && method !== 'POST')) {
-    throw new Error('Could not update browser notifications')
+    throw new Error(t({ id: 'eunha.browser_push.could_not_update_browser_notifications', defaultMessage: 'Could not update browser notifications' }))
   }
   return response
 }
@@ -62,7 +63,7 @@ export async function getBrowserPush(id: string, token: string): Promise<Browser
 function waitForActivation(registration: ServiceWorkerRegistration) {
   if (registration.active) return Promise.resolve()
   const worker = registration.installing ?? registration.waiting
-  if (!worker) return Promise.reject(new Error('Could not start browser notifications'))
+  if (!worker) return Promise.reject(new Error(t({ id: 'eunha.browser_push.could_not_start_browser_notifications', defaultMessage: 'Could not start browser notifications' })))
   return new Promise<void>((resolve, reject) => {
     const finish = (error?: Error) => {
       clearTimeout(timeout)
@@ -72,9 +73,9 @@ function waitForActivation(registration: ServiceWorkerRegistration) {
     }
     const onChange = () => {
       if (worker.state === 'activated') finish()
-      if (worker.state === 'redundant') finish(new Error('Could not start browser notifications'))
+      if (worker.state === 'redundant') finish(new Error(t({ id: 'eunha.browser_push.could_not_start_browser_notifications', defaultMessage: 'Could not start browser notifications' })))
     }
-    const timeout = window.setTimeout(() => finish(new Error('Browser notification setup timed out')), 10_000)
+    const timeout = window.setTimeout(() => finish(new Error(t({ id: 'eunha.browser_push.browser_notification_setup_timed_out', defaultMessage: 'Browser notification setup timed out' }))), 10_000)
     worker.addEventListener('statechange', onChange)
     onChange()
   })
@@ -82,11 +83,11 @@ function waitForActivation(registration: ServiceWorkerRegistration) {
 
 export async function enableBrowserPush(id: string, token: string) {
   if (await Notification.requestPermission() !== 'granted') {
-    throw new Error('Browser notification permission was declined')
+    throw new Error(t({ id: 'eunha.browser_push.browser_notification_permission_was_declined', defaultMessage: 'Browser notification permission was declined' }))
   }
   const response = await request('/api/eunha/v1/preferences/push_key', token)
   const { public_key } = await response.json() as { public_key: string }
-  if (!public_key) throw new Error('This instance has no browser notification key')
+  if (!public_key) throw new Error(t({ id: 'eunha.browser_push.this_instance_has_no_browser_notification', defaultMessage: 'This instance has no browser notification key' }))
 
   const registration = await navigator.serviceWorker.register('/push-worker.js', { scope: scope(id) })
   await waitForActivation(registration)

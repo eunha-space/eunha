@@ -16,8 +16,9 @@ import { Switch } from '@/components/ui/switch.tsx'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx'
 import { errorMessage } from '@/lib/utils.ts'
 import { FeedSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
-const replies = { list: 'List members', followed: 'Anyone I follow', none: 'No replies' }
+const replies = { get list() { return t({ id: 'eunha.lists.list_members', defaultMessage: 'List members' }) }, get followed() { return t({ id: 'eunha.lists.anyone_i_follow', defaultMessage: 'Anyone I follow' }) }, get none() { return t({ id: 'eunha.lists.no_replies', defaultMessage: 'No replies' }) } }
 
 function ListIndex({ token }: { token: string }) {
   const navigate = useNavigate()
@@ -40,15 +41,15 @@ function ListIndex({ token }: { token: string }) {
 
   return (
     <>
-      <h1 className="text-xl font-bold">Lists</h1>
+      <h1 className="text-xl font-bold">{t({ id: 'column.lists', defaultMessage: 'Lists' })}</h1>
       <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); void create() }}>
-        <Input value={title} aria-label="List name" placeholder="List name" maxLength={100}
+        <Input value={title} aria-label={t({ id: 'eunha.lists.list_name', defaultMessage: 'List name' })} placeholder={t({ id: 'eunha.lists.list_name', defaultMessage: 'List name' })} maxLength={100}
           onChange={(event) => setTitle(event.target.value)} />
-        <Button type="submit" disabled={busy || !title.trim()}>Create list</Button>
+        <Button type="submit" disabled={busy || !title.trim()}>{t({ id: 'lists.create_list', defaultMessage: 'Create list' })}</Button>
       </form>
       {feed.error && <p role="alert">{feed.error}</p>}
       {!feed.items && !feed.error && <RowsSkeleton count={3} />}
-      {feed.items?.length === 0 && <p>You haven’t created any lists.</p>}
+      {feed.items?.length === 0 && <p>{t({ id: 'eunha.lists.you_haven_t_created_any_lists', defaultMessage: 'You haven’t created any lists.' })}</p>}
       {feed.items?.map((list) => (
         <Link key={list.id} to={`/lists/${list.id}`} className="block rounded-md border p-3">{list.title}</Link>
       ))}
@@ -91,12 +92,12 @@ function ListDetail({ id, token }: { id: string; token: string }) {
     setRevision((value) => value + 1)
   })
 
-  if (!list) return error ? <p role="alert">Could not load this list.</p> : <FeedSkeleton />
+  if (!list) return error ? <p role="alert">{t({ id: 'eunha.lists.could_not_load_this_list', defaultMessage: 'Could not load this list.' })}</p> : <FeedSkeleton />
   return (
     <>
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold">{list.title}</h1>
-        <Button variant="outline" onClick={() => setManage(!manage)}>{manage ? 'View timeline' : 'Manage list'}</Button>
+        <Button variant="outline" onClick={() => setManage(!manage)}>{manage ? t({ id: 'eunha.lists.view_timeline', defaultMessage: 'View timeline' }) : t({ id: 'eunha.lists.manage_list', defaultMessage: 'Manage list' })}</Button>
       </div>
       {manage ? (
         <>
@@ -109,25 +110,25 @@ function ListDetail({ id, token }: { id: string; token: string }) {
               setRevision((value) => value + 1)
             })
           }}>
-            <Input aria-label="List name" value={list.title} maxLength={100}
+            <Input aria-label={t({ id: 'eunha.lists.list_name', defaultMessage: 'List name' })} value={list.title} maxLength={100}
               onChange={(event) => setList({ ...list, title: event.target.value })} />
             <Select items={replies} value={list.repliesPolicy} onValueChange={(value) => {
               if (value) setList({ ...list, repliesPolicy: value })
             }}>
-              <SelectTrigger aria-label="Show replies to"><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label={t({ id: 'eunha.lists.show_replies_to', defaultMessage: 'Show replies to' })}><SelectValue /></SelectTrigger>
               <SelectContent><SelectGroup>{Object.entries(replies).map(([value, label]) => (
                 <SelectItem key={value} value={value}>{label}</SelectItem>
               ))}</SelectGroup></SelectContent>
             </Select>
             <Label><Switch checked={list.exclusive} onCheckedChange={(exclusive) => setList({ ...list, exclusive })} />
-              Hide list members from Home
+              {t({ id: 'eunha.lists.hide_list_members_from_home', defaultMessage: 'Hide list members from Home' })}
             </Label>
-            <Button type="submit" disabled={busy || !list.title.trim()}>Save list</Button>
+            <Button type="submit" disabled={busy || !list.title.trim()}>{t({ id: 'eunha.lists.save_list', defaultMessage: 'Save list' })}</Button>
           </form>
           <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); void add() }}>
-            <Input aria-label="Account handle" placeholder="@someone@example.social" value={acct}
+            <Input aria-label={t({ id: 'eunha.lists.account_handle', defaultMessage: 'Account handle' })} placeholder="@someone@example.social" value={acct}
               onChange={(event) => setAcct(event.target.value)} />
-            <Button type="submit" disabled={busy || !acct.trim()}>Add member</Button>
+            <Button type="submit" disabled={busy || !acct.trim()}>{t({ id: 'eunha.lists.add_member', defaultMessage: 'Add member' })}</Button>
           </form>
           {members.error && <p role="alert">{members.error}</p>}
           {members.items?.map((account) => (
@@ -135,28 +136,28 @@ function ListDetail({ id, token }: { id: string; token: string }) {
               <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(async () => {
                 await resource.accounts.remove({ accountIds: [account.id] })
                 setRevision((value) => value + 1)
-              })}>Remove</Button>
+              })}>{t({ id: 'tag.remove', defaultMessage: 'Remove' })}</Button>
             } />
           ))}
           {members.items && !members.done && !members.error && (
-            <Button variant="outline" disabled={members.loadingMore} onClick={members.loadMore}>Load more members</Button>
+            <Button variant="outline" disabled={members.loadingMore} onClick={members.loadMore}>{t({ id: 'eunha.lists.load_more_members', defaultMessage: 'Load more members' })}</Button>
           )}
           {confirmDelete ? (
             <div className="flex flex-wrap items-center gap-2">
-              <span>Delete this list?</span>
+              <span>{t({ id: 'eunha.lists.delete_this_list', defaultMessage: 'Delete this list?' })}</span>
               <Button variant="destructive" disabled={busy} onClick={() => void run(async () => {
                 await resource.remove()
                 navigate('/lists')
-              })}>Confirm delete</Button>
-              <Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+              })}>{t({ id: 'eunha.lists.confirm_delete', defaultMessage: 'Confirm delete' })}</Button>
+              <Button variant="outline" onClick={() => setConfirmDelete(false)}>{t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}</Button>
             </div>
-          ) : <Button variant="outline" onClick={() => setConfirmDelete(true)}>Delete list</Button>}
+          ) : <Button variant="outline" onClick={() => setConfirmDelete(true)}>{t({ id: 'lists.delete', defaultMessage: 'Delete list' })}</Button>}
         </>
       ) : (
         <>
           {posts.error && <p role="alert">{posts.error}</p>}
           {!posts.items && !posts.error && <FeedSkeleton />}
-          {posts.items?.length === 0 && <p>No posts in this list yet.</p>}
+          {posts.items?.length === 0 && <p>{t({ id: 'eunha.lists.no_posts_in_this_list_yet', defaultMessage: 'No posts in this list yet.' })}</p>}
           {posts.items?.map((post) => (
             <StatusCard key={post.id} status={post.reblog ?? post} token={token}
               boostedBy={post.reblog ? post.account : undefined} filterContext="home" />
@@ -177,9 +178,9 @@ export default function Lists() {
   return (
     <div className="page-frame space-y-3">
       <TopBar />
-      {id && <Link to="/lists">All lists</Link>}
+      {id && <Link to="/lists">{t({ id: 'eunha.lists.all_lists', defaultMessage: 'All lists' })}</Link>}
       {token ? id ? <ListDetail key={id} id={id} token={token} /> : <ListIndex token={token} />
-        : <Button onClick={() => void beginLogin()}>Sign in</Button>}
+        : <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>}
     </div>
   )
 }

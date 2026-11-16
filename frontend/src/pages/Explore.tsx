@@ -11,6 +11,7 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { cn } from '@/lib/utils.ts'
 import { FeedSkeleton, RowsSkeleton, TagsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 const tab =
   'border-b-2 border-transparent px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:text-foreground'
@@ -71,8 +72,9 @@ function TagRow({ tag }: { tag: mastodon.v1.Tag }) {
       <div className="font-medium">#{tag.name}</div>
       {week && (
         <div className="text-muted-foreground text-sm">
-          {week.uses} {week.uses === 1 ? 'post' : 'posts'} this week
-          {week.people > 1 ? ` from ${week.people} people` : ''}
+          {week.people > 1
+            ? t({ id: 'eunha.explore.posts_this_week_from_people', defaultMessage: '{count, plural, one {# post} other {# posts}} this week from {people} people' }, { count: week.uses, people: week.people })
+            : t({ id: 'eunha.explore.posts_this_week', defaultMessage: '{count, plural, one {# post} other {# posts}} this week' }, { count: week.uses })}
         </div>
       )}
     </Link>
@@ -135,16 +137,16 @@ export default function Explore() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-2 text-lg font-bold">Explore</h1>
+      <h1 className="mb-2 text-lg font-bold">{t({ id: 'tabs_bar.explore', defaultMessage: 'Explore' })}</h1>
       <nav className="mb-2 flex gap-1 border-b">
         <NavLink to="/explore" end className={cls}>
-          Posts
+          {t({ id: 'account.posts', defaultMessage: 'Posts' })}
         </NavLink>
         <NavLink to="/explore/tags" className={cls}>
-          Hashtags
+          {t({ id: 'search_results.hashtags', defaultMessage: 'Hashtags' })}
         </NavLink>
         <NavLink to="/explore/links" className={cls}>
-          Links
+          {t({ id: 'eunha.explore.links', defaultMessage: 'Links' })}
         </NavLink>
       </nav>
 
@@ -161,7 +163,7 @@ export default function Explore() {
           key={pane}
           open={() => getTrendingTags(token ?? undefined)}
           deps={[token, pane]}
-          empty="No hashtags are trending yet."
+          empty={t({ id: 'eunha.explore.no_hashtags_are_trending_yet', defaultMessage: 'No hashtags are trending yet.' })}
           skeleton={<TagsSkeleton />}
         >
           {(items) => (
@@ -177,7 +179,7 @@ export default function Explore() {
           key={pane}
           open={() => getTrendingLinks(token ?? undefined)}
           deps={[token, pane]}
-          empty="No links are trending yet."
+          empty={t({ id: 'eunha.explore.no_links_are_trending_yet', defaultMessage: 'No links are trending yet.' })}
           skeleton={<RowsSkeleton />}
         >
           {(items) => (
@@ -196,7 +198,7 @@ export default function Explore() {
           key={pane}
           open={() => getTrendingStatuses(token ?? undefined)}
           deps={[token, pane]}
-          empty="No posts are trending yet."
+          empty={t({ id: 'eunha.explore.no_posts_are_trending_yet', defaultMessage: 'No posts are trending yet.' })}
           skeleton={<FeedSkeleton />}
         >
           {(items) => (

@@ -5,6 +5,7 @@ import { search } from '../api.ts'
 import { beginLogin, getToken } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 // Where another server sends someone who wants to follow an account or answer
 // a post from their account here. Mastodon's `AuthorizeInteractionsController`,
@@ -48,7 +49,7 @@ export default function AuthorizeInteraction() {
       <TopBar />
       <div className="page-frame">
         {failed ? (
-          <p className="text-destructive text-sm">Nothing was found at that address.</p>
+          <p className="text-destructive text-sm">{t({ id: 'eunha.authorize_interaction.nothing_was_found_at_that_address', defaultMessage: 'Nothing was found at that address.' })}</p>
         ) : (
           <FeedSkeleton count={1} />
         )}

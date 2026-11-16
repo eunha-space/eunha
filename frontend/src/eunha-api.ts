@@ -1,3 +1,4 @@
+import { t } from '@/i18n.tsx'
 // eunha-specific APIs with no Mastodon C2S equivalent. Mastodon has no
 // invite-tree endpoint nor a REST API for invite CRUD, so these are served by
 // eunha's own routes and called with a plain fetch (masto.js only models the
@@ -281,7 +282,7 @@ export async function subscribeByEmail(accountId: string, email: string): Promis
     },
   )
   if (res.ok) return
-  let message = `Subscribing failed (${res.status})`
+  let message = t({ id: 'eunha.api.subscribing_failed', defaultMessage: 'Subscribing failed ({status})' }, { status: res.status })
   let details: ValidationDetails | null = null
   try {
     const body = (await res.json()) as { error?: string; details?: ValidationDetails }
@@ -419,7 +420,7 @@ export async function uploadImport(
     body: form,
   })
   if (!res.ok) {
-    let message = `Upload failed: ${res.status}`
+    let message = t({ id: 'eunha.api.upload_failed', defaultMessage: 'Upload failed: {status}' }, { status: res.status })
     try {
       message = ((await res.json()) as { error?: string }).error ?? message
     } catch {

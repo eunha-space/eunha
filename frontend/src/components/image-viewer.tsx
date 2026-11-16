@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, Minimize, X, ZoomIn } from 'lu
 import { Button } from '@/components/ui/button.tsx'
 import { Skeleton } from '@/components/ui/skeleton.tsx'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.tsx'
+import { t } from '@/i18n.tsx'
 
 export interface ViewerImage {
   id: string
@@ -17,10 +18,10 @@ function ImageSlide({ image, original }: { image: ViewerImage; original: boolean
   return (
     <>
       {!loaded && !failed && (
-        <Skeleton role="status" aria-label="Loading image" className="pointer-events-none absolute aspect-[4/3] w-[min(80vw,40rem)] max-h-[70vh]" />
+        <Skeleton role="status" aria-label={t({ id: 'eunha.image_viewer.loading_image', defaultMessage: 'Loading image' })} className="pointer-events-none absolute aspect-[4/3] w-[min(80vw,40rem)] max-h-[70vh]" />
       )}
-      {failed ? <p role="alert" className="p-6 text-center text-sm">Could not load this image. You can try opening the original.</p> : (
-        <img src={image.url} alt={image.description || 'Image attachment'}
+      {failed ? <p role="alert" className="p-6 text-center text-sm">{t({ id: 'eunha.image_viewer.could_not_load_this_image_you', defaultMessage: 'Could not load this image. You can try opening the original.' })}</p> : (
+        <img src={image.url} alt={image.description || t({ id: 'eunha.image_viewer.image_attachment', defaultMessage: 'Image attachment' })}
           draggable={false} onLoad={() => setLoaded(true)} onError={() => setFailed(true)}
           className={original ? 'block max-w-none shrink-0' : 'block max-h-full max-w-full object-contain'}
           style={{ opacity: loaded ? 1 : 0 }} />
@@ -76,18 +77,20 @@ export function ImageViewer({ images, selected, onSelect, onClose, returnFocus }
         className="dark flex h-dvh w-screen max-w-none flex-col gap-0 rounded-none bg-background p-0 text-foreground ring-0 sm:max-w-none"
         onClick={event => event.stopPropagation()}>
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <DialogTitle className="text-sm">Image {index + 1} of {images.length}</DialogTitle>
+          <DialogTitle className="text-sm">
+            {t({ id: 'eunha.image_viewer.position', defaultMessage: 'Image {number} of {total}' }, { number: index + 1, total: images.length })}
+          </DialogTitle>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon"
-              aria-label={original ? 'Fit image to screen' : 'View image at original size'}
+              aria-label={original ? t({ id: 'eunha.image_viewer.fit_image_to_screen', defaultMessage: 'Fit image to screen' }) : t({ id: 'eunha.image_viewer.view_image_at_original_size', defaultMessage: 'View image at original size' })}
               onClick={() => {
                 setOriginalFor(original ? null : image.id)
                 stage.current?.scrollTo(0, 0)
               }}>{original ? <Minimize /> : <ZoomIn />}</Button>
             <Button variant="ghost" size="icon"
-              aria-label="Open original image in a new tab"
+              aria-label={t({ id: 'eunha.image_viewer.open_original_image_in_a_new', defaultMessage: 'Open original image in a new tab' })}
               render={<a href={image.url} target="_blank" rel="noopener noreferrer" />}><ExternalLink /></Button>
-            <DialogClose render={<Button ref={close} variant="ghost" size="icon" aria-label="Close image viewer" />}><X /></DialogClose>
+            <DialogClose render={<Button ref={close} variant="ghost" size="icon" aria-label={t({ id: 'eunha.image_viewer.close_image_viewer', defaultMessage: 'Close image viewer' })} />}><X /></DialogClose>
           </div>
         </header>
         <div className="relative min-h-0 flex-1">
@@ -114,12 +117,12 @@ export function ImageViewer({ images, selected, onSelect, onClose, returnFocus }
         </div>
         <footer className="shrink-0 border-t border-border p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {images.length > 1 && <div className="mb-2 flex items-center justify-center gap-4">
-            <Button size="sm" variant="ghost" aria-label="Previous image" disabled={index === 0} onClick={() => change(index - 1)}><ChevronLeft /> Previous</Button>
+            <Button size="sm" variant="ghost" aria-label={t({ id: 'eunha.image_viewer.previous_image', defaultMessage: 'Previous image' })} disabled={index === 0} onClick={() => change(index - 1)}><ChevronLeft /> {t({ id: 'lightbox.previous', defaultMessage: 'Previous' })}</Button>
             <span aria-live="polite" className="text-xs tabular-nums">{index + 1} / {images.length}</span>
-            <Button size="sm" variant="ghost" aria-label="Next image" disabled={index === images.length - 1} onClick={() => change(index + 1)}>Next <ChevronRight /></Button>
+            <Button size="sm" variant="ghost" aria-label={t({ id: 'eunha.image_viewer.next_image', defaultMessage: 'Next image' })} disabled={index === images.length - 1} onClick={() => change(index + 1)}>{t({ id: 'lightbox.next', defaultMessage: 'Next' })} <ChevronRight /></Button>
           </div>}
           <DialogDescription className="max-h-[20dvh] overflow-auto whitespace-pre-wrap text-center text-sm">
-            {image.description || 'No image description provided.'}
+            {image.description || t({ id: 'eunha.image_viewer.no_image_description_provided', defaultMessage: 'No image description provided.' })}
           </DialogDescription>
         </footer>
       </DialogContent>

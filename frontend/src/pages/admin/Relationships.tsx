@@ -17,6 +17,7 @@ import {
 } from '@/components/admin/admin-common.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { AccountListSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 type Relationship = NonNullable<RelationshipFilters['relationship']>
 type Location = NonNullable<RelationshipFilters['location']> | 'all'
@@ -24,13 +25,13 @@ type Order = NonNullable<RelationshipFilters['order']>
 
 // Mastodon's `relationships.*` filter labels.
 const RELATIONSHIPS: Record<Relationship, string> = {
-  following: 'Following',
-  followed_by: 'Followers',
-  mutual: 'Mutual',
-  invited: 'Invited',
+  get following() { return t({ id: 'account.following', defaultMessage: 'Following' }) },
+  get followed_by() { return t({ id: 'account.followers', defaultMessage: 'Followers' }) },
+  get mutual() { return t({ id: 'mastodon.relationships.mutual', defaultMessage: 'Mutual' }) },
+  get invited() { return t({ id: 'mastodon.relationships.invited', defaultMessage: 'Invited' }) },
 }
-const LOCATIONS: Record<Location, string> = { all: 'All', local: 'Local', remote: 'Remote' }
-const ORDERS: Record<Order, string> = { recent: 'Most recent', active: 'Most active' }
+const LOCATIONS: Record<Location, string> = { get all() { return t({ id: 'notifications.filter.all', defaultMessage: 'All' }) }, get local() { return t({ id: 'mastodon.admin.accounts.location.local', defaultMessage: 'Local' }) }, get remote() { return t({ id: 'mastodon.admin.accounts.location.remote', defaultMessage: 'Remote' }) } }
+const ORDERS: Record<Order, string> = { get recent() { return t({ id: 'mastodon.relationships.most_recent', defaultMessage: 'Most recent' }) }, get active() { return t({ id: 'eunha.admin.relationships.most_active', defaultMessage: 'Most active' }) } }
 
 /**
  * Whom an account follows, who follows it, and whom it invited: Mastodon's
@@ -67,26 +68,26 @@ export default function Relationships() {
 
   return (
     <AdminLayout
-      title={account ? `Relationships of @${account.account.acct}` : 'Relationships'}
+      title={account ? t({ id: 'eunha.admin.relationships.relationships_of', defaultMessage: 'Relationships of @{acct}' }, { acct: account.account.acct }) : t({ id: 'navigation_bar.relationships', defaultMessage: 'Relationships' })}
       permission="manage_users"
     >
       <p className="mb-3 text-sm">
-        <Link to={`/admin/accounts/${id}`}>Back to account</Link>
+        <Link to={`/admin/accounts/${id}`}>{t({ id: 'eunha.admin.relationships.back_to_account', defaultMessage: 'Back to account' })}</Link>
       </p>
       <div className="mb-3 grid gap-2 sm:grid-cols-3">
         <ChoiceSelect
-          label="Relationship"
+          label={t({ id: 'mastodon.relationships.relationship', defaultMessage: 'Relationship' })}
           value={relationship}
           items={RELATIONSHIPS}
           onChange={(v) => set('relationship', v)}
         />
         <ChoiceSelect
-          label="Location"
+          label={t({ id: 'mastodon.admin.accounts.location.title', defaultMessage: 'Location' })}
           value={location}
           items={LOCATIONS}
           onChange={(v) => set('location', v)}
         />
-        <ChoiceSelect label="Order" value={order} items={ORDERS} onChange={(v) => set('order', v)} />
+        <ChoiceSelect label={t({ id: 'eunha.admin.relationships.order', defaultMessage: 'Order' })} value={order} items={ORDERS} onChange={(v) => set('order', v)} />
       </div>
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
@@ -103,7 +104,7 @@ export default function Relationships() {
         ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No accounts.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.relationships.no_accounts', defaultMessage: 'No accounts.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

@@ -12,11 +12,13 @@ import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 const STATES: Record<Appeal['state'], string> = {
-  pending: 'Pending',
-  approved: 'Approved',
-  rejected: 'Rejected',
+  get pending() { return t({ id: 'account.pending', defaultMessage: 'Pending' }) },
+  get approved() { return t({ id: 'mastodon.admin.trends.approved', defaultMessage: 'Approved' }) },
+  get rejected() { return t({ id: 'mastodon.admin.trends.rejected', defaultMessage: 'Rejected' }) },
 }
 
 /**
@@ -37,17 +39,17 @@ export default function Appeals() {
     try {
       await decideAppeal(token ?? '', appeal.id, decision)
       feed.mutate((items) => items.filter((a) => a.id !== appeal.id))
-      toast.success(decision === 'approve' ? 'Appeal approved.' : 'Appeal rejected.')
+      toast.success(decision === 'approve' ? t({ id: 'eunha.admin.appeals.appeal_approved', defaultMessage: 'Appeal approved.' }) : t({ id: 'eunha.admin.appeals.appeal_rejected', defaultMessage: 'Appeal rejected.' }))
     } catch (e) {
       toast.error(errorMessage(e))
     }
   }
 
   return (
-    <AdminLayout title="Appeals" permission="manage_appeals">
+    <AdminLayout title={t({ id: 'mastodon.admin.disputes.appeals.title', defaultMessage: 'Appeals' })} permission="manage_appeals">
       <div className="mb-3">
         <ChoiceSelect
-          label="Status"
+          label={t({ id: 'mastodon.admin.follow_recommendations.status', defaultMessage: 'Status' })}
           value={status}
           items={STATES}
           className="w-full sm:w-48"
@@ -70,23 +72,41 @@ export default function Appeals() {
               </Badge>
             </div>
             <p className="text-sm">
-              Appealing{' '}
-              <Link to={`/disputes/strikes/${a.strike.id}`}>
-                {STRIKE_TITLES[a.strike.action]} on {formatDate(a.strike.created_at)}
-              </Link>
-              {a.strike.account && <> by {a.strike.account.username}</>}
+              {(() => {
+                const strike = (
+                  <Link to={`/disputes/strikes/${a.strike.id}`}>
+                    {t(
+                      { id: 'eunha.admin.appeals.strike_on', defaultMessage: '{action} on {date}' },
+                      { action: STRIKE_TITLES[a.strike.action], date: formatDate(a.strike.created_at) },
+                    )}
+                  </Link>
+                )
+                return a.strike.account ? (
+                  <FormattedMessage
+                    id='eunha.admin.appeals.appealing_by'
+                    defaultMessage='Appealing {strike} by {username}'
+                    values={{ strike, username: a.strike.account.username }}
+                  />
+                ) : (
+                  <FormattedMessage
+                    id='eunha.admin.appeals.appealing'
+                    defaultMessage='Appealing {strike}'
+                    values={{ strike }}
+                  />
+                )
+              })()}
             </p>
             <blockquote className="border-l-2 pl-3 text-sm whitespace-pre-wrap">{a.text}</blockquote>
             <div className="text-muted-foreground text-xs">
-              Submitted {formatDate(a.created_at)}
+              {t({ id: 'eunha.admin.appeals.submitted', defaultMessage: 'Submitted {date}' }, { date: formatDate(a.created_at) })}
             </div>
             {a.state === 'pending' && (
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => void decide(a, 'approve')}>
-                  Approve appeal
+                  {t({ id: 'mastodon.disputes.strikes.approve_appeal', defaultMessage: 'Approve appeal' })}
                 </Button>
                 <Button size="sm" variant="destructive" onClick={() => void decide(a, 'reject')}>
-                  Reject appeal
+                  {t({ id: 'mastodon.disputes.strikes.reject_appeal', defaultMessage: 'Reject appeal' })}
                 </Button>
               </div>
             )}
@@ -94,7 +114,7 @@ export default function Appeals() {
         ))}
       </div>
       {feed.items?.length === 0 && (
-        <p className="text-muted-foreground text-sm">No appeals to show.</p>
+        <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.appeals.no_appeals_to_show', defaultMessage: 'No appeals to show.' })}</p>
       )}
       <InfiniteScroll
         onLoadMore={feed.loadMore}

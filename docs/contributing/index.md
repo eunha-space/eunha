@@ -81,20 +81,38 @@ Web client translations
 -----------------------
 
 The web client's text goes through [react-intl], as Mastodon's does. Each
-message has an id and its English in the code:
+message has an id and its English in the code. Components use
+`FormattedMessage` or `defineMessages`; code outside React, such as a toast
+or a helper, calls `t` from *frontend/src/i18n.tsx*:
 
 ~~~~ tsx
 const messages = defineMessages({
   saved: { id: 'tabs_bar.saved', defaultMessage: 'Saved' },
   feeds: { id: 'eunha.navigation.feeds', defaultMessage: 'Feeds' },
 })
+
+toast.success(t({ id: 'eunha.common.saved', defaultMessage: 'Saved.' }))
 ~~~~
 
-Where a message means what one of Mastodon's web client means, it takes
-Mastodon's id, so Mastodon's translations of it can be used; its English stays
-eunha's own wording. Search the tracked release's
-*app/javascript/mastodon/locales/en.json* for one. A message Mastodon has no
-counterpart for gets an id under `eunha.`.
+A sentence is one message with placeholders, never pieces joined in JSX, so
+that a translation can reorder it. Counts take an ICU plural, and markup in a
+sentence is a rich-text tag (`<strong>…</strong>`) or a value. Text made when
+a module loads would not follow a change of language, so a list of labels
+beside a component holds descriptors or getters and calls `t` when it renders.
+Dates and numbers are formatted in `currentLocale()`.
+
+Where a message means what one of Mastodon's means, it takes Mastodon's id, so
+Mastodon's translations of it can be used; its English stays eunha's own
+wording. There are two places to look in the tracked release:
+
+ -  the web client's *app/javascript/mastodon/locales/en.json*, whose ids are
+    used as they are;
+ -  the Rails locales in *config/locales/*, whose keys are used under
+    `mastodon.`, such as `mastodon.admin.roles.privileges.invite_users`.
+    `%{name}` becomes `{name}`, a key with plural forms becomes an ICU plural,
+    and an `_html` key can be used when its markup is tags without attributes.
+
+A message Mastodon has no counterpart for gets an id under `eunha.`.
 
 The catalogs are in *frontend/src/locales/*:
 
@@ -103,8 +121,9 @@ The catalogs are in *frontend/src/locales/*:
     by `pnpm run i18n:import-mastodon` from the release *mastodon.toml*
     tracks. It needs a Mastodon checkout at `$MASTODON_REPO` or
     *~/Git/mastodon*. Don't edit it by hand.
- -  *ko.json* is eunha's Korean: every `eunha.` message, and any of
-    Mastodon's eunha words differently. It wins over *mastodon/ko.json*.
+ -  *ko.json* is eunha's Korean: every `eunha.` message, any of Mastodon's
+    that Mastodon has not translated, and any of Mastodon's eunha words
+    differently. It wins over *mastodon/ko.json*.
 
 After changing messages:
 
@@ -115,16 +134,18 @@ pnpm run i18n:import-mastodon
 pnpm run i18n:check
 ~~~~
 
-CI runs `i18n:check`, which fails when *en.json* is stale, when *ko.json*
-lacks an `eunha.` message, or when a reused id was never imported. A message
-missing from a catalog shows in English.
+CI runs `i18n:check`, which fails when *en.json* is stale, when a message is
+in neither Korean catalog, when a translation takes other placeholders or tags
+than its English, and when *scripts/i18n-scan.mjs* finds text in the code that
+does not go through react-intl. A string that is not interface text (a CSS
+value, a key, a log line) is marked with an `i18n-ignore` comment on its line
+or the line before. A message missing from a catalog shows in English.
 
 The interface language is the account's `users.locale`, chosen in the account
 menu, then the language chosen in the browser, then the browser's own, then
 English (*frontend/src/i18n.tsx*). The client is offered in English and Korean
-only, and only the sidebar and account menu are translated so far; see
-`web-interface-languages` in [divergences](../mastodon/divergences.md). The
-browser tests run in English.
+only; see `web-interface-languages` in
+[divergences](../mastodon/divergences.md). The browser tests run in English.
 
 [react-intl]: https://formatjs.github.io/docs/react-intl/
 

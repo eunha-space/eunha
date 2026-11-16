@@ -9,13 +9,14 @@ import { StatusCard } from '@/components/status-card.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 export type TimelineKind = 'home' | 'local' | 'public'
 
 const EMPTY: Record<TimelineKind, string> = {
-  home: 'Your home timeline is empty.',
-  local: 'Nothing here yet.',
-  public: 'Nothing here yet.',
+  get home() { return t({ id: 'eunha.status_feed.your_home_timeline_is_empty', defaultMessage: 'Your home timeline is empty.' }) },
+  get local() { return t({ id: 'eunha.status_feed.nothing_here_yet', defaultMessage: 'Nothing here yet.' }) },
+  get public() { return t({ id: 'eunha.status_feed.nothing_here_yet', defaultMessage: 'Nothing here yet.' }) },
 }
 
 /**

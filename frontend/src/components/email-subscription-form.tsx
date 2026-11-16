@@ -5,6 +5,8 @@ import { SubscribeError, subscribeByEmail } from '../eunha-api.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 /**
  * The form Mastodon 4.7 puts on the profile of an account that offers email
@@ -31,9 +33,9 @@ export function EmailSubscriptionForm({ accountId, name }: { accountId: string; 
       if (first?.some((k) => k.error === 'ERR_TAKEN')) {
         setSubmitted(true)
       } else if (first?.[0]?.error === 'ERR_BLOCKED') {
-        setError('Blocked email provider')
+        setError(t({ id: 'email_subscriptions.validation.email.blocked', defaultMessage: 'Blocked email provider' }))
       } else {
-        setError('Invalid email address')
+        setError(t({ id: 'email_subscriptions.validation.email.invalid', defaultMessage: 'Invalid email address' }))
       }
     } finally {
       setSubmitting(false)
@@ -43,9 +45,9 @@ export function EmailSubscriptionForm({ accountId, name }: { accountId: string; 
   if (submitted) {
     return (
       <div className="mb-4 rounded-lg border p-4 text-center">
-        <h2 className="font-semibold">One more step</h2>
+        <h2 className="font-semibold">{t({ id: 'email_subscriptions.submitted.title', defaultMessage: 'One more step' })}</h2>
         <p className="text-muted-foreground text-sm">
-          Check your inbox for an email to finish signing up for email updates.
+          {t({ id: 'email_subscriptions.submitted.lead', defaultMessage: 'Check your inbox for an email to finish signing up for email updates.' })}
         </p>
       </div>
     )
@@ -53,16 +55,18 @@ export function EmailSubscriptionForm({ accountId, name }: { accountId: string; 
 
   return (
     <form onSubmit={submit} noValidate className="mb-4 space-y-2 rounded-lg border p-4">
-      <h2 className="font-semibold">Sign up for email updates from {name}</h2>
+      <h2 className="font-semibold">
+        {t({ id: 'email_subscriptions.form.title', defaultMessage: 'Sign up for email updates from {name}' }, { name })}
+      </h2>
       <div className="flex gap-2">
         <div className="min-w-0 flex-1 space-y-1">
           <Label htmlFor={inputId} className="sr-only">
-            Email
+            {t({ id: 'email_subscriptions.email', defaultMessage: 'Email' })}
           </Label>
           <Input
             id={inputId}
             type="email"
-            placeholder="Email"
+            placeholder={t({ id: 'email_subscriptions.email', defaultMessage: 'Email' })}
             value={email}
             aria-invalid={error ? true : undefined}
             onChange={(e) => {
@@ -73,12 +77,15 @@ export function EmailSubscriptionForm({ accountId, name }: { accountId: string; 
           {error && <p className="text-destructive text-xs">{error}</p>}
         </div>
         <Button type="submit" disabled={submitting}>
-          Subscribe
+          {t({ id: 'email_subscriptions.form.action', defaultMessage: 'Subscribe' })}
         </Button>
       </div>
       <p className="text-muted-foreground text-xs">
-        Get posts in your inbox without creating an account. Unsubscribe at any time. For more
-        information, refer to the <Link to="/about">Privacy Policy</Link>.
+        <FormattedMessage
+          id="email_subscriptions.form.bottom"
+          defaultMessage="Get posts in your inbox without creating an account. Unsubscribe at any time. For more information, refer to the <a>Privacy Policy</a>."
+          values={{ a: (chunks) => <Link to="/about">{chunks}</Link> }}
+        />
       </p>
     </form>
   )

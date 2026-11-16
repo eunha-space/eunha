@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
+import { t } from '@/i18n.tsx'
 
 type Visibility = mastodon.v1.StatusVisibility
 
@@ -101,8 +102,8 @@ function Trigger({
   people: string[]
   replyTo: mastodon.v1.Status | null | undefined
 }) {
-  if (visibility === 'public') return <>Public</>
-  if (visibility === 'unlisted') return <>Quiet public</>
+  if (visibility === 'public') return <>{t({ id: 'privacy.public.short', defaultMessage: 'Public' })}</>
+  if (visibility === 'unlisted') return <>{t({ id: 'privacy.unlisted.short', defaultMessage: 'Quiet public' })}</>
 
   // A reply names the account replied to by display name, because that account
   // is in hand; a handle typed into the box is only ever a handle.
@@ -115,18 +116,24 @@ function Trigger({
     const extra = people.length
     return (
       <>
-        {lead ? `${lead}, ` : ''}Your followers
-        {extra > 1 ? ` + ${extra - 1} other${extra - 1 === 1 ? '' : 's'}` : ''}
+        {lead
+          ? t({ id: 'eunha.compose_audience.lead_and_followers', defaultMessage: '{lead}, Your followers' }, { lead })
+          : t({ id: 'eunha.compose_audience.your_followers', defaultMessage: 'Your followers' })}
+        {extra > 1
+          ? t({ id: 'eunha.compose_audience.and_others', defaultMessage: '{count, plural, one { + # other} other { + # others}}' }, { count: extra - 1 })
+          : ''}
       </>
     )
   }
   // Direct: the people *are* the audience, so there is nothing else to name.
-  if (!lead) return <>Nobody yet</>
+  if (!lead) return <>{t({ id: 'eunha.compose_audience.nobody_yet', defaultMessage: 'Nobody yet' })}</>
   const others = people.length - 1
   return (
     <>
       {lead}
-      {others > 0 ? ` + ${others} other${others === 1 ? '' : 's'}` : ''}
+      {others > 0
+        ? t({ id: 'eunha.compose_audience.and_others', defaultMessage: '{count, plural, one { + # other} other { + # others}}' }, { count: others })
+        : ''}
     </>
   )
 }
@@ -160,11 +167,11 @@ export function ComposeAudience({
 
   return (
     <>
-      <span className="text-muted-foreground text-xs">To:</span>
+      <span className="text-muted-foreground text-xs">{t({ id: 'eunha.compose_audience.to', defaultMessage: 'To:' })}</span>
       <DropdownMenu>
         <DropdownMenuTrigger
           disabled={disabled}
-          aria-label="Who can see this"
+          aria-label={t({ id: 'eunha.compose_audience.who_can_see_this', defaultMessage: 'Who can see this' })}
           className="bg-muted hover:bg-muted/70 data-[popup-open]:bg-foreground data-[popup-open]:text-background flex max-w-[16rem] items-center gap-1 rounded-full px-3 py-1 text-xs font-medium disabled:opacity-50"
         >
           <span className="truncate">
@@ -176,14 +183,14 @@ export function ComposeAudience({
           {isMessage ? (
             <>
               <DropdownMenuRadioGroup value="direct">
-                <DropdownMenuLabel>Visibility</DropdownMenuLabel>
+                <DropdownMenuLabel>{t({ id: 'compose.visibility.title', defaultMessage: 'Visibility' })}</DropdownMenuLabel>
                 <DropdownMenuRadioItem value="direct" disabled className={leadingCheck}>
-                  Everyone mentioned
+                  {t({ id: 'eunha.compose_audience.everyone_mentioned', defaultMessage: 'Everyone mentioned' })}
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setConfirmingPost(true)}>
-                <Newspaper /> Compose a post instead
+                <Newspaper /> {t({ id: 'eunha.compose_audience.compose_a_post_instead', defaultMessage: 'Compose a post instead' })}
               </DropdownMenuItem>
             </>
           ) : (
@@ -194,9 +201,9 @@ export function ComposeAudience({
                   onVisibilityChange(v === 'private' ? 'private' : 'public')
                 }
               >
-                <DropdownMenuLabel>Visibility</DropdownMenuLabel>
-                <DropdownMenuRadioItem value="public" className={leadingCheck}>Public</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="private" className={leadingCheck}>Followers</DropdownMenuRadioItem>
+                <DropdownMenuLabel>{t({ id: 'compose.visibility.title', defaultMessage: 'Visibility' })}</DropdownMenuLabel>
+                <DropdownMenuRadioItem value="public" className={leadingCheck}>{t({ id: 'privacy.public.short', defaultMessage: 'Public' })}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="private" className={leadingCheck}>{t({ id: 'account.followers', defaultMessage: 'Followers' })}</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
 
               <DropdownMenuSeparator />
@@ -204,14 +211,14 @@ export function ComposeAudience({
               {/* Discoverability is fixed off for followers-only posts. */}
               <SwitchItem
                 icon={<Search />}
-                label="Discoverable in public feeds & search results"
+                label={t({ id: 'eunha.compose_audience.discoverable_in_public_feeds_search_results', defaultMessage: 'Discoverable in public feeds & search results' })}
                 checked={visibility === 'public'}
                 disabled={isFollowers}
                 onChange={setDiscoverable}
               />
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => onVisibilityChange('direct')}>
-                <MessageCircle /> Compose a message instead
+                <MessageCircle /> {t({ id: 'eunha.compose_audience.compose_a_message_instead', defaultMessage: 'Compose a message instead' })}
               </DropdownMenuItem>
             </>
           )}
@@ -223,14 +230,13 @@ export function ComposeAudience({
       <AlertDialog open={confirmingPost} onOpenChange={setConfirmingPost}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Convert to post?</AlertDialogTitle>
+            <AlertDialogTitle>{t({ id: 'compose.switch_modal.title', defaultMessage: 'Convert to post?' })}</AlertDialogTitle>
             <AlertDialogDescription>
-              Your message has limited visibility. If you convert it to a post, it
-              will switch to your default post visibility.
+              {t({ id: 'eunha.compose_audience.your_message_has_limited_visibility_if', defaultMessage: 'Your message has limited visibility. If you convert it to a post, it will switch to your default post visibility.' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogCancel>{t({ id: 'column_back_button.label', defaultMessage: 'Back' })}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 // Upstream switches to the account's default here rather than
@@ -241,7 +247,7 @@ export function ComposeAudience({
                 setConfirmingPost(false)
               }}
             >
-              Continue
+              {t({ id: 'compose.switch_modal.continue', defaultMessage: 'Continue' })}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

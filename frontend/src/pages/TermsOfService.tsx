@@ -7,6 +7,7 @@ import { PolicyText } from '@/components/policy-text.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import { formatPolicyDate } from '@/lib/policy-date.ts'
 import { TextSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 // Mastodon's `/terms-of-service` and `/terms-of-service/:date`: the current
 // terms, or the version effective on a date, with a link forward when a later
@@ -31,28 +32,28 @@ export default function TermsOfServicePage() {
 
   return (
     <div className="page-frame">
-      <TopBar title="Terms of service" />
+      <TopBar title={t({ id: 'footer.terms_of_service', defaultMessage: 'Terms of service' })} />
       {terms === undefined && <TextSkeleton />}
       {terms === null && (
         <p className="text-muted-foreground text-sm">
           {date
-            ? 'There are no terms of service effective on that date.'
-            : 'This server has no terms of service.'}
+            ? t({ id: 'eunha.terms_of_service.there_are_no_terms_of_service', defaultMessage: 'There are no terms of service effective on that date.' })
+            : t({ id: 'eunha.terms_of_service.this_server_has_no_terms_of', defaultMessage: 'This server has no terms of service.' })}
         </p>
       )}
       {terms && (
         <div className="space-y-4">
           <div className="space-y-1">
-            <h1 className="text-2xl font-bold">Terms of Service</h1>
+            <h1 className="text-2xl font-bold">{t({ id: 'terms_of_service.title', defaultMessage: 'Terms of Service' })}</h1>
             <p className="text-muted-foreground text-sm">
               {terms.effective
-                ? `Last updated ${formatPolicyDate(terms.effective_date)}`
-                : `Effective as of ${formatPolicyDate(terms.effective_date)}`}
+                ? t({ id: 'privacy_policy.last_updated', defaultMessage: 'Last updated {date}' }, { date: formatPolicyDate(terms.effective_date) })
+                : t({ id: 'terms_of_service.effective_as_of', defaultMessage: 'Effective as of {date}' }, { date: formatPolicyDate(terms.effective_date) })}
               {terms.succeeded_by && (
                 <>
                   {' · '}
                   <Link to={`/terms-of-service/${terms.succeeded_by}`} className="text-primary">
-                    Upcoming changes on {formatPolicyDate(terms.succeeded_by)}
+                    {t({ id: 'terms_of_service.upcoming_changes_on', defaultMessage: 'Upcoming changes on {date}' }, { date: formatPolicyDate(terms.succeeded_by) })}
                   </Link>
                 </>
               )}

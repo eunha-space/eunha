@@ -11,8 +11,22 @@
 // which also sets the language of its mail), then the one chosen in this
 // browser, then the browser's own languages, then English. The account's
 // is cached so a reload paints in it before the preferences API answers.
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
-import { IntlProvider } from 'react-intl'
+import {
+  createContext,
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from 'react'
+import {
+  createIntl,
+  createIntlCache,
+  IntlProvider,
+  type IntlShape,
+  type MessageDescriptor,
+} from 'react-intl'
 
 import { getActiveAccountId, getToken } from './auth.ts'
 import { getPreferences, updatePreferences } from './security-api.ts'
@@ -83,6 +97,30 @@ function applyToDocument(locale: Locale) {
   document.documentElement.lang = locale
 }
 
+// The same messages outside React: in helpers, toasts, and the labels of
+// lists defined beside a component. Changing the language remounts the app
+// (see `LocaleProvider`), so text from `t` follows it as `useIntl`'s does.
+// Text built when a module loads would not, so modules keep descriptors and
+// call `t` when they render.
+const cache = createIntlCache()
+let current: IntlShape = createIntl({ locale: 'en', defaultLocale: 'en', messages: {} }, cache)
+
+type Values = Record<string, string | number | boolean | null | undefined | Date>
+
+export function t(descriptor: MessageDescriptor, values?: Values): string {
+  return current.formatMessage(descriptor, values)
+}
+
+/** The interface locale, for `Intl` formatting outside React. */
+export const currentLocale = (): Locale => current.locale as Locale
+
+function setCurrent(locale: Locale, messages: Messages) {
+  current = createIntl(
+    { locale, defaultLocale: 'en', messages, onError: ignoreMissingTranslations },
+    cache,
+  )
+}
+
 type LocaleState = {
   locale: Locale
   /** Switch the interface, and keep the choice: in this browser, and on the
@@ -118,6 +156,7 @@ export function LocaleProvider({
   const show = useCallback(async (locale: Locale) => {
     const messages = await loadMessages(locale)
     applyToDocument(locale)
+    setCurrent(locale, messages)
     setState({ locale, messages })
   }, [])
 
@@ -166,7 +205,8 @@ export function LocaleProvider({
         messages={state.messages}
         onError={ignoreMissingTranslations}
       >
-        {children}
+        {/* Remounted on a change of language, so text from `t` follows. */}
+        <Fragment key={state.locale}>{children}</Fragment>
       </IntlProvider>
     </LocaleContext.Provider>
   )
@@ -176,5 +216,7 @@ export function LocaleProvider({
 export async function bootLocale(): Promise<{ locale: Locale; messages: Messages }> {
   const locale = initialLocale()
   applyToDocument(locale)
-  return { locale, messages: await loadMessages(locale).catch(() => ({})) }
+  const messages: Messages = await loadMessages(locale).catch(() => ({}))
+  setCurrent(locale, messages)
+  return { locale, messages }
 }

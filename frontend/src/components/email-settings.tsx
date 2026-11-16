@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 /**
  * The email half of Mastodon's account settings form: a new address, with the
@@ -43,11 +44,11 @@ export function EmailSettings({ token }: { token: string }) {
       if (updated.unconfirmed_email) {
         // Devise's `update_needs_confirmation`.
         toast.success(
-          'We need to verify your new email address. Please check your email and follow the confirm link to confirm your new email address.',
+          t({ id: 'eunha.email_settings.we_need_to_verify_your_new', defaultMessage: 'We need to verify your new email address. Please check your email and follow the confirm link to confirm your new email address.' }),
         )
       }
     } catch (e) {
-      toast.error(e instanceof SecurityError ? e.message : 'Could not change your email address')
+      toast.error(e instanceof SecurityError ? e.message : t({ id: 'eunha.email_settings.could_not_change_your_email_address', defaultMessage: 'Could not change your email address' }))
     } finally {
       setSaving(false)
     }
@@ -55,11 +56,16 @@ export function EmailSettings({ token }: { token: string }) {
 
   return (
     <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="font-semibold">Email address</h2>
+      <h2 className="font-semibold">{t({ id: 'mastodon.admin.email_subscriptions.accounts.show.email', defaultMessage: 'Email address' })}</h2>
       {current.unconfirmed_email && (
         <p className="text-muted-foreground text-sm">
-          Waiting for you to confirm {current.unconfirmed_email}. Until then, mail goes to{' '}
-          {current.email}.
+          {t(
+            {
+              id: 'eunha.email_settings.waiting_for_confirmation',
+              defaultMessage: 'Waiting for you to confirm {unconfirmed}. Until then, mail goes to {email}.',
+            },
+            { unconfirmed: current.unconfirmed_email, email: current.email },
+          )}
         </p>
       )}
       <form
@@ -70,7 +76,7 @@ export function EmailSettings({ token }: { token: string }) {
         }}
       >
         <div className="space-y-1">
-          <Label htmlFor="account-email">Email address</Label>
+          <Label htmlFor="account-email">{t({ id: 'mastodon.admin.email_subscriptions.accounts.show.email', defaultMessage: 'Email address' })}</Label>
           <Input
             id="account-email"
             type="email"
@@ -81,7 +87,7 @@ export function EmailSettings({ token }: { token: string }) {
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="account-email-password">Current password</Label>
+          <Label htmlFor="account-email-password">{t({ id: 'mastodon.simple_form.labels.defaults.current_password', defaultMessage: 'Current password' })}</Label>
           <Input
             id="account-email-password"
             type="password"
@@ -92,7 +98,7 @@ export function EmailSettings({ token }: { token: string }) {
           />
         </div>
         <Button type="submit" size="sm" disabled={saving}>
-          Save changes
+          {t({ id: 'subscribed_languages.save', defaultMessage: 'Save changes' })}
         </Button>
       </form>
     </section>

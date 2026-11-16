@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import { beginLogin } from '../auth.ts'
+import { t } from '@/i18n.tsx'
 
 /**
  * `/signup` and `/invite/:code`: the sign-up form is the server's, at
@@ -43,7 +44,7 @@ export function Start() {
   return (
     <div className="page-frame">
       <p className={error ? 'text-destructive text-sm' : 'text-muted-foreground text-sm'}>
-        {error ?? 'Signing you in…'}
+        {error ?? t({ id: 'eunha.start.signing_you_in', defaultMessage: 'Signing you in…' })}
       </p>
     </div>
   )

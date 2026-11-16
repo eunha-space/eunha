@@ -56,6 +56,7 @@ import { cn } from '@/lib/utils.ts'
 import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import { ComposePoll, type PollDraft } from '@/components/compose-poll.tsx'
 import { countGraphemes, countPostCharacters, guessPostLanguage, postLanguageName } from '@/lib/post-language.ts'
+import { t } from '@/i18n.tsx'
 
 const MAX_ATTACHMENTS = 4
 
@@ -326,7 +327,7 @@ export function Compose({
     onDraftInfo?.({ direct: visibility === 'direct', poll: !!poll, media: attachments.length > 0 || uploading })
   }, [onDraftInfo, visibility, poll, attachments.length, uploading])
 
-  const label = replyTo ? 'Reply' : isMessage ? 'Send' : quoteOf ? 'Quote' : 'Publish'
+  const label = replyTo ? t({ id: 'status.reply', defaultMessage: 'Reply' }) : isMessage ? t({ id: 'compose.message.publish', defaultMessage: 'Send' }) : quoteOf ? t({ id: 'status.quote', defaultMessage: 'Quote' }) : t({ id: 'compose.publish', defaultMessage: 'Publish' })
 
   useEffect(() => {
     onTypeChange?.(replyTo ? 'reply' : isMessage ? 'message' : 'post')
@@ -354,7 +355,12 @@ export function Compose({
       for (const file of selected) {
         const limit = file.type.startsWith('image/') ? limits?.imageSizeLimit : limits?.videoSizeLimit
         if (limit !== undefined && file.size > limit) {
-          throw new Error(`${file.name} exceeds the ${limit / 1024 ** 2} MiB upload limit.`)
+          throw new Error(
+            t(
+              { id: 'eunha.compose.file_too_large', defaultMessage: '{name} exceeds the {size} MiB upload limit.' },
+              { name: file.name, size: limit / 1024 ** 2 },
+            ),
+          )
         }
       }
       for (const file of selected) {
@@ -405,7 +411,7 @@ export function Compose({
       const options = poll?.options.map((option) => option.trim()).filter(Boolean)
       if (options && (options.length < 2 || new Set(options).size !== options.length
           || options.some((option) => countGraphemes(option) > 50))) {
-        setError('Enter 2–4 distinct poll options, each at most 50 characters.')
+        setError(t({ id: 'eunha.compose.enter_2_4_distinct_poll_options', defaultMessage: 'Enter 2–4 distinct poll options, each at most 50 characters.' }))
         return
       }
       const status = await postStatus(token, {
@@ -499,10 +505,12 @@ export function Compose({
     <CardContent className="flex flex-1 flex-col space-y-2 px-4">
         {replyTo && (
           <div className="text-muted-foreground flex items-center justify-between text-xs">
-            <span>Replying to @{replyTo.account.acct}</span>
+            <span>
+              {t({ id: 'eunha.compose.replying_to', defaultMessage: 'Replying to @{acct}' }, { acct: replyTo.account.acct })}
+            </span>
             {onCancelReply && (
               <button className="underline" onClick={onCancelReply}>
-                cancel
+                {t({ id: 'eunha.compose.cancel', defaultMessage: 'cancel' })}
               </button>
             )}
           </div>
@@ -510,10 +518,10 @@ export function Compose({
         {quoteOf && (
           <div className="space-y-1">
             <div className="text-muted-foreground flex items-center justify-between text-xs">
-              <span>Quoting this post</span>
+              <span>{t({ id: 'eunha.compose.quoting_this_post', defaultMessage: 'Quoting this post' })}</span>
               {onCancelReply && (
                 <button className="underline" onClick={onCancelReply}>
-                  cancel
+                  {t({ id: 'eunha.compose.cancel', defaultMessage: 'cancel' })}
                 </button>
               )}
             </div>
@@ -535,14 +543,14 @@ export function Compose({
         {isMessage && (
           <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <LockOpen className="size-3.5 shrink-0" />
-            Messages are not end-to-end encrypted.
+            {t({ id: 'eunha.compose.messages_are_not_end_to_end', defaultMessage: 'Messages are not end-to-end encrypted.' })}
           </p>
         )}
 
         {warningOpen && (
           <Input
-            aria-label="Content warning"
-            placeholder="Content warning"
+            aria-label={t({ id: 'collections.content_warning', defaultMessage: 'Content warning' })}
+            placeholder={t({ id: 'collections.content_warning', defaultMessage: 'Content warning' })}
             value={warning}
             onChange={(event) => setWarning(event.target.value)}
           />
@@ -571,8 +579,8 @@ export function Compose({
             // would guess. Upstream's placeholder says so; ours now does too.
             placeholder={
               isMessage
-                ? 'Add your recipients and your message.'
-                : 'What would you like to say?'
+                ? t({ id: 'compose.message.placeholder', defaultMessage: 'Add your recipients and your message.' })
+                : t({ id: 'compose.post.placeholder', defaultMessage: 'What would you like to say?' })
             }
             value={text}
             onChange={(e) => {
@@ -624,7 +632,7 @@ export function Compose({
             <ul
               className="bg-popover absolute right-0 bottom-0 left-0 z-50 max-h-56 overflow-auto rounded-md border py-1 shadow-md"
               role="listbox"
-              aria-label="Emoji suggestions"
+              aria-label={t({ id: 'eunha.compose.emoji_suggestions', defaultMessage: 'Emoji suggestions' })}
             >
               {emojiSuggestions.suggestions.map((emoji, i) => (
                 <li
@@ -661,7 +669,7 @@ export function Compose({
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
-                  aria-label="Remove attachment"
+                  aria-label={t({ id: 'eunha.compose.remove_attachment', defaultMessage: 'Remove attachment' })}
                   className="bg-background/80 absolute top-1 right-1 z-10 p-0.5"
                 >
                   <X className="size-4" />
@@ -685,7 +693,7 @@ export function Compose({
                       () => {},
                     )
                   }
-                  placeholder="Describe for the visually impaired"
+                  placeholder={t({ id: 'eunha.compose.describe_for_the_visually_impaired', defaultMessage: 'Describe for the visually impaired' })}
                   className="mt-1 h-7 text-xs"
                 />
               </div>
@@ -709,7 +717,10 @@ export function Compose({
         {languageGuess && language && languageGuess !== language && (
           <Button type="button" size="sm" variant="ghost" className="self-start"
             onClick={() => setLanguageOverride(languageGuess)}>
-            Switch post language to {postLanguageName(languageGuess)}?
+            {t(
+              { id: 'eunha.compose.switch_language', defaultMessage: 'Switch post language to {language}?' },
+              { language: postLanguageName(languageGuess) },
+            )}
           </Button>
         )}
 
@@ -719,14 +730,14 @@ export function Compose({
               type="button"
               variant="ghost"
               size="icon"
-              aria-label="Add media"
+              aria-label={t({ id: 'eunha.compose.add_media', defaultMessage: 'Add media' })}
               disabled={uploading || !!poll || !!quoteOf || attachments.length >= MAX_ATTACHMENTS}
               onClick={() => fileRef.current?.click()}
             >
               <Paperclip />
             </Button>
             <EmojiPicker onPick={insertEmoji} />
-            <Button type="button" variant="ghost" size="icon" aria-label="Add a poll"
+            <Button type="button" variant="ghost" size="icon" aria-label={t({ id: 'poll_button.add_poll', defaultMessage: 'Add a poll' })}
               disabled={busy || uploading || !!poll || !!quoteOf || attachments.length > 0}
               onClick={() => setPoll({ options: ['', ''], expiresIn: 86400, multiple: false })}>
               <ChartBar />
@@ -734,16 +745,16 @@ export function Compose({
             <PostLanguagePicker value={language} onChange={setLanguageOverride} disabled={busy} />
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon" aria-label="Post settings" />}
+                render={<Button variant="ghost" size="icon" aria-label={t({ id: 'eunha.compose.post_settings', defaultMessage: 'Post settings' })} />}
               >
                 <Settings2 />
               </DropdownMenuTrigger>
               <DropdownMenuContent>
                 <DropdownMenuCheckboxItem checked={warningOpen} onCheckedChange={setWarningOverride}>
-                  Content warning
+                  {t({ id: 'collections.content_warning', defaultMessage: 'Content warning' })}
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem checked={sensitive ?? defaultSensitive} onCheckedChange={setSensitive}>
-                  Mark media as sensitive
+                  {t({ id: 'eunha.compose.mark_media_as_sensitive', defaultMessage: 'Mark media as sensitive' })}
                 </DropdownMenuCheckboxItem>
                 {/* As in Mastodon's compose settings, a message has no
                     quote policy to choose; a followers-only post's is
@@ -755,20 +766,19 @@ export function Compose({
                       value={visibility === 'private' ? 'nobody' : quotePolicy}
                       onValueChange={(value) => setQuotePolicy(value as QuotePolicy)}
                     >
-                      <DropdownMenuLabel>Who can quote</DropdownMenuLabel>
+                      <DropdownMenuLabel>{t({ id: 'compose.visibility.quote_policy', defaultMessage: 'Who can quote' })}</DropdownMenuLabel>
                       <DropdownMenuRadioItem value="public" disabled={visibility === 'private'}>
-                        Anyone
+                        {t({ id: 'visibility_modal.quote_public', defaultMessage: 'Anyone' })}
                       </DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="followers" disabled={visibility === 'private'}>
-                        Followers
+                        {t({ id: 'account.followers', defaultMessage: 'Followers' })}
                       </DropdownMenuRadioItem>
                       <DropdownMenuRadioItem value="nobody">
                         <span className="flex flex-col">
-                          Just me
+                          {t({ id: 'visibility_modal.quote_nobody', defaultMessage: 'Just me' })}
                           {visibility === 'private' && (
                             <span className="text-muted-foreground max-w-60 text-xs">
-                              When your post's visibility is set to Followers, it can only be
-                              quoted by you.
+                              {t({ id: 'compose.visibility.quote_policy.only_me_hint', defaultMessage: 'When your post\'\'s visibility is set to Followers, it can only be quoted by you.' })}
                             </span>
                           )}
                         </span>
@@ -780,12 +790,12 @@ export function Compose({
             </DropdownMenu>
             {uploading && (
               <span className="text-muted-foreground motion-safe:animate-pulse text-xs">
-                Uploading…
+                {t({ id: 'eunha.compose.uploading', defaultMessage: 'Uploading…' })}
               </span>
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span aria-label="Post character count" className={cn(
+            <span aria-label={t({ id: 'eunha.compose.post_character_count', defaultMessage: 'Post character count' })} className={cn(
               'text-muted-foreground text-xs tabular-nums', postLength > maxPostLength && 'text-destructive',
             )}>
               {postLength}/{maxPostLength}
@@ -794,7 +804,7 @@ export function Compose({
               size="sm"
               disabled={busy || !submittable}
               onClick={() => void submit()}
-              title={`${label} (⌘/Ctrl + Enter)`}
+              title={t({ id: 'eunha.compose.ctrl_enter', defaultMessage: '{label} (⌘/Ctrl + Enter)' }, { label })}
             >
               {label}
             </Button>
@@ -803,10 +813,9 @@ export function Compose({
         <AlertDialog open={confirmingPrivateQuote} onOpenChange={setConfirmingPrivateQuote}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Share with followers and mentioned users?</AlertDialogTitle>
+              <AlertDialogTitle>{t({ id: 'confirmations.private_quote_notify.title', defaultMessage: 'Share with followers and mentioned users?' })}</AlertDialogTitle>
               <AlertDialogDescription>
-                The person you are quoting and other mentions will be notified and will be able
-                to view your post, even if they're not following you.
+                {t({ id: 'confirmations.private_quote_notify.message', defaultMessage: 'The person you are quoting and other mentions will be notified and will be able to view your post, even if they\'\'re not following you.' })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <Label className="text-sm font-normal">
@@ -814,10 +823,10 @@ export function Compose({
                 checked={privateQuoteDismissed}
                 onCheckedChange={setPrivateQuoteDismissed}
               />
-              Don't show me this message again
+              {t({ id: 'confirmations.private_quote_notify.do_not_show_again', defaultMessage: 'Don\'\'t show me this message again' })}
             </Label>
             <AlertDialogFooter>
-              <AlertDialogCancel>Back to editing</AlertDialogCancel>
+              <AlertDialogCancel>{t({ id: 'confirmations.private_quote_notify.cancel', defaultMessage: 'Back to editing' })}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
                   setConfirmingPrivateQuote(false)
@@ -825,7 +834,7 @@ export function Compose({
                   void submit(true)
                 }}
               >
-                Publish post
+                {t({ id: 'confirmations.private_quote_notify.confirm', defaultMessage: 'Publish post' })}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

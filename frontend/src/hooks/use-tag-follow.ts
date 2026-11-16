@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { getTag, setTagFollow } from '../api.ts'
+import { t } from '@/i18n.tsx'
 
 export function useTagFollow(name: string, token: string) {
   const [following, setFollowing] = useState<boolean>()
@@ -12,7 +13,7 @@ export function useTagFollow(name: string, token: string) {
     getTag(name, token).then((tag) => {
       if (active) setFollowing(tag.following ?? false)
     }).catch(() => {
-      if (active) toast.error('Could not load hashtag')
+      if (active) toast.error(t({ id: 'eunha.tag_follow.could_not_load_hashtag', defaultMessage: 'Could not load hashtag' }))
     })
     return () => { active = false }
   }, [name, token])
@@ -24,7 +25,7 @@ export function useTagFollow(name: string, token: string) {
       const tag = await setTagFollow(name, token, !following)
       setFollowing(tag.following ?? false)
     } catch {
-      toast.error('Could not update hashtag follow')
+      toast.error(t({ id: 'eunha.tag_follow.could_not_update_hashtag_follow', defaultMessage: 'Could not update hashtag follow' }))
     } finally {
       setBusy(false)
     }

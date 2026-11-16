@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
+import { t } from '@/i18n.tsx'
 
 const DURATIONS = {
   '300': '5 minutes',
@@ -23,12 +24,12 @@ export function ComposePoll({ poll, onChange, onRemove }: {
 }) {
   return (
     <fieldset className="space-y-2 rounded-lg border p-3">
-      <legend className="px-1 text-sm font-medium">Poll</legend>
+      <legend className="px-1 text-sm font-medium">{t({ id: 'eunha.compose_poll.poll', defaultMessage: 'Poll' })}</legend>
       {poll.options.map((option, index) => (
         <div key={index} className="flex gap-2">
           <Input
-            aria-label={`Poll option ${index + 1}`}
-            placeholder={`Option ${index + 1}`}
+            aria-label={t({ id: 'eunha.compose_poll.option_label', defaultMessage: 'Poll option {number}' }, { number: index + 1 })}
+            placeholder={t({ id: 'compose_form.poll.option_placeholder', defaultMessage: 'Option {number}' }, { number: index + 1 })}
             value={option}
             onChange={(event) => onChange({
               ...poll,
@@ -36,9 +37,9 @@ export function ComposePoll({ poll, onChange, onRemove }: {
             })}
           />
           {index >= 2 && (
-            <Button variant="ghost" size="sm" aria-label={`Remove option ${index + 1}`}
+            <Button variant="ghost" size="sm" aria-label={t({ id: 'eunha.compose_poll.remove_option', defaultMessage: 'Remove option {number}' }, { number: index + 1 })}
               onClick={() => onChange({ ...poll, options: poll.options.filter((_, i) => i !== index) })}>
-              Remove
+              {t({ id: 'tag.remove', defaultMessage: 'Remove' })}
             </Button>
           )}
         </div>
@@ -46,12 +47,12 @@ export function ComposePoll({ poll, onChange, onRemove }: {
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" disabled={poll.options.length >= 4}
           onClick={() => onChange({ ...poll, options: [...poll.options, ''] })}>
-          Add option
+          {t({ id: 'eunha.compose_poll.add_option', defaultMessage: 'Add option' })}
         </Button>
         <Select items={DURATIONS} value={String(poll.expiresIn)} onValueChange={(value) => {
           if (value) onChange({ ...poll, expiresIn: Number(value) })
         }}>
-          <SelectTrigger aria-label="Poll duration"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label={t({ id: 'eunha.compose_poll.poll_duration', defaultMessage: 'Poll duration' })}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectGroup>
               {Object.entries(DURATIONS).map(([seconds, label]) => (
@@ -62,9 +63,9 @@ export function ComposePoll({ poll, onChange, onRemove }: {
         </Select>
         <Label>
           <Switch checked={poll.multiple} onCheckedChange={(multiple) => onChange({ ...poll, multiple })} />
-          Allow multiple choices
+          {t({ id: 'eunha.compose_poll.allow_multiple_choices', defaultMessage: 'Allow multiple choices' })}
         </Label>
-        <Button size="sm" variant="ghost" onClick={onRemove}>Remove poll</Button>
+        <Button size="sm" variant="ghost" onClick={onRemove}>{t({ id: 'eunha.compose_poll.remove_poll', defaultMessage: 'Remove poll' })}</Button>
       </div>
     </fieldset>
   )

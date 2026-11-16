@@ -42,6 +42,7 @@ import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { CATEGORY_LABELS } from './Reports.tsx'
 import { DetailSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -89,7 +90,7 @@ function CategoryEditor({
         rule_ids: category === 'violation' ? ruleIds : [],
       })
       onSaved(updated)
-      toast.success('Report updated.')
+      toast.success(t({ id: 'eunha.admin.report_detail.report_updated', defaultMessage: 'Report updated.' }))
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -100,12 +101,12 @@ function CategoryEditor({
   const items: Record<ReportCategory, string> =
     rules.length > 0 || report.category === 'violation'
       ? CATEGORY_LABELS
-      : { spam: 'Spam', legal: 'Legal', other: 'Other' } as Record<ReportCategory, string>
+      : { spam: t({ id: 'report.categories.spam', defaultMessage: 'Spam' }), legal: t({ id: 'report.categories.legal', defaultMessage: 'Legal' }), other: t({ id: 'report.categories.other', defaultMessage: 'Other' }) } as Record<ReportCategory, string>
 
   return (
     <div className="space-y-2">
       <ChoiceSelect
-        label="Category"
+        label={t({ id: 'mastodon.admin.reports.category', defaultMessage: 'Category' })}
         value={category}
         items={items}
         onChange={setCategory}
@@ -130,7 +131,7 @@ function CategoryEditor({
       )}
       {dirty && (
         <Button size="sm" disabled={saving} onClick={() => void save()}>
-          {saving ? 'Saving…' : 'Save category'}
+          {saving ? t({ id: 'eunha.common.saving', defaultMessage: 'Saving…' }) : t({ id: 'eunha.admin.report_detail.save_category', defaultMessage: 'Save category' })}
         </Button>
       )}
     </div>
@@ -198,12 +199,12 @@ export default function ReportDetail() {
 
   return (
     <AdminLayout
-      title={`Report #${id}`}
+      title={t({ id: 'mastodon.admin.reports.report', defaultMessage: 'Report #{id}' }, { id })}
       permission="manage_reports"
       actions={
         report && (
           <Badge variant={report.action_taken ? 'outline' : 'secondary'}>
-            {report.action_taken ? 'Resolved' : 'Unresolved'}
+            {report.action_taken ? t({ id: 'mastodon.admin.reports.resolved', defaultMessage: 'Resolved' }) : t({ id: 'mastodon.admin.reports.unresolved', defaultMessage: 'Unresolved' })}
           </Badge>
         )
       }
@@ -224,38 +225,38 @@ export default function ReportDetail() {
                 size="sm"
                 variant="outline"
                 disabled={busy || report.action_taken}
-                onClick={() => void transition('resolve', 'Report resolved.')}
+                onClick={() => void transition('resolve', t({ id: 'eunha.admin.report_detail.report_resolved', defaultMessage: 'Report resolved.' }))}
               >
-                Mark as resolved
+                {t({ id: 'mastodon.admin.reports.mark_as_resolved', defaultMessage: 'Mark as resolved' })}
               </Button>
               {report.statuses.length > 0 && (
                 <>
                   <ConfirmButton
-                    title="Mark the reported posts as sensitive?"
-                    description="Their media is hidden behind a warning, the report is resolved, and the account gets a strike."
-                    confirmLabel="Mark as sensitive"
+                    title={t({ id: 'eunha.admin.report_detail.mark_the_reported_posts_as_sensitive', defaultMessage: 'Mark the reported posts as sensitive?' })}
+                    description={t({ id: 'eunha.admin.report_detail.their_media_is_hidden_behind_a', defaultMessage: 'Their media is hidden behind a warning, the report is resolved, and the account gets a strike.' })}
+                    confirmLabel={t({ id: 'collections.mark_as_sensitive', defaultMessage: 'Mark as sensitive' })}
                     destructive={false}
                     disabled={report.action_taken}
                     onConfirm={async () => {
                       setReport(await reportModerationAction(token, report.id, 'mark_as_sensitive'))
-                      toast.success('Posts marked as sensitive.')
+                      toast.success(t({ id: 'eunha.admin.report_detail.posts_marked_as_sensitive', defaultMessage: 'Posts marked as sensitive.' }))
                       load()
                     }}
                   >
-                    Mark as sensitive
+                    {t({ id: 'collections.mark_as_sensitive', defaultMessage: 'Mark as sensitive' })}
                   </ConfirmButton>
                   <ConfirmButton
-                    title="Delete the reported posts?"
-                    description="The posts are removed, the report is resolved, and the account gets a strike. This cannot be undone."
-                    confirmLabel="Delete posts"
+                    title={t({ id: 'eunha.admin.report_detail.delete_the_reported_posts', defaultMessage: 'Delete the reported posts?' })}
+                    description={t({ id: 'eunha.admin.report_detail.the_posts_are_removed_the_report', defaultMessage: 'The posts are removed, the report is resolved, and the account gets a strike. This cannot be undone.' })}
+                    confirmLabel={t({ id: 'eunha.admin.report_detail.delete_posts', defaultMessage: 'Delete posts' })}
                     disabled={report.action_taken}
                     onConfirm={async () => {
                       setReport(await reportModerationAction(token, report.id, 'delete'))
-                      toast.success('Posts deleted.')
+                      toast.success(t({ id: 'eunha.admin.report_detail.posts_deleted', defaultMessage: 'Posts deleted.' }))
                       load()
                     }}
                   >
-                    Delete posts
+                    {t({ id: 'eunha.admin.report_detail.delete_posts', defaultMessage: 'Delete posts' })}
                   </ConfirmButton>
                 </>
               )}
@@ -263,7 +264,7 @@ export default function ReportDetail() {
                 <>
                   {target.domain === null && (
                     <Button size="sm" variant="outline" onClick={() => setAction('none')}>
-                      Warn
+                      {t({ id: 'mastodon.admin.accounts.warn', defaultMessage: 'Warn' })}
                     </Button>
                   )}
                   <Button
@@ -272,7 +273,7 @@ export default function ReportDetail() {
                     disabled={target.silenced || target.suspended}
                     onClick={() => setAction('silence')}
                   >
-                    Limit
+                    {t({ id: 'mastodon.admin.accounts.silence', defaultMessage: 'Limit' })}
                   </Button>
                   <Button
                     size="sm"
@@ -280,64 +281,63 @@ export default function ReportDetail() {
                     disabled={target.suspended}
                     onClick={() => setAction('suspend')}
                   >
-                    Suspend
+                    {t({ id: 'mastodon.admin.accounts.perform_full_suspension', defaultMessage: 'Suspend' })}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setAction('custom')}>
-                    Other action…
+                    {t({ id: 'eunha.admin.report_detail.other_action', defaultMessage: 'Other action…' })}
                   </Button>
                 </>
               )}
             </div>
             <p className="text-muted-foreground text-xs">
-              Limiting or suspending resolves every open report against this account;
-              a warning resolves this one.{' '}
+              {t({ id: 'eunha.admin.report_detail.resolution_hint', defaultMessage: 'Limiting or suspending resolves every open report against this account; a warning resolves this one.' })}{' '}
               <Link to={`/admin/accounts/${publicAccount(report.target_account).id}`}>
-                Account details
+                {t({ id: 'eunha.admin.report_detail.account_details', defaultMessage: 'Account details' })}
               </Link>
             </p>
           </section>
 
           <dl className="grid gap-4 sm:grid-cols-2">
-            <Field label="Reported by">
+            <Field label={t({ id: 'mastodon.admin.reports.reported_by', defaultMessage: 'Reported by' })}>
               <AdminAccountLink account={report.account} size="sm" />
             </Field>
-            <Field label="Filed">{formatDate(report.created_at)}</Field>
-            <Field label="Category">
+            <Field label={t({ id: 'eunha.admin.report_detail.filed', defaultMessage: 'Filed' })}>{formatDate(report.created_at)}</Field>
+            <Field label={t({ id: 'mastodon.admin.reports.category', defaultMessage: 'Category' })}>
               <CategoryEditor report={report} rules={rules} token={token} onSaved={setReport} />
             </Field>
-            <Field label="Forwarded">
-              {report.forwarded ? 'Yes, from a remote server' : 'No'}
+            <Field label={t({ id: 'mastodon.admin.reports.forwarded', defaultMessage: 'Forwarded' })}>
+              {report.forwarded ? t({ id: 'eunha.admin.report_detail.yes_from_a_remote_server', defaultMessage: 'Yes, from a remote server' }) : t({ id: 'mastodon.simple_form.no', defaultMessage: 'No' })}
             </Field>
-            <Field label="Assigned moderator">
+            <Field label={t({ id: 'mastodon.admin.reports.assigned', defaultMessage: 'Assigned moderator' })}>
               <div className="flex flex-wrap items-center gap-2">
                 {report.assigned_account ? (
                   <AdminAccountLink account={report.assigned_account} size="sm" />
                 ) : (
-                  <span className="text-muted-foreground">Nobody</span>
+                  <span className="text-muted-foreground">{t({ id: 'eunha.admin.report_detail.nobody', defaultMessage: 'Nobody' })}</span>
                 )}
                 {assignedToMe ? (
                   <Button
                     size="xs"
                     variant="outline"
                     disabled={busy}
-                    onClick={() => void transition('unassign', 'Unassigned.')}
+                    onClick={() => void transition('unassign', t({ id: 'eunha.common.unassigned', defaultMessage: 'Unassigned.' }))}
                   >
-                    Unassign
+                    {t({ id: 'mastodon.admin.reports.unassign', defaultMessage: 'Unassign' })}
                   </Button>
                 ) : (
                   <Button
                     size="xs"
                     variant="outline"
                     disabled={busy}
-                    onClick={() => void transition('assign_to_self', 'Assigned to you.')}
+                    onClick={() => void transition('assign_to_self', t({ id: 'eunha.admin.report_detail.assigned_to_you', defaultMessage: 'Assigned to you.' }))}
                   >
-                    Assign to me
+                    {t({ id: 'mastodon.admin.reports.assign_to_self', defaultMessage: 'Assign to me' })}
                   </Button>
                 )}
               </div>
             </Field>
             {report.action_taken && (
-              <Field label="Resolved">
+              <Field label={t({ id: 'mastodon.admin.reports.resolved', defaultMessage: 'Resolved' })}>
                 <div className="space-y-1">
                   <span className="block">{formatDate(report.action_taken_at)}</span>
                   {report.action_taken_by_account && (
@@ -347,9 +347,9 @@ export default function ReportDetail() {
                     size="xs"
                     variant="outline"
                     disabled={busy}
-                    onClick={() => void transition('reopen', 'Report reopened.')}
+                    onClick={() => void transition('reopen', t({ id: 'eunha.admin.report_detail.report_reopened', defaultMessage: 'Report reopened.' }))}
                   >
-                    Reopen
+                    {t({ id: 'eunha.admin.report_detail.reopen', defaultMessage: 'Reopen' })}
                   </Button>
                 </div>
               </Field>
@@ -358,7 +358,7 @@ export default function ReportDetail() {
 
           {report.rules.length > 0 && report.category === 'violation' && (
             <section className="space-y-1">
-              <h2 className="text-sm font-semibold">Rules broken</h2>
+              <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.report_detail.rules_broken', defaultMessage: 'Rules broken' })}</h2>
               <ol className="list-decimal space-y-0.5 pl-5 text-sm">
                 {report.rules.map((r) => (
                   <li key={r.id}>{r.text}</li>
@@ -368,10 +368,10 @@ export default function ReportDetail() {
           )}
 
           <section className="space-y-1">
-            <h2 className="text-sm font-semibold">Comment</h2>
+            <h2 className="text-sm font-semibold">{t({ id: 'mastodon.simple_form.labels.ip_block.comment', defaultMessage: 'Comment' })}</h2>
             <p className="text-sm whitespace-pre-wrap">
               {report.comment || (
-                <span className="text-muted-foreground">The reporter left no comment.</span>
+                <span className="text-muted-foreground">{t({ id: 'eunha.admin.report_detail.the_reporter_left_no_comment', defaultMessage: 'The reporter left no comment.' })}</span>
               )}
             </p>
           </section>
@@ -379,17 +379,17 @@ export default function ReportDetail() {
           <section className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="min-w-0 flex-1 text-sm font-semibold">
-                Reported posts ({report.statuses.length})
+                {t({ id: 'eunha.admin.report_detail.reported_posts_count', defaultMessage: 'Reported posts ({count})' }, { count: report.statuses.length })}
               </h2>
               <Link
                 className="text-xs"
                 to={`/admin/accounts/${publicAccount(report.target_account).id}/statuses?report_id=${report.id}`}
               >
-                Add posts
+                {t({ id: 'eunha.admin.report_detail.add_posts', defaultMessage: 'Add posts' })}
               </Link>
             </div>
             {report.statuses.length === 0 && (
-              <p className="text-muted-foreground text-sm">No posts were attached.</p>
+              <p className="text-muted-foreground text-sm">{t({ id: 'eunha.admin.report_detail.no_posts_were_attached', defaultMessage: 'No posts were attached.' })}</p>
             )}
             {report.statuses.map((s) => (
               <AdminStatus key={s.id} status={s} />
@@ -405,8 +405,8 @@ export default function ReportDetail() {
             remove={(noteId) => deleteReportNote(token, noteId)}
             extraSubmits={[
               report.action_taken
-                ? { label: 'Add note and reopen', flags: { create_and_unresolve: true } }
-                : { label: 'Add note and resolve', flags: { create_and_resolve: true } },
+                ? { label: t({ id: 'eunha.admin.report_detail.add_note_and_reopen', defaultMessage: 'Add note and reopen' }), flags: { create_and_unresolve: true } }
+                : { label: t({ id: 'eunha.admin.report_detail.add_note_and_resolve', defaultMessage: 'Add note and resolve' }), flags: { create_and_resolve: true } },
             ]}
             onCreated={(flags) => {
               if (Object.keys(flags).length > 0) load()
@@ -415,7 +415,7 @@ export default function ReportDetail() {
 
           {history.length > 0 && (
             <section className="space-y-2">
-              <h2 className="text-sm font-semibold">Moderation history</h2>
+              <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.report_detail.moderation_history', defaultMessage: 'Moderation history' })}</h2>
               <div className="divide-y rounded-lg border">
                 {history.map((log) => (
                   <ActionLogEntry key={log.id} log={log} />
@@ -428,7 +428,7 @@ export default function ReportDetail() {
             <Link
               to={`/admin/reports?target_account_id=${publicAccount(report.target_account).id}`}
             >
-              Other open reports about @{publicAccount(report.target_account).acct}
+              {t({ id: 'eunha.admin.report_detail.other_open_reports', defaultMessage: 'Other open reports about @{acct}' }, { acct: publicAccount(report.target_account).acct })}
             </Link>
           </p>
         </div>

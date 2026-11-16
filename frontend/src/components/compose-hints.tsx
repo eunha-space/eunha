@@ -1,6 +1,8 @@
 import { TriangleAlert } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
+import { t } from '@/i18n.tsx'
+import { FormattedMessage } from 'react-intl'
 
 /**
  * Advice, never a blocker.
@@ -24,9 +26,14 @@ export function ComposeHints({
       key: 'followers-reply',
       body: (
         <>
-          You're replying to a followers-only post. People not following{' '}
-          <b className="font-semibold">@{replyTo.account.acct}</b> might see your reply
-          without the post it answers.
+          <FormattedMessage
+            id="eunha.compose_hints.followers_reply"
+            defaultMessage="You're replying to a followers-only post. People not following <b>@{acct}</b> might see your reply without the post it answers."
+            values={{
+              acct: replyTo.account.acct,
+              b: (chunks) => <b className="font-semibold">{chunks}</b>,
+            }}
+          />
         </>
       ),
     })
@@ -38,8 +45,8 @@ export function ComposeHints({
       key: 'missing-alt',
       body:
         missingAlt === 1 && attachments.length === 1
-          ? 'Your attachment is missing alt text.'
-          : 'One or more of your attachments are missing alt text.',
+          ? t({ id: 'compose.hints.missing-alt', defaultMessage: 'Your attachment is missing alt text.' })
+          : t({ id: 'compose.hints.missing-alt-many', defaultMessage: 'One or more of your attachments are missing alt text.' }),
     })
   }
 

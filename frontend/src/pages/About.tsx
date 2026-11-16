@@ -8,6 +8,7 @@ import type { mastodon } from '../masto.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { AccountRow } from '@/components/account-row.tsx'
 import { TextSkeleton } from '@/components/skeletons.tsx'
+import { t } from '@/i18n.tsx'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -47,10 +48,10 @@ export default function About() {
   const termsUrl = urls?.termsOfService
   // `enabled` is the instance's own switch; approval is a second gate behind it.
   const signup = !registrations?.enabled
-    ? 'Closed — new accounts are by invitation only.'
+    ? t({ id: 'eunha.about.closed_new_accounts_are_by_invitation', defaultMessage: 'Closed — new accounts are by invitation only.' })
     : registrations.approvalRequired
-      ? 'Open, and each new account is reviewed before it can sign in.'
-      : 'Open to anyone.'
+      ? t({ id: 'eunha.about.open_and_each_new_account_is', defaultMessage: 'Open, and each new account is reviewed before it can sign in.' })
+      : t({ id: 'eunha.about.open_to_anyone', defaultMessage: 'Open to anyone.' })
 
   return (
     <div className="page-frame">
@@ -60,12 +61,13 @@ export default function About() {
           <h1 className="text-2xl font-bold">{instance.title}</h1>
           <p className="text-foreground/90">{instance.description}</p>
           <p className="text-muted-foreground text-sm">
-            {instance.domain} · running eunha {__COMMIT_HASH__} ·{' '}
+            {instance.domain} ·{' '}
+            {t({ id: 'eunha.about.running_eunha', defaultMessage: 'running eunha {commit}' }, { commit: __COMMIT_HASH__ })} ·{' '}
             {instance.version}
           </p>
           {host && (
             <p className="text-muted-foreground text-sm">
-              Hosted by{' '}
+              {t({ id: 'eunha.about.hosted_by', defaultMessage: 'Hosted by' })}{' '}
               {host.url ? (
                 <a href={host.url} className="text-primary" rel="noopener" target="_blank">
                   {host.name}
@@ -77,12 +79,12 @@ export default function About() {
           )}
         </section>
 
-        <Section title="Signing up">
+        <Section title={t({ id: 'eunha.about.signing_up', defaultMessage: 'Signing up' })}>
           <p className="text-sm">{signup}</p>
         </Section>
 
         {contact?.account && (
-          <Section title="Run by">
+          <Section title={t({ id: 'eunha.about.run_by', defaultMessage: 'Run by' })}>
             <AccountRow account={contact.account} />
             {contact.email && (
               <a
@@ -96,16 +98,15 @@ export default function About() {
         )}
 
         {!!languages?.length && (
-          <Section title="Languages">
+          <Section title={t({ id: 'eunha.about.languages', defaultMessage: 'Languages' })}>
             <p className="text-sm">{languages.join(', ')}</p>
           </Section>
         )}
 
         {typeof activeMonth === 'number' && (
-          <Section title="People here">
+          <Section title={t({ id: 'eunha.about.people_here', defaultMessage: 'People here' })}>
             <p className="text-sm">
-              {activeMonth} {activeMonth === 1 ? 'person has' : 'people have'}{' '}
-              posted in the last month.
+              {t({ id: 'eunha.about.active_month', defaultMessage: '{count, plural, one {# person has} other {# people have}} posted in the last month.' }, { count: activeMonth })}
             </p>
           </Section>
         )}
@@ -114,7 +115,7 @@ export default function About() {
             list — so this is here for an instance that grows some, and stays
             invisible until then. */}
         {!!rules?.length && (
-          <Section title="Rules">
+          <Section title={t({ id: 'eunha.about.rules', defaultMessage: 'Rules' })}>
             <ol className="list-decimal space-y-1 pl-5 text-sm">
               {rules.map((rule) => (
                 <li key={rule.id}>{rule.text}</li>
@@ -128,38 +129,38 @@ export default function About() {
             Mastodon's own — while terms of service exist only once an
             administrator has published some, which `urls.terms_of_service`
             says. */}
-        <Section title="Policies">
+        <Section title={t({ id: 'eunha.about.policies', defaultMessage: 'Policies' })}>
           <div className="flex flex-col gap-1">
             <Link
               to="/privacy-policy"
               className="text-primary inline-flex items-center gap-2 text-sm font-medium"
             >
-              <Shield className="size-4" /> Privacy policy
+              <Shield className="size-4" /> {t({ id: 'footer.privacy_policy', defaultMessage: 'Privacy policy' })}
             </Link>
             {termsUrl && (
               <Link
                 to="/terms-of-service"
                 className="text-primary inline-flex items-center gap-2 text-sm font-medium"
               >
-                <FileText className="size-4" /> Terms of service
+                <FileText className="size-4" /> {t({ id: 'footer.terms_of_service', defaultMessage: 'Terms of service' })}
               </Link>
             )}
           </div>
         </Section>
 
-        <Section title="This software">
+        <Section title={t({ id: 'eunha.about.this_software', defaultMessage: 'This software' })}>
           <a
             href={sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary inline-flex items-center gap-2 text-sm font-medium"
           >
-            <Code className="size-4" /> Source code
+            <Code className="size-4" /> {t({ id: 'footer.source_code', defaultMessage: 'Source code' })}
           </a>
         </Section>
 
         {token && (
-          <Section title="Invites">
+          <Section title={t({ id: 'mastodon.admin.invites.title', defaultMessage: 'Invites' })}>
             <div className="flex flex-col gap-1">
               {/* Shown to every member: not everyone may create an invite, but
                   anyone can be handed one, and this is where they read it. */}
@@ -167,13 +168,13 @@ export default function About() {
                 to="/invites"
                 className="text-primary inline-flex items-center gap-2 text-sm font-medium"
               >
-                <Ticket className="size-4" /> Your invites
+                <Ticket className="size-4" /> {t({ id: 'eunha.about.your_invites', defaultMessage: 'Your invites' })}
               </Link>
               <Link
                 to="/invite-tree"
                 className="text-primary inline-flex items-center gap-2 text-sm font-medium"
               >
-                <Network className="size-4" /> View the invite tree
+                <Network className="size-4" /> {t({ id: 'eunha.about.view_the_invite_tree', defaultMessage: 'View the invite tree' })}
               </Link>
             </div>
           </Section>
