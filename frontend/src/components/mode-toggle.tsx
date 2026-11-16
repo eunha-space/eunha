@@ -1,4 +1,4 @@
-import { Laptop, Moon, Sun } from 'lucide-react'
+import { Laptop, Moon, Sun, SunMoon } from 'lucide-react'
 import { defineMessages, useIntl } from 'react-intl'
 
 import {
@@ -28,8 +28,8 @@ const isTheme = (value: unknown): value is Theme =>
 
 // Light, Dark and System as one pill, the chosen one filled, cornered like
 // the account menu rather than rounded off. Signed out, it
-// sits beside the sign-in button; signed in, `ThemeMenuPill` puts the same
-// pill in the account menu.
+// sits beside the sign-in button; signed in, `ThemeMenuRow` puts the same
+// choice in the account menu.
 export function ModeToggle() {
   const { theme, setTheme } = useTheme()
   const intl = useIntl()
@@ -62,31 +62,39 @@ export function ModeToggle() {
   )
 }
 
-// The same pill as menu items, words only so it fits the card-wide menu, so the account menu's arrow keys reach every
-// segment. Choosing one leaves the menu open, showing the new choice.
-export function ThemeMenuPill() {
+// The theme as a row of the account menu, shaped like the Language row
+// beside it: an icon and a label, with the three choices as a small icon
+// switch at its end. The choices are menu items, so the menu's arrow keys
+// reach them, and choosing one leaves the menu open, showing the new choice.
+export function ThemeMenuRow() {
   const { theme, setTheme } = useTheme()
   const intl = useIntl()
 
   return (
-    <DropdownMenuRadioGroup
-      aria-label={intl.formatMessage(messages.theme)}
-      value={theme}
-      onValueChange={(value) => {
-        if (isTheme(value)) setTheme(value)
-      }}
-      className="my-1 flex gap-0.5 rounded-lg border p-0.5"
-    >
-      {themes.map(({ value, label }) => (
-        <DropdownMenuRadioItem
-          key={value}
-          value={value}
-          closeOnClick={false}
-          className="min-w-0 flex-1 justify-center rounded-md! px-1.5! text-xs data-checked:bg-muted data-checked:font-medium [&>[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
-        >
-          {intl.formatMessage(label)}
-        </DropdownMenuRadioItem>
-      ))}
-    </DropdownMenuRadioGroup>
+    <div className="theme-menu-row flex items-center gap-2.5 text-sm">
+      <SunMoon className="size-4 shrink-0" aria-hidden />
+      <span className="flex-1">{intl.formatMessage(messages.theme)}</span>
+      <DropdownMenuRadioGroup
+        aria-label={intl.formatMessage(messages.theme)}
+        value={theme}
+        onValueChange={(value) => {
+          if (isTheme(value)) setTheme(value)
+        }}
+        className="flex gap-0.5 rounded-md border p-0.5"
+      >
+        {themes.map(({ value, label, icon: Icon }) => (
+          <DropdownMenuRadioItem
+            key={value}
+            value={value}
+            closeOnClick={false}
+            aria-label={intl.formatMessage(label)}
+            title={intl.formatMessage(label)}
+            className="text-muted-foreground data-checked:bg-muted data-checked:text-foreground h-6 w-7 justify-center rounded-sm! p-0! [&>[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
+          >
+            <Icon className="size-3.5" />
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+    </div>
   )
 }

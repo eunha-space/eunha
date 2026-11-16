@@ -2,8 +2,8 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 import {
   Bell,
-  Check,
   Bookmark,
+  CircleUser,
   Compass,
   Globe,
   Hash,
@@ -15,11 +15,11 @@ import {
   LogOut,
   MoreHorizontal,
   PenLine,
+  Plus,
   Search,
   Settings,
   Shield,
   Ticket,
-  User,
   UserPlus,
   Users,
 } from 'lucide-react'
@@ -34,11 +34,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
-import { ModeToggle, ThemeMenuPill } from '@/components/mode-toggle.tsx'
+import { ModeToggle, ThemeMenuRow } from '@/components/mode-toggle.tsx'
 import { LanguageButton, LanguageSubmenu } from '@/components/language-menu.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { useAvailableInvites } from '../hooks/use-available-invites.ts'
@@ -103,6 +105,8 @@ const messages = defineMessages({
   profile: { id: 'eunha.account_menu.profile', defaultMessage: 'Profile' },
   settings: { id: 'tabs_bar.settings', defaultMessage: 'Settings' },
   signOut: { id: 'navigation_bar.logout', defaultMessage: 'Sign out' },
+  signOutOf: { id: 'eunha.account_menu.sign_out_of', defaultMessage: 'Sign out @{acct}' },
+  switchAccount: { id: 'eunha.account_menu.switch_account', defaultMessage: 'Switch account' },
   signIn: { id: 'sign_in_banner.sign_in', defaultMessage: 'Sign in' },
   createAccount: { id: 'sign_in_banner.create_account', defaultMessage: 'Create account' },
 })
@@ -303,6 +307,31 @@ function ServerMark({
   )
 }
 
+// The other accounts saved in this browser, to switch to. The current one is
+// left out: the card the menu grows from already shows it.
+function OtherAccounts({ current }: { current: string }) {
+  const others = getSavedAccounts().filter((saved) => saved.account.id !== current)
+  if (others.length === 0) return null
+  return (
+    <DropdownMenuGroup>
+      <DropdownMenuLabel>
+        <FormattedMessage {...messages.switchAccount} />
+      </DropdownMenuLabel>
+      {others.map(({ account }) => (
+        <DropdownMenuItem key={account.id} onClick={() => switchAccount(account.id)}>
+          <Avatar className="size-5" aria-hidden>
+            <AvatarImage src={account.avatarStatic ?? account.avatar} alt="" />
+            <AvatarFallback className="text-[10px]">
+              {account.displayName.slice(0, 1).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <span className="truncate">@{account.acct}</span>
+        </DropdownMenuItem>
+      ))}
+    </DropdownMenuGroup>
+  )
+}
+
 // Everything about the signed-in person, in one card at the foot of the rail:
 // who you are, and the menu that used to be four separate controls.
 function AccountCard({
@@ -365,28 +394,21 @@ function AccountCard({
           sideOffset={-1}
           className="account-menu"
         >
-          {getSavedAccounts().map((saved) => (
-            <DropdownMenuItem
-              key={saved.account.id}
-              disabled={saved.account.id === account.id}
-              onClick={() => switchAccount(saved.account.id)}
-            >
-              {saved.account.id === account.id ? <Check /> : <User />}
-              @{saved.account.acct}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem onClick={() => beginLogin(true).catch(() => toast.error(intl.formatMessage(messages.signInFailed)))}>
-            <UserPlus /> <FormattedMessage {...messages.addAccount} />
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem render={<Link to={`/@${account.acct}`} />}>
-            <User /> <FormattedMessage {...messages.profile} />
+            <CircleUser /> <FormattedMessage {...messages.profile} />
           </DropdownMenuItem>
           <DropdownMenuItem render={<Link to="/settings" />}>
             <Settings /> <FormattedMessage {...messages.settings} />
           </DropdownMenuItem>
-          <ThemeMenuPill />
+          <DropdownMenuSeparator />
+          <ThemeMenuRow />
           <LanguageSubmenu />
+          <DropdownMenuSeparator />
+          <OtherAccounts current={account.id} />
+          <DropdownMenuItem onClick={() => beginLogin(true).catch(() => toast.error(intl.formatMessage(messages.signInFailed)))}>
+            <Plus /> <FormattedMessage {...messages.addAccount} />
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
             onClick={async () => {
@@ -395,7 +417,10 @@ function AccountCard({
               location.assign('/')
             }}
           >
-            <LogOut /> <FormattedMessage {...messages.signOut} />
+            <LogOut />
+            <span className="truncate">
+              <FormattedMessage {...messages.signOutOf} values={{ acct: account.acct }} />
+            </span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

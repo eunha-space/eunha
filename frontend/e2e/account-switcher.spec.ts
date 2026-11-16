@@ -34,10 +34,13 @@ test('switching resets the profile and sign-out removes only the selected accoun
   await expect.poll(() => page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBe('2')
   await expect(page.getByText('Bob', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Account menu' }).click()
+  // The menu offers only the other account, and names the one it signs out.
+  await expect(page.getByRole('menuitem', { name: '@alice', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '@bob', exact: true })).toHaveCount(0)
   // Signing out reloads the page once the server has signed the browser out.
   await Promise.all([
     page.waitForEvent('load'),
-    page.getByRole('menuitem', { name: 'Sign out', exact: true }).click(),
+    page.getByRole('menuitem', { name: 'Sign out @bob', exact: true }).click(),
   ])
   await expect.poll(() => page.evaluate(() => localStorage.getItem('eunha:active-account'))).toBe('1')
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('eunha:accounts') ?? '[]').length)).toBe(1)

@@ -444,6 +444,30 @@
   animation: account-menu-retract 140ms ease-in forwards;
 }
 
+/* The menu's rows get room to breathe: the stock 28px rows suit a dense
+   context menu, not the one a person opens to choose who they are. */
+.account-menu {
+  padding: 0.375rem;
+}
+
+.account-menu [data-slot='dropdown-menu-item'],
+.account-menu [data-slot='dropdown-menu-sub-trigger'] {
+  gap: 0.625rem;
+  padding: 0.5rem;
+}
+
+.account-menu .theme-menu-row {
+  padding: 0.1875rem 0.1875rem 0.1875rem 0.5rem;
+}
+
+.account-menu [data-slot='dropdown-menu-label'] {
+  padding: 0.375rem 0.5rem 0.125rem;
+}
+
+.account-menu [data-slot='dropdown-menu-separator'] {
+  margin-block: 0.375rem;
+}
+
 @keyframes account-menu-extend {
   from {
     clip-path: inset(100% 0 0 0);

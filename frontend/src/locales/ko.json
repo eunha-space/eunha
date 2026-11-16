@@ -25,6 +25,8 @@
   "eunha.account_menu.label": "계정 메뉴",
   "eunha.account_menu.profile": "프로필",
   "eunha.account_menu.sign_in_failed": "로그인을 시작할 수 없습니다",
+  "eunha.account_menu.sign_out_of": "@{acct} 로그아웃",
+  "eunha.account_menu.switch_account": "계정 전환",
   "eunha.admin.account_action_dialog.choose_what_happens_to_this_account": "이 계정에 어떤 조치를 할지 고르세요.",
   "eunha.admin.account_action_dialog.custom_warning": "직접 작성한 경고",
   "eunha.admin.account_action_dialog.done_for": "{label}: @{acct} 님에게 적용했습니다.",

@@ -286,20 +286,22 @@ instead (see *divergences.toml*).
 Multiple accounts in the web client
 -----------------------------------
 
-The account menu in the desktop sidebar and mobile drawer lists accounts signed
-in on this instance in this browser. Choose **Add account** to sign in through
-OAuth without removing the current account, then choose an account in the menu
-to switch to it. It first signs the browser out of the account pages, whose
-session would otherwise only be offered for authorization again, and continues
-to the authorization page with `force_login=true`, which asks for the other
-account's email and password. Signing out there ends only that cookie session;
-the tokens saved in the switcher stay. Signing in again to the same
-account replaces its saved token. Only completed OAuth logins are saved in the
-switcher. If a password reset revokes the saved token, search offers **Sign in
-again**. Completing OAuth from there returns to the same search. Legacy
-`eunha:token` logins are no longer read or migrated; sign in again. Tokens live
-only in `eunha:accounts`, and `eunha:active-account` selects the account used
-for API requests.
+The account menu in the desktop sidebar and mobile drawer lists, under
+**Switch account**, the other accounts signed in on this instance in this
+browser. Choose **Add account** to sign in through OAuth without removing the
+current account, then choose an account in the menu to switch to it.
+Adding one first signs the browser out of the account pages, whose session
+would otherwise only be offered for authorization again, and continues to the
+authorization page with `force_login=true`, which asks for the other account's
+email and password. Signing out there ends only that cookie session; the tokens
+saved in the switcher stay. Signing in again to the same account replaces its
+saved token. Only completed OAuth logins are saved in the switcher. If a
+password reset revokes the saved token, search offers **Sign in again**.
+Completing OAuth from there returns to the same search. Legacy `eunha:token`
+logins are no longer read or migrated; sign in again. Tokens live only in
+`eunha:accounts`, and `eunha:active-account` selects the account used for API
+requests. **Sign out** in the menu names the current account, and signs out
+only that one.
 
 Accounts and their OAuth tokens are kept in this browser's local storage, scoped
 to the instance's origin. Switching reloads the home page and clears the

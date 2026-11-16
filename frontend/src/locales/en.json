@@ -167,6 +167,8 @@
   "eunha.account_menu.label": "Account menu",
   "eunha.account_menu.profile": "Profile",
   "eunha.account_menu.sign_in_failed": "Could not start sign-in",
+  "eunha.account_menu.sign_out_of": "Sign out @{acct}",
+  "eunha.account_menu.switch_account": "Switch account",
   "eunha.admin.account_action_dialog.choose_what_happens_to_this_account": "Choose what happens to this account.",
   "eunha.admin.account_action_dialog.custom_warning": "Custom warning",
   "eunha.admin.account_action_dialog.done_for": "{label}: done for @{acct}.",
