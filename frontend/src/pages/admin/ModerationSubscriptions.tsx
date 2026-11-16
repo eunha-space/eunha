@@ -35,12 +35,6 @@ import { DetailSkeleton, RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import { FormattedMessage } from 'react-intl'
 
-const TABS = [
-  { to: '/admin/moderation_subscriptions', get label() { return t({ id: 'eunha.admin.moderation_subscriptions.subscriptions', defaultMessage: 'Subscriptions' }) } },
-  { to: '/admin/moderation_suggestions', get label() { return t({ id: 'eunha.admin.moderation_subscriptions.suggestions', defaultMessage: 'Suggestions' }) } },
-  { to: '/admin/moderation_subscriptions/logs', get label() { return t({ id: 'eunha.admin.moderation_subscriptions.logs', defaultMessage: 'Logs' }) } },
-]
-
 /** `admin.moderation_subscriptions.list_actions`. */
 const LIST_ACTIONS: Record<ListAction | 'default', string> = {
   get default() { return t({ id: 'eunha.admin.moderation_subscriptions.mixed_allow_deny', defaultMessage: 'Mixed (Allow & Deny)' }) },
@@ -231,7 +225,6 @@ export function ModerationSubscriptions() {
     <AdminLayout
       title={t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscriptions', defaultMessage: 'Moderation subscriptions' })}
       permission="manage_federation"
-      sub={TABS}
       actions={
         <Button size="sm" onClick={() => setAdding((open) => !open)}>
           {t({ id: 'eunha.admin.moderation_subscriptions.add_subscription', defaultMessage: 'Add subscription' })}
@@ -307,7 +300,6 @@ export function ModerationSubscriptionDetail() {
     <AdminLayout
       title={subscription ? t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscription', defaultMessage: 'Moderation subscription: {name}' }, { name: subscription.name }) : t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscription_2', defaultMessage: 'Moderation subscription' })}
       permission="manage_federation"
-      sub={TABS}
       actions={subscription && data && (
         <>
           <Button size="sm" variant="outline" onClick={() => setEditing((open) => !open)}>
@@ -396,7 +388,7 @@ export function ModerationSubscriptionLogs() {
   }, [token, page])
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscriptions_logs', defaultMessage: 'Moderation subscriptions logs' })} permission="manage_federation" sub={TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscriptions_logs', defaultMessage: 'Moderation subscriptions logs' })} permission="manage_federation">
       <AdminError error={error} />
       {logs === null && !error && <RowsSkeleton count={6} />}
       {logs?.length === 0 && <p className="text-muted-foreground text-sm">{t({ id: 'mastodon.admin.action_logs.empty', defaultMessage: 'No logs found.' })}</p>}
@@ -561,7 +553,7 @@ export function ModerationSuggestions() {
   useEffect(load, [load])
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.moderation_subscriptions.moderation_suggestions', defaultMessage: 'Moderation suggestions' })} permission="manage_federation" sub={TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.moderation_subscriptions.moderation_suggestions', defaultMessage: 'Moderation suggestions' })} permission="manage_federation">
       <AdminError error={error} />
       <p className="text-muted-foreground text-sm">
         {t({ id: 'eunha.admin.moderation_subscriptions.below_are_suggestions_from_your_moderation', defaultMessage: 'Below are suggestions from your moderation subscriptions, ordered by priority.' })}

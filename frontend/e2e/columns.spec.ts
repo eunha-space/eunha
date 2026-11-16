@@ -75,7 +75,7 @@ test('the advanced layout is opt-in and remembers its panes', async ({ page }) =
   await page.goto('/')
   await expect(page.locator('.advanced-pane')).toHaveCount(0)
 
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
 
   await page.goto('/')
@@ -98,7 +98,7 @@ test('the advanced layout opens on timeline, notifications and one more', async 
   page,
 }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -119,7 +119,7 @@ test('the advanced layout opens on timeline, notifications and one more', async 
 // 200px.
 test('the rail does not overlap the first pane on a wide screen', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
 
   for (const width of [1280, 1600, 2200]) {
@@ -138,7 +138,7 @@ test('the rail does not overlap the first pane on a wide screen', async ({ page 
 // fits, pinned once it does not.
 test('the rail and panes are centred together while they fit', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
 
   const edges = async () => {
@@ -187,7 +187,7 @@ test('the rail and panes are centred together while they fit', async ({ page }) 
 // last pane's close button goes dead rather than emptying the frame.
 test('the last pane cannot be closed', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -205,7 +205,7 @@ test('the last pane cannot be closed', async ({ page }) => {
 // pointer says so.
 test('a column can be dragged into a new place, and it sticks', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -233,7 +233,7 @@ test('a column can be dragged into a new place, and it sticks', async ({ page })
 // pressing Close is not a way to start moving a column.
 test('the whole bar is the grip, except the close button', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -262,7 +262,7 @@ test('the whole bar is the grip, except the close button', async ({ page }) => {
 // the grip looks like it stops at the padding around the words.
 test('the whole bar shows a cursor that says it can be dragged', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -292,7 +292,7 @@ test('the title still scrolls its column to the top', async ({ page }) => {
       ;(window as never as { __scrolled: number }).__scrolled++
     }
   })
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -314,7 +314,7 @@ test('the title still scrolls its column to the top', async ({ page }) => {
 // lasts — so it is worth keeping asked of whatever does the dragging.
 test('creeping across a boundary settles on one order', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -339,7 +339,7 @@ test('creeping across a boundary settles on one order', async ({ page }) => {
 // drag lasted.
 test('the column itself is what is dragged', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -362,7 +362,7 @@ test('the column itself is what is dragged', async ({ page }) => {
 // from one frame to the next and the reader has to work out what changed.
 test('columns slide into their new places', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -393,7 +393,7 @@ test('columns slide into their new places', async ({ page }) => {
 // is what you get, whether or not you release over the row.
 test('escape abandons a drag; letting go keeps what is shown', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 
@@ -428,7 +428,7 @@ test('escape abandons a drag; letting go keeps what is shown', async ({ page }) 
 // than one of our own.
 test('a column can be moved with the keyboard', async ({ page }) => {
   await signedIn(page)
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   await page.getByRole('switch').first().click()
   await page.goto('/')
 

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeftRight, Ban, KeyRound } from 'lucide-react'
+import { Ban, Filter, KeyRound, Layers } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -18,10 +18,10 @@ import {
 } from '../api.ts'
 import { BrowserPushSettings } from '@/components/browser-push-settings.tsx'
 import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
-import { beginLogin, getToken, logout } from '../auth.ts'
+import { logout } from '../auth.ts'
 import { isAdvancedLayout, setAdvancedLayout } from '../lib/panes.ts'
 import { clearMe, getMeAccount, loadMe } from '../me.ts'
-import { TopBar } from '@/components/top-bar.tsx'
+import { SettingsLayout } from '@/components/settings-layout.tsx'
 import { EmailSettings } from '@/components/email-settings.tsx'
 import { MailPreferences } from '@/components/mail-preferences.tsx'
 import { PrivacySettings } from '@/components/privacy-settings.tsx'
@@ -335,133 +335,176 @@ function quotePolicyOf(me: { source: object }): QuotePolicy {
   return policy === 'followers' || policy === 'nobody' ? policy : 'public'
 }
 
-export default function Settings() {
-  const { palette, setPalette } = useTheme()
-  const token = getToken()
-  const [advanced, setAdvanced] = useState(() => isAdvancedLayout())
-  const me = getMeAccount()
-
+function PasswordSettings() {
+  // Password changes still live on the server-rendered account pages.
   return (
-    <div className="page-frame">
-      <TopBar />
-      <h1 className="mb-1 text-lg font-bold">{t({ id: 'tabs_bar.settings', defaultMessage: 'Settings' })}</h1>
-      <p className="text-muted-foreground mb-4 text-sm">
-        {me ? t({ id: 'eunha.settings.signed_in_as', defaultMessage: 'Signed in as @{acct}' }, { acct: me.acct }) : t({ id: 'eunha.settings.your_account', defaultMessage: 'Your account' })}
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">{t({ id: 'mastodon.activerecord.attributes.user.password', defaultMessage: 'Password' })}</h2>
+      <p className="text-muted-foreground text-sm">
+        {t({ id: 'eunha.settings.change_your_password_on_the_account', defaultMessage: 'Change your password on the account page.' })}
       </p>
+      <Button variant="secondary" size="sm" render={<a href="/account/password" />}>
+        <KeyRound /> {t({ id: 'mastodon.devise.mailer.reset_password_instructions.action', defaultMessage: 'Change password' })}
+      </Button>
+    </section>
+  )
+}
 
-      {!token ? (
-        <div className="space-y-2">
-          <p className="text-muted-foreground text-sm">
-            {t({ id: 'eunha.settings.sign_in_to_manage_your_account', defaultMessage: 'Sign in to manage your account.' })}
-          </p>
-          <Button size="sm" onClick={() => beginLogin()}>
-            {t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Password changes still live on the server-rendered account pages. */}
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'mastodon.activerecord.attributes.user.password', defaultMessage: 'Password' })}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t({ id: 'eunha.settings.change_your_password_on_the_account', defaultMessage: 'Change your password on the account page.' })}
-            </p>
-            <Button variant="secondary" size="sm" render={<a href="/account/password" />}>
-              <KeyRound /> {t({ id: 'mastodon.devise.mailer.reset_password_instructions.action', defaultMessage: 'Change password' })}
-            </Button>
-          </section>
+function AppearanceSettings() {
+  const { palette, setPalette } = useTheme()
+  return (
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">{t({ id: 'eunha.settings.color_palette', defaultMessage: 'Color palette' })}</h2>
+      <Select
+        items={PALETTES}
+        value={palette}
+        onValueChange={(value) => { if (value) setPalette(value as Palette) }}
+      >
+        <SelectTrigger aria-label={t({ id: 'eunha.settings.color_palette', defaultMessage: 'Color palette' })}><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {Object.entries(PALETTES).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </section>
+  )
+}
 
-          <EmailSettings token={token} />
+function LayoutSettings() {
+  const [advanced, setAdvanced] = useState(() => isAdvancedLayout())
+  return (
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">{t({ id: 'eunha.settings.layout', defaultMessage: 'Layout' })}</h2>
+      <p className="text-muted-foreground text-sm">
+        {t({ id: 'eunha.settings.show_several_timelines_side_by_side', defaultMessage: 'Show several timelines side by side instead of one column. Stored in this browser, and only used on a wide one — a narrow screen stays on the single column whatever this says.' })}
+      </p>
+      <Label className="text-sm font-normal">
+        <Switch
+          checked={advanced}
+          onCheckedChange={(on) => {
+            setAdvancedLayout(on)
+            setAdvanced(on)
+          }}
+        />
+        {t({ id: 'eunha.settings.advanced_layout', defaultMessage: 'Advanced layout' })}
+      </Label>
+    </section>
+  )
+}
 
-          <TwoFactorSettings token={token} />
+/** A setting that is a page of its own elsewhere: what it is for, and the way there. */
+function LinkSection({ title, description, to, icon, action }: {
+  title: string
+  description: string
+  to: string
+  icon: ReactNode
+  action: string
+}) {
+  return (
+    <section className="space-y-2 rounded-lg border p-4">
+      <h2 className="font-semibold">{title}</h2>
+      <p className="text-muted-foreground text-sm">{description}</p>
+      <Button variant="secondary" size="sm" render={<Link to={to} />}>
+        {icon} {action}
+      </Button>
+    </section>
+  )
+}
 
-          <SessionsSettings token={token} />
+export type SettingsPage =
+  | 'account'
+  | 'privacy'
+  | 'appearance'
+  | 'posting_defaults'
+  | 'notifications'
+  | 'statuses_cleanup'
 
-          <PrivacySettings token={token} />
+/**
+ * One of the settings pages, grouped as Mastodon's settings navigation groups
+ * them, each opened from the list at `/settings`; import and export is
+ * `ImportExport`, in the same frame.
+ */
+const PATHS: Record<SettingsPage, string> = {
+  account: '/settings/account',
+  privacy: '/settings/privacy',
+  appearance: '/settings/preferences/appearance',
+  posting_defaults: '/settings/preferences/posting_defaults',
+  notifications: '/settings/preferences/notifications',
+  statuses_cleanup: '/settings/statuses_cleanup',
+}
 
-          <StatusesCleanupSettings token={token} />
-
-          <MailPreferences token={token} />
-
-          <BrowserPushSettings token={token} />
-
-          <TimelinePreferences token={token} />
-
-          <PostingLanguageSettings token={token} />
-
-          <QuotePolicySettings token={token} />
-
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'navigation_bar.collections', defaultMessage: 'Collections' })}</h2>
-            <Button variant="outline" size="sm" render={<Link to="/collections" />}>{t({ id: 'eunha.settings.manage_collections', defaultMessage: 'Manage collections' })}</Button>
-          </section>
-
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'eunha.settings.content_filters', defaultMessage: 'Content filters' })}</h2>
-            <Button variant="outline" size="sm" render={<Link to="/filters" />}>{t({ id: 'eunha.settings.manage_filters', defaultMessage: 'Manage filters' })}</Button>
-          </section>
-
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'mastodon.settings.appearance', defaultMessage: 'Appearance' })}</h2>
-            <Label htmlFor="color-palette">{t({ id: 'eunha.settings.color_palette', defaultMessage: 'Color palette' })}</Label>
-            <Select
-              items={PALETTES}
-              value={palette}
-              onValueChange={(value) => { if (value) setPalette(value as Palette) }}
-            >
-              <SelectTrigger id="color-palette"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {Object.entries(PALETTES).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>{label}</SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </section>
-
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'eunha.settings.layout', defaultMessage: 'Layout' })}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t({ id: 'eunha.settings.show_several_timelines_side_by_side', defaultMessage: 'Show several timelines side by side instead of one column. Stored in this browser, and only used on a wide one — a narrow screen stays on the single column whatever this says.' })}
-            </p>
-            <Label className="text-sm font-normal">
-              <Switch
-                checked={advanced}
-                onCheckedChange={(on) => {
-                  setAdvancedLayout(on)
-                  setAdvanced(on)
-                }}
-              />
-              {t({ id: 'eunha.settings.advanced_layout', defaultMessage: 'Advanced layout' })}
-            </Label>
-          </section>
-
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'eunha.settings.blocked_and_muted', defaultMessage: 'Blocked and muted' })}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t({ id: 'eunha.settings.review_the_accounts_you_have_blocked', defaultMessage: 'Review the accounts you have blocked or muted, and undo either.' })}
-            </p>
-            <Button variant="secondary" size="sm" render={<Link to="/blocked" />}>
-              <Ban /> {t({ id: 'eunha.settings.blocked_and_muted', defaultMessage: 'Blocked and muted' })}
-            </Button>
-          </section>
-
-          <section className="space-y-2 rounded-lg border p-4">
-            <h2 className="font-semibold">{t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' })}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t({ id: 'eunha.settings.download_your_follows_lists_blocks_and', defaultMessage: 'Download your follows, lists, blocks and the rest, or an archive of your posts and media; bring lists in from another server.' })}
-            </p>
-            <Button variant="secondary" size="sm" render={<Link to="/settings/export" />}>
-              <ArrowLeftRight /> {t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' })}
-            </Button>
-          </section>
-
-          <EmailSubscriptions token={token} />
-
-          <DeleteAccount token={token} />
-        </div>
-      )}
-    </div>
+export default function Settings({ page }: { page: SettingsPage }) {
+  return (
+    <SettingsLayout to={PATHS[page]}>
+      {(token) => {
+        switch (page) {
+          case 'account':
+            return (
+              <>
+                <EmailSettings token={token} />
+                <PasswordSettings />
+                <TwoFactorSettings token={token} />
+                <SessionsSettings token={token} />
+                <DeleteAccount token={token} />
+              </>
+            )
+          case 'privacy':
+            return (
+              <>
+                <PrivacySettings token={token} />
+                <EmailSubscriptions token={token} />
+                <LinkSection
+                  title={t({ id: 'eunha.settings.blocked_and_muted', defaultMessage: 'Blocked and muted' })}
+                  description={t({ id: 'eunha.settings.review_the_accounts_you_have_blocked', defaultMessage: 'Review the accounts you have blocked or muted, and undo either.' })}
+                  to="/blocked"
+                  icon={<Ban />}
+                  action={t({ id: 'eunha.settings.blocked_and_muted', defaultMessage: 'Blocked and muted' })}
+                />
+                <LinkSection
+                  title={t({ id: 'eunha.settings.content_filters', defaultMessage: 'Content filters' })}
+                  description={t({ id: 'eunha.settings.hide_posts_that_match_words_you', defaultMessage: 'Hide or warn on posts that contain words or phrases you choose.' })}
+                  to="/filters"
+                  icon={<Filter />}
+                  action={t({ id: 'eunha.settings.manage_filters', defaultMessage: 'Manage filters' })}
+                />
+              </>
+            )
+          case 'appearance':
+            return (
+              <>
+                <AppearanceSettings />
+                <LayoutSettings />
+                <TimelinePreferences token={token} />
+              </>
+            )
+          case 'posting_defaults':
+            return (
+              <>
+                <PostingLanguageSettings token={token} />
+                <QuotePolicySettings token={token} />
+                <LinkSection
+                  title={t({ id: 'navigation_bar.collections', defaultMessage: 'Collections' })}
+                  description={t({ id: 'eunha.settings.feature_accounts_you_recommend_on_your', defaultMessage: 'Feature groups of accounts you recommend on your profile.' })}
+                  to="/collections"
+                  icon={<Layers />}
+                  action={t({ id: 'eunha.settings.manage_collections', defaultMessage: 'Manage collections' })}
+                />
+              </>
+            )
+          case 'notifications':
+            return (
+              <>
+                <MailPreferences token={token} />
+                <BrowserPushSettings token={token} />
+              </>
+            )
+          case 'statuses_cleanup':
+            return <StatusesCleanupSettings token={token} />
+        }
+      }}
+    </SettingsLayout>
   )
 }

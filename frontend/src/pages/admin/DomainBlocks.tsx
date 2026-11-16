@@ -34,11 +34,6 @@ import { Textarea } from '@/components/ui/textarea.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
-export const FEDERATION_TABS = [
-  { to: '/admin/domain_blocks', get label() { return t({ id: 'mastodon.exports.domain_blocks', defaultMessage: 'Domain blocks' }) } },
-  { to: '/admin/domain_allows', get label() { return t({ id: 'eunha.admin.domain_blocks.domain_allows', defaultMessage: 'Domain allows' }) } },
-]
-
 // Mastodon's labels for `DomainBlock#severity`, and what each does.
 const SEVERITIES: Record<DomainBlockSeverity, string> = {
   get silence() { return t({ id: 'mastodon.admin.domain_blocks.new.severity.silence', defaultMessage: 'Limit' }) },
@@ -271,7 +266,6 @@ export default function DomainBlocks() {
     <AdminLayout
       title={t({ id: 'mastodon.exports.domain_blocks', defaultMessage: 'Domain blocks' })}
       permission="manage_federation"
-      sub={FEDERATION_TABS}
       actions={
         <Button size="sm" onClick={() => setDialog({ editing: null })}>
           {t({ id: 'eunha.admin.domain_blocks.add_domain_block', defaultMessage: 'Add domain block' })}

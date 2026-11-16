@@ -36,15 +36,9 @@ import { FormattedMessage } from 'react-intl'
 // Mastodon's admin pages for terms of service, at its own paths, on the REST
 // endpoints eunha serves for its forms. All of them are `manage_settings`'.
 
-const TABS = [
-  { to: '/admin/terms_of_service', get label() { return t({ id: 'mastodon.admin.terms_of_service.current', defaultMessage: 'Current' }) }, end: true },
-  { to: '/admin/terms_of_service/draft', get label() { return t({ id: 'mastodon.admin.terms_of_service.draft', defaultMessage: 'Draft' }) } },
-  { to: '/admin/terms_of_service/history', get label() { return t({ id: 'mastodon.admin.terms_of_service.history', defaultMessage: 'History' }) } },
-]
-
 function Layout({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
-    <AdminLayout title={title} permission="manage_settings" sub={TABS} actions={actions}>
+    <AdminLayout title={title} permission="manage_settings" actions={actions}>
       {children}
     </AdminLayout>
   )

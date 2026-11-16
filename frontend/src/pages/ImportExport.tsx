@@ -16,8 +16,7 @@ import {
   type ExportSummary,
   type ImportType,
 } from '../eunha-api.ts'
-import { beginLogin, getToken } from '../auth.ts'
-import { TopBar } from '@/components/top-bar.tsx'
+import { SettingsLayout } from '@/components/settings-layout.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
@@ -528,24 +527,14 @@ function Imports({ token }: { token: string }) {
 
 /** Mastodon's "Import and export" settings: `/settings/export` and `/settings/imports`. */
 export default function ImportExport() {
-  const token = getToken()
   return (
-    <div className="page-frame">
-      <TopBar />
-      <h1 className="mb-4 text-lg font-bold">{t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' })}</h1>
-      {!token ? (
-        <div className="space-y-2">
-          <p className="text-muted-foreground text-sm">{t({ id: 'eunha.import_export.sign_in_to_manage_your_data', defaultMessage: 'Sign in to manage your data.' })}</p>
-          <Button size="sm" onClick={() => beginLogin()}>
-            {t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
+    <SettingsLayout to="/settings/export">
+      {(token) => (
+        <>
           <Exports token={token} />
           <Imports token={token} />
-        </div>
+        </>
       )}
-    </div>
+    </SettingsLayout>
   )
 }

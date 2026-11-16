@@ -42,7 +42,7 @@ test('deleting an account takes the username, a password and a confirmation', as
     await route.fulfill({ status: 200, body: '' })
   })
 
-  await page.goto('/settings')
+  await page.goto('/settings/account')
   await expect(
     page.getByRole('heading', { name: 'Delete account' }),
   ).toBeVisible()
@@ -111,7 +111,7 @@ test('automated post deletion saves as one form, and can be turned off', async (
     await route.fulfill({ json: policy })
   })
 
-  await page.goto('/settings')
+  await page.goto('/settings/statuses_cleanup')
   const section = page.locator('section', {
     has: page.getByRole('heading', { name: 'Automated post deletion' }),
   })
@@ -126,4 +126,25 @@ test('automated post deletion saves as one form, and can be turned off', async (
   await expect.poll(() => saves.length).toBe(1)
   expect(saves[0].enabled).toBe(false)
   expect(saves[0].min_favs).toBe(3)
+})
+
+// `/settings`, which emails link, lists the settings pages; each opens on its
+// own, with the way back.
+test('settings lists its pages, each with the way back', async ({ page }) => {
+  await signedIn(page)
+
+  await page.goto('/settings')
+  const pages = page.getByRole('navigation', { name: 'Settings pages' })
+  await expect(pages.getByRole('link')).toHaveCount(7)
+  await expect(page.getByRole('heading', { name: 'Delete account' })).toHaveCount(0)
+
+  await pages.getByRole('link', { name: /Appearance/ }).click()
+  await expect(page).toHaveURL(/\/settings\/preferences\/appearance$/)
+  await expect(page.getByRole('heading', { level: 1, name: 'Appearance' })).toBeVisible()
+  await expect(page.getByRole('switch', { name: 'Advanced layout' })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Settings', exact: true }).click()
+  await expect(page).toHaveURL(/\/settings$/)
+  await pages.getByRole('link', { name: /Import and export/ }).click()
+  await expect(page).toHaveURL(/\/settings\/export$/)
 })

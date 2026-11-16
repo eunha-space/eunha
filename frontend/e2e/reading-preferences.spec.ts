@@ -116,7 +116,7 @@ test('a saved preference is kept for the account and used on the next page', asy
     } })
   })
   await page.route('**/api/eunha/v1/sessions', r => r.fulfill({ json: [] }))
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/appearance')
   const response = page.waitForResponse(
     r => r.url().endsWith('/api/eunha/v1/preferences') && r.request().method() === 'PATCH',
   )

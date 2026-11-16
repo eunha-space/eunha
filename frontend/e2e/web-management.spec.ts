@@ -23,7 +23,7 @@ test('default post language is saved to the account credentials', async ({ page 
     expect(route.request().postData()).toMatch(/name="source\[language\]"\r\n\r\nko/)
     return route.fulfill({ json: { source: { language: 'ko' } } })
   })
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/posting_defaults')
   const picker = page.getByRole('button', { name: 'Default post language' })
   await expect(picker).toHaveText('English')
   await picker.click()
@@ -46,7 +46,7 @@ test('who can quote is saved to the account credentials and starts the composer'
       source: { privacy: 'unlisted', language: 'en', quote_policy: saved },
     } })
   })
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/posting_defaults')
   const picker = page.getByRole('combobox', { name: 'Who can quote' })
   await expect(picker).toContainText('Anyone')
   // A quiet public default carries Mastodon's hint.
@@ -68,7 +68,7 @@ test('who can quote is disabled while posts default to followers-only', async ({
       source: { privacy: 'private', language: 'en', quote_policy: 'nobody' },
     } }),
   )
-  await page.goto('/settings')
+  await page.goto('/settings/preferences/posting_defaults')
   await expect(page.getByRole('combobox', { name: 'Who can quote' })).toBeDisabled()
   await expect(page.getByText("Followers-only posts authored on Mastodon can't be quoted by others.")).toBeVisible()
 })

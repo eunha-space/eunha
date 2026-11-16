@@ -29,12 +29,6 @@ import { defineMessage } from 'react-intl'
 
 const TITLE = defineMessage({ id: 'mastodon.admin.fasp.providers.title', defaultMessage: 'Fediverse Auxiliary Service Providers' })
 
-/** `admin/fasp/shared/_links`: providers, and the debug callbacks. */
-const SUB = [
-  { to: '/admin/fasp/providers', get label() { return t({ id: 'mastodon.admin.fasp.providers.providers', defaultMessage: 'Providers' }) } },
-  { to: '/admin/fasp/debug/callbacks', get label() { return t({ id: 'eunha.admin.fasp.debug_callbacks', defaultMessage: 'Debug callbacks' }) } },
-]
-
 function capabilityEnabled(provider: AdminFaspProvider, id: string) {
   return provider.confirmed && provider.capabilities.some((c) => c.id === id && c.enabled)
 }
@@ -67,7 +61,7 @@ export function FaspProviders() {
   }
 
   return (
-    <AdminLayout title={t(TITLE)} permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t(TITLE)} permission="manage_federation">
       <p className="text-muted-foreground mb-3 text-sm">
         {t({ id: 'eunha.admin.fasp.providers_register_themselves_with_this_server', defaultMessage: 'Providers register themselves with this server. Finish a registration only if you started it, and only after comparing its name and key fingerprint with what the provider shows.' })}
       </p>
@@ -177,7 +171,7 @@ export function FaspRegistration() {
   }
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.fasp.confirm_fasp_registration', defaultMessage: 'Confirm FASP registration' })} permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.fasp.confirm_fasp_registration', defaultMessage: 'Confirm FASP registration' })} permission="manage_federation">
       <AdminError error={error} />
       {provider && (
         <div className="space-y-4">
@@ -242,7 +236,7 @@ export function FaspProviderEdit() {
   }
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.fasp.edit_provider', defaultMessage: 'Edit provider' })} permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.fasp.edit_provider', defaultMessage: 'Edit provider' })} permission="manage_federation">
       <AdminError error={error} />
       {provider && capabilities && (
         <div className="space-y-4">
@@ -299,7 +293,7 @@ export function FaspDebugCallbacks() {
   useEffect(load, [token])
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.fasp.debug_callbacks', defaultMessage: 'Debug callbacks' })} permission="manage_federation" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.fasp.debug_callbacks', defaultMessage: 'Debug callbacks' })} permission="manage_federation">
       <AdminError error={error} />
       {callbacks === null && !error && <RowsSkeleton action />}
       {callbacks?.length === 0 && (

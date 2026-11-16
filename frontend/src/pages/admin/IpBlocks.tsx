@@ -31,13 +31,6 @@ import { Label } from '@/components/ui/label.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
-export const BLOCK_TABS = [
-  { to: '/admin/ip_blocks', get label() { return t({ id: 'mastodon.admin.ip_blocks.title', defaultMessage: 'IP rules' }) } },
-  { to: '/admin/email_domain_blocks', get label() { return t({ id: 'eunha.admin.ip_blocks.email_domains', defaultMessage: 'Email domains' }) } },
-  { to: '/admin/canonical_email_blocks', get label() { return t({ id: 'eunha.admin.ip_blocks.email_addresses', defaultMessage: 'Email addresses' }) } },
-  { to: '/admin/username_blocks', get label() { return t({ id: 'eunha.admin.ip_blocks.usernames', defaultMessage: 'Usernames' }) } },
-]
-
 // Mastodon's labels for `IpBlock#severity`.
 export const IP_SEVERITIES: Record<IpBlockSeverity, string> = {
   get sign_up_requires_approval() { return t({ id: 'mastodon.simple_form.labels.ip_block.severities.sign_up_requires_approval', defaultMessage: 'Limit sign-ups' }) },
@@ -188,7 +181,6 @@ export default function IpBlocks() {
     <AdminLayout
       title="IP rules"
       permission="manage_blocks"
-      sub={BLOCK_TABS}
       actions={
         <Button size="sm" onClick={() => setDialog({ editing: null })}>
           {t({ id: 'mastodon.admin.rules.add_new', defaultMessage: 'Add rule' })}

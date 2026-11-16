@@ -32,6 +32,7 @@ import InviteTree from './pages/InviteTree.tsx'
 import Invites from './pages/Invites.tsx'
 import { SignUpForm, Start } from './pages/Start.tsx'
 import Settings from './pages/Settings.tsx'
+import { SettingsIndex } from '@/components/settings-layout.tsx'
 import ImportExport from './pages/ImportExport.tsx'
 import AdminIndex from './pages/admin/AdminIndex.tsx'
 import AdminDashboard from './pages/admin/Dashboard.tsx'
@@ -144,7 +145,17 @@ const routes = [
   // Mastodon's `start`, where signing in after confirming an address lands.
   { path: '/start', element: <Start /> },
   { path: '/filters', element: <Filters /> },
-  { path: '/settings', element: <Settings /> },
+  // The settings pages, at Mastodon's paths, listed at `/settings`.
+  { path: '/settings', element: <SettingsIndex /> },
+  { path: '/settings/account', element: <Settings page="account" /> },
+  { path: '/settings/privacy', element: <Settings page="privacy" /> },
+  { path: '/settings/preferences', element: <Navigate to="/settings" replace /> },
+  { path: '/settings/preferences/appearance', element: <Settings page="appearance" /> },
+  { path: '/settings/preferences/posting_defaults', element: <Settings page="posting_defaults" /> },
+  { path: '/settings/preferences/notifications', element: <Settings page="notifications" /> },
+  { path: '/settings/statuses_cleanup', element: <Settings page="statuses_cleanup" /> },
+  // Mastodon's own address for it.
+  { path: '/statuses_cleanup', element: <Navigate to="/settings/statuses_cleanup" replace /> },
   // Mastodon's import and export pages, at its paths.
   { path: '/settings/export', element: <ImportExport /> },
   { path: '/settings/imports', element: <ImportExport /> },

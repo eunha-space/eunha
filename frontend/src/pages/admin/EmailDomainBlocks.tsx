@@ -18,7 +18,6 @@ import { Button } from '@/components/ui/button.tsx'
 import { Checkbox } from '@/components/ui/checkbox.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
-import { BLOCK_TABS } from './IpBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
@@ -63,7 +62,7 @@ export default function EmailDomainBlocks() {
   }
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.email_domain_blocks.email_domains', defaultMessage: 'Email domains' })} permission="manage_blocks" sub={BLOCK_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.email_domain_blocks.email_domains', defaultMessage: 'Email domains' })} permission="manage_blocks">
       <form onSubmit={add} className="mb-4 space-y-2 rounded-lg border p-3">
         <div className="flex gap-2">
           <Input

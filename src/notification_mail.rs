@@ -272,7 +272,7 @@ pub async fn deliver(state: &AppState, notification_id: i64) -> anyhow::Result<(
         status,
         account,
         button_url,
-        preferences_url: format!("https://{domain}/settings"),
+        preferences_url: format!("https://{domain}/settings/preferences/notifications"),
         unsubscribe_url: unsubscribe_url(state, n.account_id, kind).await,
         list_id: format!("<{kind}.{}.{local_domain}>", me.username),
         conversation_message_id,

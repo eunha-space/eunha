@@ -49,7 +49,7 @@ test('two-factor setup shows the secret, then the recovery codes', async ({ page
     await route.fulfill(json({ recovery_codes: ['0123456789abcdef', 'fedcba9876543210'] }))
   })
 
-  await page.goto('/settings')
+  await page.goto('/settings/account')
   await expect(page.getByRole('heading', { name: 'Two-factor authentication' })).toBeVisible()
   const section = page.locator('section', { hasText: 'Two-factor authentication' })
   await section.getByLabel('Current password').fill('hunter2hunter2')
@@ -104,7 +104,7 @@ test('sessions and authorized apps can be revoked', async ({ page }) => {
     ),
   )
 
-  await page.goto('/settings')
+  await page.goto('/settings/account')
   await expect(page.getByText('Firefox on macOS')).toBeVisible()
   await expect(page.getByText('Ivory')).toBeVisible()
   const authorizedDate = await page.evaluate(() => new Date('2026-09-01T00:00:00.000Z').toLocaleDateString())

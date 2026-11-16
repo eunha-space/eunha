@@ -94,7 +94,7 @@ test('the rail offers moderation only to a role that has it', async ({ page }) =
   await expect(rail.getByRole('link', { name: 'Moderation' })).toHaveCount(0)
 })
 
-test('a moderator lands on the report queue and works a report', async ({ page }) => {
+test('a moderator opens the report queue from the sections and works a report', async ({ page }) => {
   await signIn(page, MANAGE_REPORTS)
   await page.route(/\/api\/v1\/admin\/reports(\?.*)?$/, (r) => r.fulfill({ json: [report] }))
   await page.route('**/api/v1/admin/reports/7', (r) => r.fulfill({ json: report }))
@@ -117,7 +117,11 @@ test('a moderator lands on the report queue and works a report', async ({ page }
 
   await page.goto('/')
   await page.locator('aside').getByRole('link', { name: 'Moderation' }).click()
-  // No dashboard permission, so `/admin` sends this role to the reports.
+  // `/admin` lists what this role may open: no dashboard, but the reports.
+  await expect(page).toHaveURL(/\/admin$/)
+  const sections = page.getByRole('navigation', { name: 'Moderation sections' })
+  await expect(sections.getByRole('link', { name: 'Dashboard' })).toHaveCount(0)
+  await sections.getByRole('link', { name: 'Reports' }).click()
   await expect(page).toHaveURL(/\/admin\/reports$/)
   await expect(page.getByText('Selling things in replies')).toBeVisible()
 

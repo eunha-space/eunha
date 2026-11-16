@@ -50,13 +50,10 @@ const version = {
 
 test('terms of service are offered only to a role with manage_settings', async ({ page }) => {
   await signIn(page, MANAGE_REPORTS)
-  await page.route(/\/api\/v1\/admin\/reports(\?.*)?$/, (r) => r.fulfill({ json: [] }))
-  await page.goto('/admin/reports')
-  await expect(
-    page.getByRole('navigation', { name: 'Moderation sections' }).getByRole('link', {
-      name: 'Terms of service',
-    }),
-  ).toHaveCount(0)
+  await page.goto('/admin')
+  const sections = page.getByRole('navigation', { name: 'Moderation sections' })
+  await expect(sections.getByRole('link', { name: 'Reports' })).toBeVisible()
+  await expect(sections.getByText('Terms of service')).toHaveCount(0)
 })
 
 test('an administrator drafts, publishes and notifies', async ({ page }) => {

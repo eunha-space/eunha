@@ -15,7 +15,6 @@ import { ConfirmButton, formatDate } from '@/components/admin/admin-common.tsx'
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
-import { FEDERATION_TABS } from './DomainBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
@@ -50,7 +49,7 @@ export default function DomainAllows() {
   }
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.domain_allows.domain_allows', defaultMessage: 'Domain allows' })} permission="manage_federation" sub={FEDERATION_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.domain_allows.domain_allows', defaultMessage: 'Domain allows' })} permission="manage_federation">
       <p className="text-muted-foreground mb-3 text-sm">
         {t({ id: 'eunha.admin.domain_allows.used_when_federation_is_limited_to', defaultMessage: 'Used when federation is limited to an allow list: only the domains here can federate with this server.' })}
       </p>

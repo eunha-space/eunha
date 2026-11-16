@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { ChevronLeft } from 'lucide-react'
 
 import { can, type Permission } from '../../admin-api.ts'
 import { faspEnabled, instanceHosted, moderationSubscriptionsEnabled } from '../../admin-server-api.ts'
@@ -9,7 +10,6 @@ import { getMeAccount, loadMe } from '../../me.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
-import { cn } from '@/lib/utils.ts'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
@@ -79,19 +79,24 @@ export function useHosted(): boolean {
   return hosted
 }
 
-const tab =
-  'border-b-2 border-transparent px-3 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground no-underline hover:text-foreground'
-const tabClass = ({ isActive }: { isActive: boolean }) =>
-  cn(tab, isActive && 'border-primary text-foreground')
-
-const subTab =
-  'rounded-full px-3 py-1 text-sm whitespace-nowrap text-muted-foreground no-underline hover:bg-muted/60 hover:text-foreground'
-const subTabClass = ({ isActive }: { isActive: boolean }) =>
-  cn(subTab, isActive && 'bg-muted text-foreground font-medium')
+/** The sections this role may open, with the experimental ones it has on. */
+export function useAdminSections(): AdminSection[] | null {
+  const permissions = useRolePermissions()
+  const features = useFeatures(permissions)
+  const hosted = useHosted()
+  if (permissions === null) return null
+  return ADMIN_SECTIONS.filter(
+    (s) =>
+      can(permissions, s.permission) &&
+      (s.feature !== 'fasp' || features.fasp) &&
+      (s.feature !== 'moderation_subscriptions' || features.lists) &&
+      !(s.server && hosted),
+  )
+}
 
 /**
- * The frame every moderation page sits in: the rail, the section tabs, an
- * optional second row of tabs within the section, and the page itself.
+ * The frame every moderation page sits in: the way back to the list of
+ * sections at `/admin`, the title, and the page itself.
  *
  * It gates on the permission the page's endpoints need, so an account that
  * lacks it is told so rather than shown a page of refusals. The server checks
@@ -100,21 +105,20 @@ const subTabClass = ({ isActive }: { isActive: boolean }) =>
 export function AdminLayout({
   title,
   permission,
-  sub,
   actions,
+  back = true,
   children,
 }: {
   title: string
   permission: Permission
-  /** Tabs within the section, e.g. domain blocks and domain allows. */
-  sub?: { to: string; label: string; end?: boolean }[]
   /** Controls beside the title. */
   actions?: ReactNode
+  /** Whether to link back to `/admin`, which `/admin` itself doesn't. */
+  back?: boolean
   children: ReactNode
 }) {
   const token = getToken()
   const permissions = useRolePermissions()
-  const { pathname } = useLocation()
 
   let body: ReactNode
   if (!token) {
@@ -140,53 +144,14 @@ export function AdminLayout({
     body = children
   }
 
-  const features = useFeatures(permissions)
-  const hosted = useHosted()
-  const sections =
-    permissions === null
-      ? []
-      : ADMIN_SECTIONS.filter(
-          (s) =>
-            can(permissions, s.permission) &&
-            (s.feature !== 'fasp' || features.fasp) &&
-            (s.feature !== 'moderation_subscriptions' || features.lists) &&
-            !(s.server && hosted),
-        )
-
   return (
     <div className="page-frame">
       <TopBar />
-      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-        {t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })}
-      </p>
-      {sections.length > 0 && (
-        <nav
-          aria-label={t({ id: 'eunha.admin.admin_layout.moderation_sections', defaultMessage: 'Moderation sections' })}
-          // Wraps rather than scrolls: eight sections don't fit beside the
-          // rail, and a sideways-scrolling row hides the ones past the edge.
-          className="mb-3 flex flex-wrap gap-x-1 border-b"
-        >
-          {sections.map((s) => (
-            <NavLink
-              key={s.to}
-              to={s.to}
-              className={({ isActive }) =>
-                tabClass({ isActive: isActive || sectionOwns(s, pathname) })
-              }
-            >
-              {s.label}
-            </NavLink>
-          ))}
-        </nav>
-      )}
-      {sub && token && permissions !== null && can(permissions, permission) && (
-        <nav aria-label={t({ id: 'eunha.admin.admin_layout.views', defaultMessage: '{title} views' }, { title })} className="mb-3 flex flex-wrap gap-1">
-          {sub.map((s) => (
-            <NavLink key={s.to} to={s.to} end={s.end} className={subTabClass}>
-              {s.label}
-            </NavLink>
-          ))}
-        </nav>
+      {back && (
+        <Link to="/admin" className="text-muted-foreground hover:text-foreground mb-1 inline-flex items-center gap-1 text-sm no-underline">
+          <ChevronLeft className="size-4" aria-hidden />
+          {t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })}
+        </Link>
       )}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h1 className="min-w-0 flex-1 truncate text-lg font-bold">{title}</h1>
@@ -194,30 +159,6 @@ export function AdminLayout({
       </div>
       {body}
     </div>
-  )
-}
-
-// A section's tab stays lit across its sub-pages: Federation covers domain
-// allows as well as blocks, Blocks covers three lists, Trends four.
-const SECTION_PREFIXES: Record<string, string[]> = {
-  '/admin/domain_blocks': ['/admin/domain_blocks', '/admin/domain_allows'],
-  '/admin/ip_blocks': [
-    '/admin/ip_blocks',
-    '/admin/email_domain_blocks',
-    '/admin/canonical_email_blocks',
-    '/admin/username_blocks',
-  ],
-  '/admin/trends/links': ['/admin/trends'],
-  '/admin/email_subscriptions': ['/admin/email_subscriptions'],
-  '/admin/terms_of_service': ['/admin/terms_of_service'],
-  '/admin/settings/branding': ['/admin/settings'],
-  '/admin/instances': ['/admin/instances'],
-  '/admin/fasp/providers': ['/admin/fasp'],
-}
-
-function sectionOwns(section: AdminSection, pathname: string): boolean {
-  return (SECTION_PREFIXES[section.to] ?? []).some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   )
 }
 

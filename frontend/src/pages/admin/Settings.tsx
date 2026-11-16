@@ -149,11 +149,6 @@ const PAGES: Record<string, { title: string; preamble: string; fields: Field[] }
   },
 }
 
-const SUB = Object.entries(PAGES).map(([page, p]) => ({
-  to: `/admin/settings/${page}`,
-  label: p.title,
-}))
-
 type Draft = Partial<Record<Key, string | boolean | File | null>>
 
 function initialDraft(fields: Field[], settings: AdminSettings): Draft {
@@ -268,7 +263,7 @@ export default function Settings() {
     setDraft((d) => ({ ...d, [key]: value }))
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.settings.server_settings', defaultMessage: 'Server settings · {title}' }, { title: def.title })} permission="manage_settings" sub={SUB}>
+    <AdminLayout title={t({ id: 'eunha.admin.settings.server_settings', defaultMessage: 'Server settings · {title}' }, { title: def.title })} permission="manage_settings">
       <AdminError error={error} />
       {settings === null && !error && <FormSkeleton fields={5} />}
       {settings && (

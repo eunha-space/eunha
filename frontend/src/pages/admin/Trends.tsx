@@ -26,13 +26,6 @@ import { Button } from '@/components/ui/button.tsx'
 import { TagsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
-export const TREND_TABS = [
-  { to: '/admin/trends/links', get label() { return t({ id: 'eunha.admin.trends.links', defaultMessage: 'Links' }) }, end: true },
-  { to: '/admin/trends/links/preview_card_providers', get label() { return t({ id: 'mastodon.admin.trends.preview_card_providers.title', defaultMessage: 'Publishers' }) } },
-  { to: '/admin/trends/statuses', get label() { return t({ id: 'account.posts', defaultMessage: 'Posts' }) } },
-  { to: '/admin/trends/tags', get label() { return t({ id: 'search_results.hashtags', defaultMessage: 'Hashtags' }) } },
-]
-
 type Item = AdminTag | TrendLink | TrendStatus | Publisher
 
 const KINDS: Record<string, { kind: TrendKind; title: string; open: (t: string) => AsyncIterable<Item[]> }> = {
@@ -172,7 +165,7 @@ export default function Trends() {
   const feed = useInfinitePaginator<Item>(() => config.open(token ?? ''), [token, config.kind])
 
   return (
-    <AdminLayout title={config.title} permission="manage_taxonomies" sub={TREND_TABS}>
+    <AdminLayout title={config.title} permission="manage_taxonomies">
       <AdminError error={feed.error} />
       {feed.items === null && !feed.error && (
         <TagsSkeleton />

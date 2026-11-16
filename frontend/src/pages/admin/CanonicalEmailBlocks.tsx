@@ -16,7 +16,6 @@ import { ChoiceSelect, ConfirmButton } from '@/components/admin/admin-common.tsx
 import { InfiniteScroll } from '@/components/infinite-scroll.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
-import { BLOCK_TABS } from './IpBlocks.tsx'
 import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
@@ -75,7 +74,7 @@ export default function CanonicalEmailBlocks() {
   }
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.canonical_email_blocks.email_addresses', defaultMessage: 'Email addresses' })} permission="manage_blocks" sub={BLOCK_TABS}>
+    <AdminLayout title={t({ id: 'eunha.admin.canonical_email_blocks.email_addresses', defaultMessage: 'Email addresses' })} permission="manage_blocks">
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <form onSubmit={test} className="space-y-2 rounded-lg border p-3">
           <h2 className="text-sm font-semibold">{t({ id: 'eunha.admin.canonical_email_blocks.test_an_address', defaultMessage: 'Test an address' })}</h2>
