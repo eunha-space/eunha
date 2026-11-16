@@ -1,11 +1,16 @@
-import type { ReactNode } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  ArrowLeftRight, Bell, ChevronLeft, ChevronRight, EyeOff, History, KeyRound, Palette, PenLine,
+} from 'lucide-react'
 
 import { beginLogin, getToken } from '../auth.ts'
 import { getMeAccount } from '../me.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import {
+  Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle,
+} from '@/components/ui/item.tsx'
 import { t } from '@/i18n.tsx'
 
 /**
@@ -13,39 +18,51 @@ import { t } from '@/i18n.tsx'
  * `config/navigation.rb` lists them, so a link Mastodon or an app makes to one
  * lands on the matching page. `/settings` itself lists them.
  */
-export const SETTINGS_PAGES: { to: string; label: () => string; summary: () => string }[] = [
+export const SETTINGS_PAGES: {
+  to: string
+  icon: ComponentType<{ className?: string }>
+  label: () => string
+  summary: () => string
+}[] = [
   {
     to: '/settings/account',
+    icon: KeyRound,
     label: () => t({ id: 'navigation_bar.account_settings', defaultMessage: 'Password and security' }),
     summary: () => t({ id: 'eunha.settings_layout.account_summary', defaultMessage: 'Email, password, two-factor, sessions' }),
   },
   {
     to: '/settings/privacy',
+    icon: EyeOff,
     label: () => t({ id: 'navigation_bar.privacy_and_reach', defaultMessage: 'Privacy and reach' }),
     summary: () => t({ id: 'eunha.settings_layout.privacy_summary', defaultMessage: 'Discovery, blocks, filters' }),
   },
   {
     to: '/settings/preferences/appearance',
+    icon: Palette,
     label: () => t({ id: 'mastodon.settings.appearance', defaultMessage: 'Appearance' }),
     summary: () => t({ id: 'eunha.settings_layout.appearance_summary', defaultMessage: 'Palette, layout, timelines' }),
   },
   {
     to: '/settings/preferences/posting_defaults',
+    icon: PenLine,
     label: () => t({ id: 'mastodon.preferences.posting_defaults', defaultMessage: 'Posting defaults' }),
     summary: () => t({ id: 'eunha.settings_layout.posting_summary', defaultMessage: 'Language, quoting, collections' }),
   },
   {
     to: '/settings/preferences/notifications',
+    icon: Bell,
     label: () => t({ id: 'column.notifications', defaultMessage: 'Notifications' }),
     summary: () => t({ id: 'eunha.settings_layout.notifications_summary', defaultMessage: 'Email and browser' }),
   },
   {
     to: '/settings/statuses_cleanup',
+    icon: History,
     label: () => t({ id: 'navigation_bar.automated_deletion', defaultMessage: 'Automated post deletion' }),
     summary: () => t({ id: 'eunha.settings_layout.statuses_cleanup_summary', defaultMessage: 'Delete old posts on a schedule' }),
   },
   {
     to: '/settings/export',
+    icon: ArrowLeftRight,
     label: () => t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' }),
     summary: () => t({ id: 'eunha.settings_layout.import_export_summary', defaultMessage: 'Download your data, bring lists in' }),
   },
@@ -80,22 +97,24 @@ export function SettingsIndex() {
         <SignIn />
       ) : (
         <nav aria-label={t({ id: 'eunha.settings_layout.settings_pages', defaultMessage: 'Settings pages' })}>
-          <ul className="divide-y rounded-lg border">
-            {SETTINGS_PAGES.map((page) => (
-              <li key={page.to}>
-                <Link
-                  to={page.to}
-                  className="hover:bg-muted/60 flex items-center gap-3 px-4 py-3 text-inherit no-underline"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium">{page.label()}</span>
-                    <span className="text-muted-foreground block text-sm">{page.summary()}</span>
-                  </span>
-                  <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />
-                </Link>
-              </li>
+          <ItemGroup className="gap-2">
+            {SETTINGS_PAGES.map(({ to, icon: Icon, label, summary }) => (
+              <div key={to} role="listitem">
+                <Item variant="outline" render={<Link to={to} />} className="text-inherit no-underline">
+                  <ItemMedia variant="icon" className="bg-muted size-9 rounded-md">
+                    <Icon className="size-4" />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle>{label()}</ItemTitle>
+                    <ItemDescription>{summary()}</ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <ChevronRight className="text-muted-foreground size-4" aria-hidden />
+                  </ItemActions>
+                </Item>
+              </div>
             ))}
-          </ul>
+          </ItemGroup>
         </nav>
       )}
     </div>

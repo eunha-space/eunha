@@ -2,44 +2,66 @@ import { Link } from 'react-router-dom'
 import { ChevronRight } from 'lucide-react'
 
 import { AdminLayout, useAdminSections } from '@/components/admin/admin-layout.tsx'
+import { Button } from '@/components/ui/button.tsx'
+import {
+  Item, ItemActions, ItemContent, ItemFooter, ItemGroup, ItemMedia, ItemTitle,
+} from '@/components/ui/item.tsx'
 import { ADMIN_SECTIONS, SERVER_GROUP_START, type AdminSection } from '@/lib/admin-sections.ts'
 import { t } from '@/i18n.tsx'
 
-const row = 'hover:bg-muted/60 flex items-center gap-3 px-4 py-3 text-inherit no-underline'
+const media = 'bg-muted size-9 rounded-md'
 
-function Row({ to, label, nested }: { to: string; label: string; nested?: boolean }) {
+/**
+ * One section: a link to it, or, for a section of several pages, its name
+ * with a button for each page.
+ */
+function Section({ section: { to, icon: Icon, label, pages } }: { section: AdminSection }) {
+  if (pages) {
+    return (
+      <Item variant="outline">
+        <ItemMedia variant="icon" className={media}>
+          <Icon className="size-4" />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle>{label}</ItemTitle>
+        </ItemContent>
+        <ItemFooter className="flex-wrap justify-start pl-12">
+          {pages.map((page) => (
+            <Button key={page.to} variant="outline" size="sm" render={<Link to={page.to} />}>
+              {page.label}
+            </Button>
+          ))}
+        </ItemFooter>
+      </Item>
+    )
+  }
   return (
-    <li>
-      <Link to={to} className={nested ? `${row} pl-8` : row}>
-        <span className="min-w-0 flex-1">{label}</span>
-        <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />
-      </Link>
-    </li>
+    <Item variant="outline" render={<Link to={to} />} className="text-inherit no-underline">
+      <ItemMedia variant="icon" className={media}>
+        <Icon className="size-4" />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>{label}</ItemTitle>
+      </ItemContent>
+      <ItemActions>
+        <ChevronRight className="text-muted-foreground size-4" aria-hidden />
+      </ItemActions>
+    </Item>
   )
 }
 
-/** A group of sections; one with several pages lists them under its name. */
-function Group({ title, sections }: { title: string; sections: AdminSection[] }) {
+function Group({ title, sections }: { title?: string; sections: AdminSection[] }) {
   if (sections.length === 0) return null
   return (
     <section className="space-y-2">
-      <h2 className="text-muted-foreground text-sm font-medium">{title}</h2>
-      <ul className="divide-y rounded-lg border">
-        {sections.map((s) =>
-          s.pages ? (
-            <li key={s.to}>
-              <p className="px-4 pt-3 pb-1 font-medium">{s.label}</p>
-              <ul>
-                {s.pages.map((p) => (
-                  <Row key={p.to} to={p.to} label={p.label} nested />
-                ))}
-              </ul>
-            </li>
-          ) : (
-            <Row key={s.to} to={s.to} label={s.label} />
-          ),
-        )}
-      </ul>
+      {title && <h2 className="text-muted-foreground text-sm font-medium">{title}</h2>}
+      <ItemGroup className="gap-2">
+        {sections.map((s) => (
+          <div key={s.to} role="listitem">
+            <Section section={s} />
+          </div>
+        ))}
+      </ItemGroup>
     </section>
   )
 }
@@ -59,7 +81,8 @@ export default function AdminIndex() {
   return (
     <AdminLayout title={t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })} permission={permission} back={false}>
       <nav aria-label={t({ id: 'eunha.admin.admin_layout.moderation_sections', defaultMessage: 'Moderation sections' })} className="space-y-6">
-        <Group title={t({ id: 'navigation_bar.moderation', defaultMessage: 'Moderation' })} sections={sections.filter((s) => !isServer(s))} />
+        {/* The page's own title already says Moderation. */}
+        <Group sections={sections.filter((s) => !isServer(s))} />
         <Group title={t({ id: 'navigation_bar.administration', defaultMessage: 'Administration' })} sections={sections.filter(isServer)} />
       </nav>
     </AdminLayout>
