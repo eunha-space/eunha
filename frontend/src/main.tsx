@@ -93,6 +93,7 @@ import Strikes from './pages/Strikes.tsx'
 import StrikeDetail from './pages/StrikeDetail.tsx'
 import Wrapstodon from './pages/Wrapstodon.tsx'
 import { ThemeProvider } from './components/theme-provider.tsx'
+import { bootLocale, LocaleProvider } from './i18n.tsx'
 import { ComposeModalProvider } from './components/compose-modal.tsx'
 import { Toaster } from './components/ui/sonner.tsx'
 import { getToken } from './auth.ts'
@@ -260,10 +261,16 @@ function Root() {
 
 const router = createBrowserRouter([{ element: <Root />, children: routes }])
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ThemeProvider defaultTheme="system" storageKey="eunha-theme">
-      <RouterProvider router={router} />
-    </ThemeProvider>
-  </StrictMode>,
-)
+// The interface language's messages load before the first render, so the
+// page never paints in English on its way to another language.
+void bootLocale().then(({ locale, messages }) => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <LocaleProvider initial={locale} initialMessages={messages}>
+        <ThemeProvider defaultTheme="system" storageKey="eunha-theme">
+          <RouterProvider router={router} />
+        </ThemeProvider>
+      </LocaleProvider>
+    </StrictMode>,
+  )
+})

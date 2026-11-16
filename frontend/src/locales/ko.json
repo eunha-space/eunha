@@ -1,0 +1,23 @@
+{
+  "eunha.account_menu.add_account": "계정 추가",
+  "eunha.account_menu.label": "계정 메뉴",
+  "eunha.account_menu.profile": "프로필",
+  "eunha.account_menu.sign_in_failed": "로그인을 시작할 수 없습니다",
+  "eunha.language.label": "언어",
+  "eunha.language.save_failed": "계정에 언어를 저장하지 못했습니다",
+  "eunha.navigation.compose": "글쓰기",
+  "eunha.navigation.federated": "연합",
+  "eunha.navigation.feeds": "피드",
+  "eunha.navigation.invite_count": "사용할 수 있는 일회용 초대 링크 {count}개",
+  "eunha.navigation.invite_people": "초대하기",
+  "eunha.navigation.local": "로컬",
+  "eunha.navigation.messages": "메시지",
+  "eunha.navigation.open_menu": "메뉴 열기",
+  "eunha.navigation.powered_by": "powered by eunha",
+  "eunha.navigation.you": "나",
+  "eunha.theme.dark": "다크",
+  "eunha.theme.label": "테마",
+  "eunha.theme.light": "라이트",
+  "eunha.theme.system": "시스템",
+  "notifications.unread_with_count": "읽지 않음 {count}개"
+}

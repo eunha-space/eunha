@@ -77,6 +77,58 @@ feed held last while it loads current ones; reloading the browser clears the
 snapshots. Profile details and pinned posts still refresh on return.
 
 
+Web client translations
+-----------------------
+
+The web client's text goes through [react-intl], as Mastodon's does. Each
+message has an id and its English in the code:
+
+~~~~ tsx
+const messages = defineMessages({
+  saved: { id: 'tabs_bar.saved', defaultMessage: 'Saved' },
+  feeds: { id: 'eunha.navigation.feeds', defaultMessage: 'Feeds' },
+})
+~~~~
+
+Where a message means what one of Mastodon's web client means, it takes
+Mastodon's id, so Mastodon's translations of it can be used; its English stays
+eunha's own wording. Search the tracked release's
+*app/javascript/mastodon/locales/en.json* for one. A message Mastodon has no
+counterpart for gets an id under `eunha.`.
+
+The catalogs are in *frontend/src/locales/*:
+
+ -  *en.json* lists every message, as `pnpm run i18n:extract` finds them.
+ -  *mastodon/ko.json* is Mastodon's Korean for the ids eunha reuses, written
+    by `pnpm run i18n:import-mastodon` from the release *mastodon.toml*
+    tracks. It needs a Mastodon checkout at `$MASTODON_REPO` or
+    *~/Git/mastodon*. Don't edit it by hand.
+ -  *ko.json* is eunha's Korean: every `eunha.` message, and any of
+    Mastodon's eunha words differently. It wins over *mastodon/ko.json*.
+
+After changing messages:
+
+~~~~ bash
+cd frontend
+pnpm run i18n:extract
+pnpm run i18n:import-mastodon
+pnpm run i18n:check
+~~~~
+
+CI runs `i18n:check`, which fails when *en.json* is stale, when *ko.json*
+lacks an `eunha.` message, or when a reused id was never imported. A message
+missing from a catalog shows in English.
+
+The interface language is the account's `users.locale`, chosen in the account
+menu, then the language chosen in the browser, then the browser's own, then
+English (*frontend/src/i18n.tsx*). The client is offered in English and Korean
+only, and only the sidebar and account menu are translated so far; see
+`web-interface-languages` in [divergences](../mastodon/divergences.md). The
+browser tests run in English.
+
+[react-intl]: https://formatjs.github.io/docs/react-intl/
+
+
 Web client tests
 ----------------
 

@@ -298,6 +298,9 @@ jobs:
       - name: Typecheck and build
         working-directory: frontend
         run: pnpm run build
+      - name: Message catalogs
+        working-directory: frontend
+        run: pnpm run i18n:check
       - name: Install Chromium
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium

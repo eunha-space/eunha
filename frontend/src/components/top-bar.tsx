@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 
 import { toast } from 'sonner'
+import { defineMessages, FormattedMessage, useIntl } from 'react-intl'
 import { getCachedInstance, getInstance } from '../api.ts'
 import { beginLogin, getSavedAccounts, getToken, logout, switchAccount } from '../auth.ts'
 import { clearMe, getMeAccount, loadMe, type MeAccount } from '../me.ts'
@@ -38,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx'
 import { ModeToggle, ThemeMenuPill } from '@/components/mode-toggle.tsx'
+import { LanguageButton, LanguageSubmenu } from '@/components/language-menu.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { useAvailableInvites } from '../hooks/use-available-invites.ts'
 import { useUnreadNotifications } from '../hooks/use-unread-notifications.ts'
@@ -67,8 +69,43 @@ const navLink =
   'text-muted-foreground hover:text-foreground hover:bg-muted/60 flex w-full items-center gap-3 rounded-full px-3 py-2 text-[0.95rem] font-medium no-underline'
 const activeNavLink = 'bg-muted text-foreground font-semibold'
 
-// The group the New post button follows, in the rail and the drawer.
-const YOU_GROUP = 'You'
+// Where one of these means what a message of Mastodon's web client does, it
+// carries Mastodon's id so Mastodon's translations reach it (see i18n.tsx).
+const messages = defineMessages({
+  home: { id: 'column.home', defaultMessage: 'Home' },
+  notifications: { id: 'column.notifications', defaultMessage: 'Notifications' },
+  messages: { id: 'eunha.navigation.messages', defaultMessage: 'Messages' },
+  search: { id: 'navigation_bar.search', defaultMessage: 'Search' },
+  explore: { id: 'tabs_bar.explore', defaultMessage: 'Explore' },
+  local: { id: 'eunha.navigation.local', defaultMessage: 'Local' },
+  federated: { id: 'eunha.navigation.federated', defaultMessage: 'Federated' },
+  lists: { id: 'navigation_bar.lists', defaultMessage: 'Lists' },
+  followedTags: { id: 'navigation_bar.followed_tags', defaultMessage: 'Followed hashtags' },
+  saved: { id: 'tabs_bar.saved', defaultMessage: 'Saved' },
+  invitePeople: { id: 'eunha.navigation.invite_people', defaultMessage: 'Invite people' },
+  moderation: { id: 'navigation_bar.moderation', defaultMessage: 'Moderation' },
+  about: { id: 'column.about', defaultMessage: 'About' },
+  footerAbout: { id: 'footer.about', defaultMessage: 'About' },
+  feeds: { id: 'eunha.navigation.feeds', defaultMessage: 'Feeds' },
+  you: { id: 'eunha.navigation.you', defaultMessage: 'You' },
+  newPost: { id: 'tabs_bar.publish', defaultMessage: 'New post' },
+  compose: { id: 'eunha.navigation.compose', defaultMessage: 'Compose' },
+  poweredBy: { id: 'eunha.navigation.powered_by', defaultMessage: 'powered by eunha' },
+  openMenu: { id: 'eunha.navigation.open_menu', defaultMessage: 'Open menu' },
+  unread: { id: 'notifications.unread_with_count', defaultMessage: '{count} unread' },
+  inviteCount: {
+    id: 'eunha.navigation.invite_count',
+    defaultMessage: '{count} available single-use invite links',
+  },
+  accountMenu: { id: 'eunha.account_menu.label', defaultMessage: 'Account menu' },
+  addAccount: { id: 'eunha.account_menu.add_account', defaultMessage: 'Add account' },
+  signInFailed: { id: 'eunha.account_menu.sign_in_failed', defaultMessage: 'Could not start sign-in' },
+  profile: { id: 'eunha.account_menu.profile', defaultMessage: 'Profile' },
+  settings: { id: 'tabs_bar.settings', defaultMessage: 'Settings' },
+  signOut: { id: 'navigation_bar.logout', defaultMessage: 'Sign out' },
+  signIn: { id: 'sign_in_banner.sign_in', defaultMessage: 'Sign in' },
+  createAccount: { id: 'sign_in_banner.create_account', defaultMessage: 'Create account' },
+})
 
 type IconType = React.ComponentType<{ className?: string }>
 type NavItem = {
@@ -85,11 +122,12 @@ type NavItem = {
 // The unread count, capped by the server. Past 99 the exact number stops
 // meaning anything a badge can use.
 function Badge({ count }: { count: number }) {
+  const intl = useIntl()
   if (count <= 0) return null
   return (
     <span
       className="bg-primary text-primary-foreground ml-auto rounded-full px-1.5 py-0.5 text-xs leading-none font-medium"
-      aria-label={`${count} unread`}
+      aria-label={intl.formatMessage(messages.unread, { count })}
     >
       {count > 99 ? '99+' : count}
     </span>
@@ -97,7 +135,8 @@ function Badge({ count }: { count: number }) {
 }
 
 function InviteCount({ count }: { count?: number | null }) {
-  return count ? <span className="bg-muted text-muted-foreground ml-auto rounded-md px-1.5 py-0.5 text-xs tabular-nums" aria-label={`${count} available single-use invite links`}>{count}</span> : null
+  const intl = useIntl()
+  return count ? <span className="bg-muted text-muted-foreground ml-auto rounded-md px-1.5 py-0.5 text-xs tabular-nums" aria-label={intl.formatMessage(messages.inviteCount, { count })}>{count}</span> : null
 }
 
 /**
@@ -136,7 +175,8 @@ function liveFeedAccess(): { local?: string; remote?: string } {
 
 // A run of rows in the rail. The first group has no heading; the others are
 // labelled so a long rail reads as a few short lists.
-type NavGroup = { label?: string; items: NavItem[] }
+// `id` names a group the rail places something after.
+type NavGroup = { id?: 'you'; label?: string; items: NavItem[] }
 
 function useNavGroups(
   token: string | null,
@@ -144,6 +184,8 @@ function useNavGroups(
   account: MeAccount | null,
   invites: { count: number | null; hasAvailable: boolean },
 ): NavGroup[] {
+  const intl = useIntl()
+  const t = intl.formatMessage
   // The rail lists the places you read. On Mastodon that middle section is
   // custom feeds. eunha also links home and local timelines, which were a
   // tab strip inside the column — a leftover
@@ -155,7 +197,7 @@ function useNavGroups(
   const access = liveFeedAccess()
   const local = canViewFeed(!!token, account, access.local)
   const federated: NavItem[] = canViewFeed(!!token, account, access.remote)
-    ? [{ to: '/public', icon: Globe, label: 'Federated' }]
+    ? [{ to: '/public', icon: Globe, label: t(messages.federated) }]
     : []
   if (!token) {
     return [
@@ -163,11 +205,11 @@ function useNavGroups(
         items: [
           // Signed out, "/" *is* the local timeline, so that row owns both paths.
           ...(local
-            ? [{ to: '/local', icon: Users, label: 'Local', matchAlso: (p: string) => p === '/' }]
+            ? [{ to: '/local', icon: Users, label: t(messages.local), matchAlso: (p: string) => p === '/' }]
             : []),
           ...federated,
-          { to: '/explore', icon: Compass, label: 'Explore' },
-          { to: '/about', icon: Info, label: 'About' },
+          { to: '/explore', icon: Compass, label: t(messages.explore) },
+          { to: '/about', icon: Info, label: t(messages.about) },
         ],
       },
     ]
@@ -181,7 +223,7 @@ function useNavGroups(
           {
             to: '/admin',
             icon: Shield,
-            label: 'Moderation',
+            label: t(messages.moderation),
             matchAlso: (p) => p.startsWith('/admin/'),
           },
         ]
@@ -191,31 +233,32 @@ function useNavGroups(
     // things.
     {
       items: [
-        { to: '/', end: true, icon: Home, label: 'Home' },
-        { to: '/notifications', icon: Bell, label: 'Notifications', badge: unread },
-        { to: '/messages', icon: MessageCircle, label: 'Messages' },
-        { to: '/search', icon: Search, label: 'Search' },
-        { to: '/explore', icon: Compass, label: 'Explore' },
+        { to: '/', end: true, icon: Home, label: t(messages.home) },
+        { to: '/notifications', icon: Bell, label: t(messages.notifications), badge: unread },
+        { to: '/messages', icon: MessageCircle, label: t(messages.messages) },
+        { to: '/search', icon: Search, label: t(messages.search) },
+        { to: '/explore', icon: Compass, label: t(messages.explore) },
       ],
     },
     // The other timelines you can read.
     {
-      label: 'Feeds',
+      label: t(messages.feeds),
       items: [
-        ...(local ? [{ to: '/local', icon: Users, label: 'Local' }] : []),
+        ...(local ? [{ to: '/local', icon: Users, label: t(messages.local) }] : []),
         ...federated,
-        { to: '/lists', icon: List, label: 'Lists', matchAlso: (path) => path.startsWith('/lists/') },
-        { to: '/followed_tags', icon: Hash, label: 'Followed hashtags' },
+        { to: '/lists', icon: List, label: t(messages.lists), matchAlso: (path) => path.startsWith('/lists/') },
+        { to: '/followed_tags', icon: Hash, label: t(messages.followedTags) },
       ],
     },
     // What is yours to keep or give out.
     {
-      label: YOU_GROUP,
+      id: 'you',
+      label: t(messages.you),
       items: [
-        { to: '/bookmarks', icon: Bookmark, label: 'Saved' },
+        { to: '/bookmarks', icon: Bookmark, label: t(messages.saved) },
         ...(invites.hasAvailable || moderation.length > 0 ? [{
           to: '/invites', icon: Ticket,
-          label: 'Invite people', inviteCount: invites.count,
+          label: t(messages.invitePeople), inviteCount: invites.count,
         }] : []),
       ],
     },
@@ -249,7 +292,9 @@ function ServerMark({
       )}
       <span className="min-w-0">
         <span className="block truncate text-lg font-semibold">{title}</span>
-        <span className="text-muted-foreground block text-xs">powered by eunha</span>
+        <span className="text-muted-foreground block text-xs">
+          <FormattedMessage {...messages.poweredBy} />
+        </span>
       </span>
     </Link>
   )
@@ -264,6 +309,7 @@ function AccountCard({
   account: MeAccount
   onNavigate?: () => void
 }) {
+  const intl = useIntl()
   const cardRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   // An account cached before the still avatar was stored has none to show
@@ -304,7 +350,7 @@ function AccountCard({
       </Link>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
-          aria-label="Account menu"
+          aria-label={intl.formatMessage(messages.accountMenu)}
           className="text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:ring-ring flex size-11 shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-2"
         >
           <MoreHorizontal className="size-5" />
@@ -326,17 +372,18 @@ function AccountCard({
               @{saved.account.acct}
             </DropdownMenuItem>
           ))}
-          <DropdownMenuItem onClick={() => beginLogin(true).catch(() => toast.error('Could not start sign-in'))}>
-            <UserPlus /> Add account
+          <DropdownMenuItem onClick={() => beginLogin(true).catch(() => toast.error(intl.formatMessage(messages.signInFailed)))}>
+            <UserPlus /> <FormattedMessage {...messages.addAccount} />
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem render={<Link to={`/@${account.acct}`} />}>
-            <User /> Profile
+            <User /> <FormattedMessage {...messages.profile} />
           </DropdownMenuItem>
           <DropdownMenuItem render={<Link to="/settings" />}>
-            <Settings /> Settings
+            <Settings /> <FormattedMessage {...messages.settings} />
           </DropdownMenuItem>
           <ThemeMenuPill />
+          <LanguageSubmenu />
           <DropdownMenuItem
             variant="destructive"
             onClick={async () => {
@@ -345,7 +392,7 @@ function AccountCard({
               location.assign('/')
             }}
           >
-            <LogOut /> Sign out
+            <LogOut /> <FormattedMessage {...messages.signOut} />
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -358,7 +405,7 @@ function RailFooter({ domain, onNavigate }: { domain: string; onNavigate?: () =>
     <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2 text-xs">
       <span className="truncate">{domain}</span>
       <Link to="/about" onClick={onNavigate} className="no-underline hover:underline">
-        About
+        <FormattedMessage {...messages.footerAbout} />
       </Link>
     </p>
   )
@@ -382,13 +429,13 @@ function AuthButton({
           location.assign('/')
         }}
       >
-        <LogOut /> Sign out
+        <LogOut /> <FormattedMessage {...messages.signOut} />
       </Button>
     )
   }
   return (
     <Button size={size} onClick={() => beginLogin()}>
-      <LogIn /> Sign in
+      <LogIn /> <FormattedMessage {...messages.signIn} />
     </Button>
   )
 }
@@ -398,7 +445,7 @@ function AuthButton({
 function SignUpButton({ className }: { className?: string }) {
   return (
     <Button className={className} onClick={() => window.location.assign('/auth/signup')}>
-      <UserPlus /> Create account
+      <UserPlus /> <FormattedMessage {...messages.createAccount} />
     </Button>
   )
 }
@@ -471,9 +518,9 @@ function DesktopRail({
             {/* Composing closes the member's own rows as a filled button, under
                 You and above the staff tools, so it stands apart from the
                 navigation without leading it. */}
-            {token && group.label === YOU_GROUP && (
+            {token && group.id === 'you' && (
               <Button size="lg" className="mt-4 w-full rounded-full" onClick={() => openCompose()}>
-                <PenLine /> New post
+                <PenLine /> <FormattedMessage {...messages.newPost} />
               </Button>
             )}
           </Fragment>
@@ -488,7 +535,10 @@ function DesktopRail({
         ) : (
           !token && (
             <div className="flex items-center justify-between gap-2">
-              <ModeToggle />
+              <span className="flex items-center gap-1.5">
+                <ModeToggle />
+                <LanguageButton />
+              </span>
               <AuthButton token={token} />
             </div>
           )
@@ -559,7 +609,7 @@ function MobileDrawer({
                 ))}
               </SidebarMenu>
             </SidebarGroup>
-            {token && group.label === YOU_GROUP && (
+            {token && group.id === 'you' && (
               <div className="px-2 pb-2">
                 <Button
                   size="lg"
@@ -569,7 +619,7 @@ function MobileDrawer({
                     openCompose()
                   }}
                 >
-                  <PenLine /> New post
+                  <PenLine /> <FormattedMessage {...messages.newPost} />
                 </Button>
               </div>
             )}
@@ -585,7 +635,10 @@ function MobileDrawer({
               <>
                 {registrationsOpen && <SignUpButton className="w-full" />}
                 <div className="flex items-center justify-between gap-2">
-                  <ModeToggle />
+                  <span className="flex items-center gap-1.5">
+                    <ModeToggle />
+                    <LanguageButton />
+                  </span>
                   <AuthButton token={token} />
                 </div>
               </>
@@ -608,6 +661,7 @@ function MobileHeader({
   registrationsOpen: boolean
 }) {
   const { openCompose } = useComposeModal()
+  const intl = useIntl()
 
   return (
     // Even padding rather than the old `pb-2` with none above: the bar's rule
@@ -616,20 +670,20 @@ function MobileHeader({
     // them. `.mobile-header` supplies the horizontal half — see styles.css,
     // which explains why it cannot simply be `px-3` here.
     <header className="mobile-header flex items-center gap-2 border-b py-2 md:hidden">
-      <SidebarTrigger aria-label="Open menu" />
+      <SidebarTrigger aria-label={intl.formatMessage(messages.openMenu)} />
       <Link to="/" className="min-w-0 truncate text-lg font-semibold no-underline">
         {title}
       </Link>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token ? (
           <Button size="sm" onClick={() => openCompose()}>
-            <PenLine /> New post
+            <PenLine /> <FormattedMessage {...messages.newPost} />
           </Button>
         ) : (
           <>
             {registrationsOpen && (
               <Button size="sm" onClick={() => window.location.assign('/auth/signup')}>
-                <UserPlus /> Create account
+                <UserPlus /> <FormattedMessage {...messages.createAccount} />
               </Button>
             )}
             <Button
@@ -637,7 +691,7 @@ function MobileHeader({
               size="sm"
               onClick={() => beginLogin()}
             >
-              <LogIn /> Sign in
+              <LogIn /> <FormattedMessage {...messages.signIn} />
             </Button>
           </>
         )}
@@ -648,11 +702,12 @@ function MobileHeader({
 
 function ComposeButton({ token }: { token: string | null }) {
   const { openCompose } = useComposeModal()
+  const intl = useIntl()
   if (!token) return null
   return (
     <button
       type="button"
-      aria-label="Compose"
+      aria-label={intl.formatMessage(messages.compose)}
       className="bg-primary text-primary-foreground hover:bg-primary/90 fixed right-4 bottom-4 z-40 flex size-13 items-center justify-center rounded-full shadow-lg sm:right-6 sm:bottom-6"
       onClick={() => openCompose()}
     >

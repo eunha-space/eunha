@@ -1,4 +1,5 @@
 import { Laptop, Moon, Sun } from 'lucide-react'
+import { defineMessages, useIntl } from 'react-intl'
 
 import {
   DropdownMenuRadioGroup,
@@ -7,10 +8,17 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx'
 import { useTheme } from '@/components/theme-provider.tsx'
 
+const messages = defineMessages({
+  theme: { id: 'eunha.theme.label', defaultMessage: 'Theme' },
+  light: { id: 'eunha.theme.light', defaultMessage: 'Light' },
+  dark: { id: 'eunha.theme.dark', defaultMessage: 'Dark' },
+  system: { id: 'eunha.theme.system', defaultMessage: 'System' },
+})
+
 const themes = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'System', icon: Laptop },
+  { value: 'light', label: messages.light, icon: Sun },
+  { value: 'dark', label: messages.dark, icon: Moon },
+  { value: 'system', label: messages.system, icon: Laptop },
 ] as const
 
 type Theme = (typeof themes)[number]['value']
@@ -24,10 +32,11 @@ const isTheme = (value: unknown): value is Theme =>
 // pill in the account menu.
 export function ModeToggle() {
   const { theme, setTheme } = useTheme()
+  const intl = useIntl()
 
   return (
     <ToggleGroup
-      aria-label="Theme"
+      aria-label={intl.formatMessage(messages.theme)}
       size="sm"
       spacing={0}
       value={[theme]}
@@ -42,8 +51,8 @@ export function ModeToggle() {
         <ToggleGroupItem
           key={value}
           value={value}
-          aria-label={label}
-          title={label}
+          aria-label={intl.formatMessage(label)}
+          title={intl.formatMessage(label)}
           className="rounded-md! px-2.5 aria-pressed:bg-muted"
         >
           <Icon />
@@ -57,10 +66,11 @@ export function ModeToggle() {
 // segment. Choosing one leaves the menu open, showing the new choice.
 export function ThemeMenuPill() {
   const { theme, setTheme } = useTheme()
+  const intl = useIntl()
 
   return (
     <DropdownMenuRadioGroup
-      aria-label="Theme"
+      aria-label={intl.formatMessage(messages.theme)}
       value={theme}
       onValueChange={(value) => {
         if (isTheme(value)) setTheme(value)
@@ -74,7 +84,7 @@ export function ThemeMenuPill() {
           closeOnClick={false}
           className="min-w-0 flex-1 justify-center rounded-md! px-1.5! text-xs data-checked:bg-muted data-checked:font-medium [&>[data-slot=dropdown-menu-radio-item-indicator]]:hidden"
         >
-          {label}
+          {intl.formatMessage(label)}
         </DropdownMenuRadioItem>
       ))}
     </DropdownMenuRadioGroup>

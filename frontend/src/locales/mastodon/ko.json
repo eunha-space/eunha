@@ -1,0 +1,17 @@
+{
+  "column.about": "정보",
+  "column.home": "홈",
+  "column.notifications": "알림",
+  "footer.about": "정보",
+  "navigation_bar.followed_tags": "팔로우 중인 해시태그",
+  "navigation_bar.lists": "리스트",
+  "navigation_bar.logout": "로그아웃",
+  "navigation_bar.moderation": "중재",
+  "navigation_bar.search": "검색",
+  "sign_in_banner.create_account": "계정 생성",
+  "sign_in_banner.sign_in": "로그인",
+  "tabs_bar.explore": "둘러보기",
+  "tabs_bar.publish": "새 게시물",
+  "tabs_bar.saved": "저장됨",
+  "tabs_bar.settings": "설정"
+}
