@@ -66,8 +66,9 @@ it is not `public` is sent to `/`.
 
 Signed in, the sidebar groups its rows. Home, Notifications, Messages,
 Search and Explore come first; **Feeds** holds Local, Federated, Lists and
-Hashtags (the hashtags the member follows); **You** holds Saved and Invite people, followed by the
-**New post** button; and Moderation, for staff, comes last on its own.
+Hashtags (the hashtags the member follows); **You** holds Saved and Invite
+people, followed by the **New post** button; and Moderation, for staff, comes
+last on its own.
 
 | Setting                                                          | What reads it                                                                                                    |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
