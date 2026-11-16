@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { Button } from '@/components/ui/button.tsx'
 
 import { getAccountStatus, type AdminStatusDetail } from '../../admin-api.ts'
 import { getToken } from '../../auth.ts'
@@ -26,10 +27,13 @@ export default function AccountStatusDetail() {
   }, [token, id, statusId])
 
   return (
-    <AdminLayout title={t({ id: 'eunha.admin.account_status_detail.post', defaultMessage: 'Post' })} permission="manage_users">
-      <p className="mb-3 text-sm">
-        <Link to={`/admin/accounts/${id}/statuses`}>{t({ id: 'eunha.admin.account_status_detail.back_to_the_account_s_posts', defaultMessage: 'Back to the account\'\'s posts' })}</Link>
-      </p>
+    <AdminLayout title={t({ id: 'eunha.admin.account_status_detail.post', defaultMessage: 'Post' })} permission="manage_users"
+      actions={
+        <Button size="sm" variant="outline" render={<Link to={`/admin/accounts/${id}/statuses`} />}>
+          {t({ id: 'eunha.admin.account_status_detail.back_to_the_account_s_posts', defaultMessage: 'Back to the account\'\'s posts' })}
+        </Button>
+      }
+    >
       <AdminError error={error} />
       {!status && !error && <FeedSkeleton count={1} />}
       {status && (

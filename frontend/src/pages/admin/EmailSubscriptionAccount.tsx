@@ -66,10 +66,12 @@ export default function EmailSubscriptionAccount() {
     <AdminLayout
       title={entry ? t({ id: 'mastodon.admin.email_subscriptions.accounts.show.title', defaultMessage: 'Email newsletters of {name}' }, { name }) : t({ id: 'mastodon.admin.email_subscriptions.index.title', defaultMessage: 'Email newsletters' })}
       permission="manage_settings"
+      actions={
+        <Button size="sm" variant="outline" render={<Link to="/admin/email_subscriptions" />}>
+          {t({ id: 'eunha.admin.email_subscription_account.email_newsletters_2', defaultMessage: '← Email newsletters' })}
+        </Button>
+      }
     >
-      <p className="mb-3 text-sm">
-        <Link to="/admin/email_subscriptions">{t({ id: 'eunha.admin.email_subscription_account.email_newsletters_2', defaultMessage: '← Email newsletters' })}</Link>
-      </p>
       <AdminError error={error ?? feed.error} />
       {!entry && !error && <SectionSkeleton />}
       {entry && token && (

@@ -317,9 +317,9 @@ function InvitesPage() {
             {t({ id: 'eunha.invites.bring_someone_you_would_like_to', defaultMessage: 'Bring someone you would like to see here.' })}
           </p>
         </div>
-        <Link to="/invite-tree" className="text-sm underline">
+        <Button variant="outline" size="sm" render={<Link to="/invite-tree" />}>
           {t({ id: 'eunha.invites.invite_tree', defaultMessage: 'Invite tree' })}
-        </Link>
+        </Button>
       </div>
       {!token ? (
         <div className="space-y-2">

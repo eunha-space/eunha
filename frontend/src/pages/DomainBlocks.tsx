@@ -88,8 +88,10 @@ export default function DomainBlocks() {
   return (
     <div className="page-frame space-y-3">
       <TopBar />
-      <Link to="/blocked">{t({ id: 'column.blocked_accounts', defaultMessage: 'Blocked accounts' })}</Link>
-      <h1 className="text-xl font-bold">{t({ id: 'navigation_bar.domain_blocks', defaultMessage: 'Blocked domains' })}</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-xl font-bold">{t({ id: 'navigation_bar.domain_blocks', defaultMessage: 'Blocked domains' })}</h1>
+        <Button variant="outline" size="sm" render={<Link to="/blocked" />}>{t({ id: 'column.blocked_accounts', defaultMessage: 'Blocked accounts' })}</Button>
+      </div>
       {token ? <ManageDomainBlocks token={token} /> : <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>}
     </div>
   )

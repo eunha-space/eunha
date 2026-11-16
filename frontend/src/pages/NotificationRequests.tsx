@@ -124,8 +124,10 @@ export default function NotificationRequests() {
   return (
     <div className="page-frame space-y-3">
       <TopBar />
-      <Link to="/notifications">{t({ id: 'column.notifications', defaultMessage: 'Notifications' })}</Link>
-      <h1 className="text-xl font-bold">{t({ id: 'eunha.notification_requests.notification_requests', defaultMessage: 'Notification requests' })}</h1>
+      <div className="flex items-center gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-xl font-bold">{t({ id: 'eunha.notification_requests.notification_requests', defaultMessage: 'Notification requests' })}</h1>
+        <Button variant="outline" size="sm" render={<Link to="/notifications" />}>{t({ id: 'column.notifications', defaultMessage: 'Notifications' })}</Button>
+      </div>
       {token ? <><RequestList token={token} /><NotificationPolicy token={token} /></>
         : <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>}
     </div>

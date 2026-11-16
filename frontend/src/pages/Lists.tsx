@@ -96,8 +96,8 @@ function ListDetail({ id, token }: { id: string; token: string }) {
   return (
     <>
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">{list.title}</h1>
-        <Button variant="outline" onClick={() => setManage(!manage)}>{manage ? t({ id: 'eunha.lists.view_timeline', defaultMessage: 'View timeline' }) : t({ id: 'eunha.lists.manage_list', defaultMessage: 'Manage list' })}</Button>
+        <h1 className="min-w-0 flex-1 truncate text-xl font-bold">{list.title}</h1>
+        <Button variant="outline" size="sm" onClick={() => setManage(!manage)}>{manage ? t({ id: 'eunha.lists.view_timeline', defaultMessage: 'View timeline' }) : t({ id: 'eunha.lists.manage_list', defaultMessage: 'Manage list' })}</Button>
       </div>
       {manage ? (
         <>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { beginLogin, getToken } from '../auth.ts'
 import { restClient, type mastodon } from '../masto.ts'
@@ -118,7 +118,9 @@ function FilterForm({ token, filter, onSaved, onCancel }: {
   )
 }
 
-function ManageFilters({ token }: { token: string }) {
+// The page's title comes in as `heading` so that New filter can sit at the
+// end of its row, beside it, while this component owns the editing state.
+function ManageFilters({ token, heading }: { token: string; heading: ReactNode }) {
   const [revision, setRevision] = useState(0)
   const [editing, setEditing] = useState<mastodon.v2.Filter | 'new'>()
   const [deleting, setDeleting] = useState<string>()
@@ -139,15 +141,21 @@ function ManageFilters({ token }: { token: string }) {
     }
   }
 
-  if (editing) return <FilterForm token={token} filter={editing === 'new' ? undefined : editing}
-    onCancel={() => setEditing(undefined)} onSaved={() => {
-      setEditing(undefined)
-      setRevision((value) => value + 1)
-    }} />
+  if (editing) return <>
+    {heading}
+    <FilterForm token={token} filter={editing === 'new' ? undefined : editing}
+      onCancel={() => setEditing(undefined)} onSaved={() => {
+        setEditing(undefined)
+        setRevision((value) => value + 1)
+      }} />
+  </>
 
   return (
     <>
-      <Button variant="outline" onClick={() => setEditing('new')}>{t({ id: 'eunha.filters.new_filter', defaultMessage: 'New filter' })}</Button>
+      <div className="flex items-center gap-2">
+        {heading}
+        <Button variant="outline" size="sm" onClick={() => setEditing('new')}>{t({ id: 'eunha.filters.new_filter', defaultMessage: 'New filter' })}</Button>
+      </div>
       {feed.error && <p role="alert">{feed.error}</p>}
       {!feed.items && !feed.error && <RowsSkeleton count={3} />}
       {feed.items?.length === 0 && <p>{t({ id: 'eunha.filters.no_filters_yet', defaultMessage: 'No filters yet.' })}</p>}
@@ -174,11 +182,11 @@ function ManageFilters({ token }: { token: string }) {
 
 export default function Filters() {
   const token = getToken()
+  const heading = <h1 className="min-w-0 flex-1 truncate text-xl font-bold">{t({ id: 'mastodon.filters.index.title', defaultMessage: 'Filters' })}</h1>
   return (
     <div className="page-frame space-y-3">
       <TopBar />
-      <h1 className="text-xl font-bold">{t({ id: 'mastodon.filters.index.title', defaultMessage: 'Filters' })}</h1>
-      {token ? <ManageFilters token={token} /> : <Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button>}
+      {token ? <ManageFilters token={token} heading={heading} /> : <>{heading}<Button onClick={() => void beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button></>}
     </div>
   )
 }

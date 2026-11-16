@@ -308,29 +308,31 @@ export function ModerationSubscriptionDetail() {
       title={subscription ? t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscription', defaultMessage: 'Moderation subscription: {name}' }, { name: subscription.name }) : t({ id: 'eunha.admin.moderation_subscriptions.moderation_subscription_2', defaultMessage: 'Moderation subscription' })}
       permission="manage_federation"
       sub={TABS}
+      actions={subscription && data && (
+        <>
+          <Button size="sm" variant="outline" onClick={() => setEditing((open) => !open)}>
+            {t({ id: 'eunha.admin.moderation_subscriptions.edit_subscription', defaultMessage: 'Edit subscription' })}
+          </Button>
+          <ConfirmButton
+            title={t({ id: 'eunha.admin.moderation_subscriptions.delete_this_subscription', defaultMessage: 'Delete this subscription?' })}
+            description={t({ id: 'eunha.admin.moderation_subscriptions.are_you_sure_you_want_to', defaultMessage: 'Are you sure you want to delete this moderation subscription?' })}
+            confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
+            onConfirm={async () => {
+              await deleteModerationSubscription(token ?? '', id)
+              toast.success(t({ id: 'eunha.admin.moderation_subscriptions.successfully_deleted_moderation_subscription', defaultMessage: 'Successfully deleted moderation subscription' }))
+              void navigate('/admin/moderation_subscriptions')
+            }}
+          >
+            {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
+          </ConfirmButton>
+        </>
+      )}
     >
       <AdminError error={error} />
       {!data && !error && <DetailSkeleton />}
       {subscription && data && (
         <div className="space-y-3">
           <p className="text-muted-foreground text-sm break-all">{subscription.url}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => setEditing((open) => !open)}>
-              {t({ id: 'eunha.admin.moderation_subscriptions.edit_subscription', defaultMessage: 'Edit subscription' })}
-            </Button>
-            <ConfirmButton
-              title={t({ id: 'eunha.admin.moderation_subscriptions.delete_this_subscription', defaultMessage: 'Delete this subscription?' })}
-              description={t({ id: 'eunha.admin.moderation_subscriptions.are_you_sure_you_want_to', defaultMessage: 'Are you sure you want to delete this moderation subscription?' })}
-              confirmLabel={t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
-              onConfirm={async () => {
-                await deleteModerationSubscription(token ?? '', id)
-                toast.success(t({ id: 'eunha.admin.moderation_subscriptions.successfully_deleted_moderation_subscription', defaultMessage: 'Successfully deleted moderation subscription' }))
-                void navigate('/admin/moderation_subscriptions')
-              }}
-            >
-              {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
-            </ConfirmButton>
-          </div>
           {editing && (
             <SubscriptionFields
               initial={subscription}

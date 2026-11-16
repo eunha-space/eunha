@@ -296,9 +296,11 @@ function InviteTreePage() {
   return (
     <div className="page-frame">
       <TopBar />
-      <h1 className="mb-2 text-lg font-bold">{t({ id: 'eunha.invite_tree.invite_tree', defaultMessage: 'Invite tree' })}</h1>
-      <p className="text-muted-foreground mb-3 text-sm">{t({ id: 'eunha.invite_tree.who_joined_through_whose_invite_a', defaultMessage: 'Who joined through whose invite. A former member stands in for an inviter no longer here, and members who hide their network appear without their name.' })}</p>
-      <Button variant="outline" size="sm" render={<Link to="/invites" />} className="mb-4">{t({ id: 'eunha.invite_tree.your_invites', defaultMessage: 'Your invites' })}</Button>
+      <div className="mb-2 flex items-center gap-2">
+        <h1 className="min-w-0 flex-1 truncate text-lg font-bold">{t({ id: 'eunha.invite_tree.invite_tree', defaultMessage: 'Invite tree' })}</h1>
+        <Button variant="outline" size="sm" render={<Link to="/invites" />}>{t({ id: 'eunha.invite_tree.your_invites', defaultMessage: 'Your invites' })}</Button>
+      </div>
+      <p className="text-muted-foreground mb-4 text-sm">{t({ id: 'eunha.invite_tree.who_joined_through_whose_invite_a', defaultMessage: 'Who joined through whose invite. A former member stands in for an inviter no longer here, and members who hide their network appear without their name.' })}</p>
       {!token ? <div className="space-y-2"><p className="text-sm">{t({ id: 'eunha.invite_tree.sign_in_to_view_the_invite', defaultMessage: 'Sign in to view the invite tree.' })}</p><Button onClick={() => beginLogin()}>{t({ id: 'mastodon.user_mailer.welcome.sign_in_action', defaultMessage: 'Sign in' })}</Button></div> : <>
         {error && <div role="alert" className="text-destructive mb-3 text-sm">{error} <Button size="sm" variant="outline" onClick={() => setReload(n => n + 1)}>{t({ id: 'bundle_column_error.retry', defaultMessage: 'Try again' })}</Button></div>}
         {!tree && !error && <AccountListSkeleton count={6} />}

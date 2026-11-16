@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Button } from '@/components/ui/button.tsx'
 
 import {
   getAccount,
@@ -70,10 +71,12 @@ export default function Relationships() {
     <AdminLayout
       title={account ? t({ id: 'eunha.admin.relationships.relationships_of', defaultMessage: 'Relationships of @{acct}' }, { acct: account.account.acct }) : t({ id: 'navigation_bar.relationships', defaultMessage: 'Relationships' })}
       permission="manage_users"
+      actions={
+        <Button size="sm" variant="outline" render={<Link to={`/admin/accounts/${id}`} />}>
+          {t({ id: 'eunha.admin.relationships.back_to_account', defaultMessage: 'Back to account' })}
+        </Button>
+      }
     >
-      <p className="mb-3 text-sm">
-        <Link to={`/admin/accounts/${id}`}>{t({ id: 'eunha.admin.relationships.back_to_account', defaultMessage: 'Back to account' })}</Link>
-      </p>
       <div className="mb-3 grid gap-2 sm:grid-cols-3">
         <ChoiceSelect
           label={t({ id: 'mastodon.relationships.relationship', defaultMessage: 'Relationship' })}
