@@ -95,7 +95,7 @@ pub fn migrated_follow_tag(follower_id: i64, old_target_id: i64) -> String {
 /// queued as a job.
 pub async fn delivery_settled(
     db: &sqlx::PgPool,
-    queues: &crate::background::QueueWakes,
+    queues: &Arc<crate::background::QueueWakes>,
     settled: &ojak::deliverer::Settled,
 ) {
     let Some((follower, old_target)) = settled.tag.as_deref().and_then(parse_migrated_follow_tag)
@@ -107,7 +107,7 @@ pub async fn delivery_settled(
         old_target_account_id: old_target,
     };
     match crate::jobs::perform_async_in(db, job).await {
-        Ok(_) => queues.jobs.notify_one(),
+        Ok(_) => queues.raise(crate::background::Wake::Jobs),
         Err(error) => {
             tracing::error!(%error, "could not queue the unfollow of a migrated follow");
         }
@@ -1187,6 +1187,14 @@ pub async fn run_delivery_cleanup(state: AppState) {
             Err(e) => tracing::error!(error = %e, "delivery cleanup failed"),
         }
         crate::background::rest(&state.stop, DELIVERY_CLEANUP_INTERVAL).await;
+        // Once a day on an instance nobody uses, like the timed tasks.
+        let ran = std::time::Instant::now() - DELIVERY_CLEANUP_INTERVAL;
+        while state.queues.asleep() && !state.stop.is_cancelled() {
+            let Some(nap) = crate::scheduled_tasks::asleep_nap(Some(ran)) else {
+                break;
+            };
+            state.queues.until_in_use(&state.stop, nap).await;
+        }
     }
 }
 

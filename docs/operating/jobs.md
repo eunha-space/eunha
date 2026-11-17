@@ -45,8 +45,16 @@ weights of Mastodon's `config/sidekiq.yml` (`default` 8, `push` 6,
 but never starves the others.
 
 A job queued by the process that runs it wakes its loop at once. One queued
-by another process — `eunha accounts`, say — and a retry that has come due
-are found by polling, at most `[workers] queue_idle_poll_seconds` apart.
+by another process — `eunha accounts`, say, or the other process of a
+blue-green deploy — wakes it over Redis: each process publishes its wake-ups
+on the instance's `eunha:wake` channel, and passes on to its own loops what
+the others publish. A loop with nothing to claim sleeps until the next job
+falls due — a retry, a job queued for later, or the end of the lease of one
+whose process died — and otherwise until it is woken.
+`[workers] queue_idle_poll_seconds`, a day by default, is only a backstop for
+a wake-up lost while Redis was unreachable; a process that reconnects to Redis
+wakes every loop anyway. The delivery, media and archive queues sleep the
+same way.
 
 A claimed job is held by a lease of five minutes, which its loop renews
 every minute while the job runs. A job whose process died is taken up again
@@ -180,44 +188,52 @@ The tasks:
 | *sidekiq.yml* entry                            | Mastodon's schedule                   | eunha                                                           |
 | ---------------------------------------------- | ------------------------------------- | --------------------------------------------------------------- |
 | `scheduled_statuses_scheduler`                 | every 5 minutes                       | when the next scheduled post falls due; one process at a time   |
-| `trends_refresh_scheduler`                     | every 5 minutes, first after 4        | the same                                                        |
-| `trends_review_notifications_scheduler`        | every 6 hours                         | the same, or soon after start if 6 hours have passed            |
+| `trends_refresh_scheduler`                     | every 5 minutes, first after 4        | the same, while in use                                          |
+| `trends_review_notifications_scheduler`        | every 6 hours                         | the same while in use, or soon after start if 6 hours passed    |
 | `indexing_scheduler`                           | every minute                          | the same, with Elasticsearch only                               |
 | `vacuum_scheduler`                             | daily, at a random 03:00–05:59        | daily, at the instance's own time in 03:00–05:59 UTC            |
 | `follow_recommendations_scheduler`             | daily, at a random 06:00–09:59        | daily, at the instance's own time in 06:00–09:59 UTC            |
 | `user_cleanup_scheduler`                       | daily, at a random 04:00–06:59        | daily, at the instance's own time in 04:00–06:59 UTC            |
 | `ip_cleanup_scheduler`                         | daily, at a random 03:00–05:59        | daily, at the instance's own time in 03:00–05:59 UTC            |
 | `pghero_scheduler`                             | daily at 00:00                        | not run: eunha has no PgHero                                    |
-| `instance_refresh_scheduler`                   | on the hour                           | on the hour, UTC                                                |
+| `instance_refresh_scheduler`                   | on the hour                           | on the hour, UTC, while in use                                  |
 | `accounts_statuses_cleanup_scheduler`          | every minute                          | every minute while any account has a policy                     |
 | `suspended_user_cleanup_scheduler`             | every minute                          | when the next deletion request falls due; one process at a time |
 | `software_update_check_scheduler`              | every 30 minutes                      | at start, then every 30 minutes, once for the whole process     |
-| `auto_close_registrations_scheduler`           | every hour                            | the same                                                        |
+| `auto_close_registrations_scheduler`           | every hour                            | the same, while in use                                          |
 | `fasp_follow_recommendation_cleanup_scheduler` | every day                             | the same, or soon after start if a day has passed               |
-| `collection_item_cleanup_scheduler`            | every hour                            | the same                                                        |
-| `moderation_list_synchronization_scheduler`    | every 6 hours, first after 30 minutes | the same, if the feature is on                                  |
-| `pending_accounts_notification_scheduler`      | every hour                            | the same                                                        |
-| `server_checks_scheduler`                      | every 15 minutes                      | the same                                                        |
+| `collection_item_cleanup_scheduler`            | every hour                            | the same, while in use                                          |
+| `moderation_list_synchronization_scheduler`    | every 6 hours, first after 30 minutes | the same, if the feature is on, while in use                    |
+| `pending_accounts_notification_scheduler`      | every hour                            | the same, while in use                                          |
+| `server_checks_scheduler`                      | every 15 minutes                      | the same, while in use                                          |
 
 A self-destructing instance runs `self_destruct_scheduler`, every minute, and
 nothing else, as Mastodon replaces its schedule with it. Announcements are
 published when their `scheduled_at` comes and unpublished when their `ends_at`
 passes (`eunha_scheduled_announcements`), which in Mastodon
 `ScheduledStatusesScheduler` and the jobs it queues do. Failed deliveries a
-week old are pruned every hour, as eunha's own task.
+week old are pruned every hour while in use, as eunha's own task.
 
-Two of those wake less often than Mastodon's do, because a task that wakes
-every minute keeps a database connection open for most of every minute, and
-on a host of mostly idle tenants that is most of what a tenant costs:
+Several of those wake less often than Mastodon's do. Every pass takes a
+database connection, which stays open for a while after it, so a task that
+wakes every few minutes keeps an instance nobody uses holding one. On a host
+of mostly idle tenants that is most of what a tenant costs:
 
  -  `accounts_statuses_cleanup_scheduler` runs every minute only while some
-    account has an enabled automated post deletion policy. With none, it looks
-    again every `queue_idle_poll_seconds`, or as soon as a policy is saved
-    here; a policy saved by another process sharing the database is taken up
-    at that poll.
+    account has an enabled automated post deletion policy. With none, it
+    sleeps until a policy is saved, by this process or another.
  -  The announcements' schedule sleeps until the next `scheduled_at` or
     `ends_at`, and is woken when an announcement is created, changed or
     published.
+ -  Scheduled posts and account deletions sleep until the next is due, and
+    are woken when one is made.
+ -  An instance is *in use* for an hour after any request but the control
+    plane's health check, or after another process queues work for it. While
+    it is not, the tasks marked “while in use” run once a day instead, and
+    pick up their schedule again, within a minute, when it is next used.
+
+An instance nobody uses therefore touches its database once a day for each of
+its daily tasks and for these, and otherwise not at all.
 
 When each task last ran, and whether one is running:
 

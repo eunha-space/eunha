@@ -202,11 +202,12 @@ pub struct WorkersConfig {
     #[serde(default = "default_delivery_concurrency")]
     pub delivery_concurrency: usize,
     /// The longest an idle queue loop waits before looking for work again, in
-    /// seconds. A job this process enqueues wakes its loop at once regardless;
-    /// the poll only finds retries that have come due and jobs another process
-    /// enqueued, so this bounds how late those can start. A host of mostly idle
-    /// tenants raises it, with `database_pool.idle_timeout_seconds` below it, so
-    /// that an idle tenant holds no database connection at all.
+    /// seconds. Whatever is enqueued wakes the loops at once — in this
+    /// process directly, and in the instance's other processes over Redis
+    /// pub/sub — and a loop with a retry or a scheduled item waiting wakes when
+    /// it falls due. So this is only a backstop, for a wake-up lost while Redis
+    /// was unreachable: a day by default. Lower it for processes that share an
+    /// instance's database but not its Redis.
     ///
     /// The timed tasks — scheduled statuses and suspended account cleanup —
     /// sleep until their next item is due and, when nothing is, for
@@ -280,7 +281,7 @@ fn default_delivery_concurrency() -> usize {
 }
 
 fn default_queue_idle_poll_seconds() -> u64 {
-    30
+    24 * 60 * 60
 }
 
 fn default_process_delivery_concurrency() -> usize {

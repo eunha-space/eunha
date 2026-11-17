@@ -572,7 +572,7 @@ by 90%.
 
 An idle tenant still opens about one PostgreSQL session a minute and keeps it
 for PgBouncer's 30-second `server_idle_timeout`. That is about one backend per
-tenant. What still wakes it once a minute is not yet traced.
+tenant. The next section traces what still wakes it.
 
 **Startup at 200 tenants took 81 seconds.** At 10 to 100 tenants every tenant
 answered within 0.6 seconds. At 200, the startup migration checks and first
@@ -629,6 +629,43 @@ The first run of this benchmark was on a busy workstation and is not used:
 one step's p95 jumped to 11 seconds while the machine was decompressing
 memory. Results are kept in `benchmark-results/shared-*`, outside the
 repository.
+
+
+2026-11-17: an idle tenant at zero
+----------------------------------
+
+One tenant, in `eunha --tenants` with the hosting profile's pool, no health
+sweep and no requests, traced for 25 minutes with PostgreSQL logging every
+connection and statement. After 77a983cb it still woke for:
+
+ -  the job, media and backup queues and ojak's delivery lanes, each polling
+    every `queue_idle_poll_seconds` (eunha.space sets 300);
+ -  scheduled statuses, suspended account cleanup, scheduled announcements and
+    the post deletion check, each at that same ceiling;
+ -  trends every five minutes, server checks every fifteen, and the hourly
+    cron entries.
+
+Each wake held a connection for about 50 seconds: sqlx's 20-second idle
+timeout, then PgBouncer's 30.
+
+The change that followed (described in *jobs.md*) has every queue sleep until
+its next job falls due, or a lease runs out, instead of polling. A process that
+queues work wakes the others through the instance's `eunha:wake` channel in
+Redis, and ojak's `Deliverer::wake` lets the delivery lanes be woken the same
+way. `queue_idle_poll_seconds` now defaults to a day, as a backstop. An
+instance that has served no request but health checks for an hour is *asleep*:
+its sub-daily timed tasks and hourly cron entries run once a day, and catch up
+within a minute of the next request.
+
+With it, the tenant opened connections twice: at startup, and two minutes
+later for the first run of its daily and periodic tasks, which a new database
+has never had. Both had closed 2 minutes 40 seconds after start, and for the
+remaining 22 minutes it opened none.
+
+In production the health sweep still costs one `SELECT 1` every five minutes
+per tenant, which does not count as use. A federated instance is rarely asleep:
+inbound activities are requests, and keep it in use. This is for instances
+nobody follows yet, trials, and the abandoned.
 
 Spikes
 ======

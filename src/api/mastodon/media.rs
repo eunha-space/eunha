@@ -575,7 +575,7 @@ async fn create(
         )
         .execute(&state.db)
         .await?;
-        state.queues.media.notify_one();
+        state.queues.raise(crate::background::Wake::Media);
     }
 
     // v1 answers 200 whatever; v2 202 while processing waits in the queue.
@@ -1036,20 +1036,44 @@ const MEDIA_QUEUE_ERROR_IDLE: std::time::Duration = std::time::Duration::from_se
 /// Drain the durable media-processing queue until the instance is stopped.
 pub async fn run_media_queue(state: AppState) {
     let worker_id = format!("media-{}", std::process::id());
-    let mut idle = crate::background::IdleBackoff::new(
-        MEDIA_QUEUE_IDLE,
-        state.config.workers.sanitized().queue_idle_poll(),
-    );
+    let ceiling = state.config.workers.sanitized().queue_idle_poll();
     while !state.stop.is_cancelled() {
         match run_media_queue_batch(&state, &worker_id).await {
-            Ok(0) => idle.idle(&state.queues.media, &state.stop).await,
-            Ok(_) => idle.reset(),
+            Ok(0) => {
+                let due = next_media_job_due(&state).await.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "could not find when the next media job is due");
+                    Some(MEDIA_QUEUE_ERROR_IDLE)
+                });
+                crate::background::idle_until(
+                    &state.queues.media,
+                    &state.stop,
+                    due.map(|due| due.max(MEDIA_QUEUE_IDLE)),
+                    ceiling,
+                )
+                .await;
+            }
+            Ok(_) => {}
             Err(e) => {
                 tracing::error!(error = %e, "media processing queue batch failed");
                 crate::background::rest(&state.stop, MEDIA_QUEUE_ERROR_IDLE).await;
             }
         }
     }
+}
+
+/// How long until a media job can next be claimed: the earliest `run_at` of
+/// those waiting, or when a claimed one's lock goes stale. `None` when there
+/// are none.
+async fn next_media_job_due(state: &AppState) -> anyhow::Result<Option<std::time::Duration>> {
+    let seconds = sqlx::query_scalar::<_, Option<f64>>(
+        "SELECT EXTRACT(EPOCH FROM min(CASE WHEN locked_at IS NULL THEN run_at
+                                            ELSE locked_at + interval '10 minutes' END)
+                      - now())::float8
+         FROM eunha.media_processing_jobs",
+    )
+    .fetch_one(&state.db)
+    .await?;
+    Ok(seconds.map(|seconds| std::time::Duration::from_secs_f64(seconds.max(0.0))))
 }
 
 /// Claim and run the jobs that are due; how many there were.

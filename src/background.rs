@@ -50,6 +50,11 @@ pub fn spawn(state: AppState) -> Vec<JoinHandle<()>> {
     };
     tasks.push(until_stopped(
         &state,
+        "wake-up relay",
+        relay_wakes(state.clone()),
+    ));
+    tasks.push(until_stopped(
+        &state,
         "media queue",
         crate::api::mastodon::media::run_media_queue(state.clone()),
     ));
@@ -311,14 +316,19 @@ pub async fn rest(stop: &CancellationToken, nap: Duration) {
 
 /// One wake-up per durable queue, raised by whoever enqueues a job.
 ///
-/// Jobs are enqueued by requests this process serves, so the loop draining a
-/// queue can be told about them rather than finding them by polling. Polling
-/// every half-second cost an idle instance three transactions a second and kept
-/// a database connection open for good, which on a host of mostly idle tenants
-/// is most of what those tenants cost. The loops still poll, backing off towards
-/// `[workers] queue_idle_poll_seconds`, for what no wake-up announces: a retry
-/// whose `run_at` has come due, and a job enqueued by another process sharing
-/// the database.
+/// Jobs are mostly enqueued by requests this process serves, so the loop
+/// draining a queue can be told about them rather than finding them by
+/// polling. Polling every half-second cost an idle instance three
+/// transactions a second and kept a database connection open for good, which
+/// on a host of mostly idle tenants is most of what those tenants cost.
+///
+/// What another process serving the instance enqueues — `eunha accounts`, the
+/// other process of a blue-green deploy — reaches this one over Redis
+/// ([`QueueWakes::raise`] publishes each wake-up on [`WAKE_CHANNEL`], and
+/// [`relay_wakes`] passes on what other processes publish). A retry whose
+/// `run_at` comes due is woken for at that time. So a loop with nothing due
+/// sleeps for `[workers] queue_idle_poll_seconds`, a day unless configured,
+/// which only matters if a wake-up was lost.
 ///
 /// The timed tasks have wake-ups too, for when the next thing they are waiting
 /// for moves earlier than the time they went to sleep until.
@@ -337,45 +347,263 @@ pub struct QueueWakes {
     pub announcements: tokio::sync::Notify,
     /// An account's automated post deletion policy was saved.
     pub statuses_cleanup: tokio::sync::Notify,
+    /// An account was queued for deletion.
+    pub account_deletions: tokio::sync::Notify,
+    /// When the instance was last in use; see [`QueueWakes::asleep`].
+    in_use: InUse,
+    /// Tells these wake-ups from those of the instance's other processes on
+    /// [`WAKE_CHANNEL`], picked at random when first needed.
+    sender: std::sync::OnceLock<u64>,
+    /// Where wake-ups are published for the instance's other processes; set
+    /// once the instance's streaming bus exists.
+    relay: std::sync::OnceLock<crate::streaming::StreamBus>,
+    /// Wake-ups being published, by [`Wake`]: one in flight already tells
+    /// the other processes to look, so another is not sent until it lands.
+    publishing: [std::sync::atomic::AtomicBool; Wake::ALL.len()],
 }
 
-/// How long a queue loop sleeps after finding nothing: `floor` at first,
-/// doubling with every empty pass up to `ceiling`, and `floor` again once work
-/// turns up.
-pub struct IdleBackoff {
-    floor: Duration,
-    ceiling: Duration,
-    current: Duration,
+/// How long after its last request an instance counts as in use. Past it,
+/// the timed tasks that run more often than daily keep to once a day
+/// ([`QueueWakes::asleep`]).
+pub const IN_USE_FOR: Duration = Duration::from_secs(60 * 60);
+
+/// When the instance was last in use, as seconds on this process's monotonic
+/// clock since it started, and a wake-up for whoever waits for it to be.
+#[derive(Default)]
+struct InUse {
+    /// Zero while it has not been in use since this process started.
+    at: std::sync::atomic::AtomicU64,
+    woken: tokio::sync::Notify,
 }
 
-impl IdleBackoff {
-    pub fn new(floor: Duration, ceiling: Duration) -> Self {
-        Self {
-            floor,
-            ceiling: ceiling.max(floor),
-            current: floor,
+fn process_clock() -> Duration {
+    static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    STARTED.get_or_init(std::time::Instant::now).elapsed()
+}
+
+/// The Redis channel, under the instance's key prefix, that a process
+/// publishes its wake-ups on for the instance's other processes.
+pub const WAKE_CHANNEL: &str = "eunha:wake";
+
+/// What a wake-up is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Wake {
+    Delivery,
+    Media,
+    Jobs,
+    Backups,
+    ScheduledStatuses,
+    Announcements,
+    StatusesCleanup,
+    AccountDeletions,
+}
+
+impl Wake {
+    pub const ALL: [Wake; 8] = [
+        Wake::Delivery,
+        Wake::Media,
+        Wake::Jobs,
+        Wake::Backups,
+        Wake::ScheduledStatuses,
+        Wake::Announcements,
+        Wake::StatusesCleanup,
+        Wake::AccountDeletions,
+    ];
+
+    fn index(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|wake| *wake == self)
+            .expect("every wake is in ALL")
+    }
+}
+
+/// Wake-ups this process is publishing, of every instance it serves.
+static PUBLISHING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static PUBLISHED: tokio::sync::Notify = tokio::sync::Notify::const_new();
+
+/// Wait, at most `limit`, for every wake-up this process raised to be
+/// published: what a command that queued work does before it exits.
+pub async fn wakes_published(limit: Duration) {
+    let _ = tokio::time::timeout(limit, async {
+        loop {
+            let published = PUBLISHED.notified();
+            if PUBLISHING.load(std::sync::atomic::Ordering::Acquire) == 0 {
+                return;
+            }
+            published.await;
+        }
+    })
+    .await;
+}
+
+impl QueueWakes {
+    fn sender(&self) -> u64 {
+        *self.sender.get_or_init(rand::random)
+    }
+
+    /// Publish wake-ups on `bus` from now on.
+    pub fn relay_through(&self, bus: crate::streaming::StreamBus) {
+        let _ = self.relay.set(bus);
+    }
+
+    fn notify(&self, wake: Wake) -> &tokio::sync::Notify {
+        match wake {
+            Wake::Delivery => &self.delivery,
+            Wake::Media => &self.media,
+            Wake::Jobs => &self.jobs,
+            Wake::Backups => &self.backups,
+            Wake::ScheduledStatuses => &self.scheduled_statuses,
+            Wake::Announcements => &self.announcements,
+            Wake::StatusesCleanup => &self.statuses_cleanup,
+            Wake::AccountDeletions => &self.account_deletions,
         }
     }
 
-    pub fn reset(&mut self) {
-        self.current = self.floor;
+    /// Wake the loop for `wake` here, and in every other process serving the
+    /// instance.
+    pub fn raise(self: &std::sync::Arc<Self>, wake: Wake) {
+        self.notify(wake).notify_one();
+        let Some(bus) = self.relay.get().cloned() else {
+            return;
+        };
+        let publishing = &self.publishing[wake.index()];
+        if publishing.swap(true, std::sync::atomic::Ordering::AcqRel) {
+            return;
+        }
+        let wakes = self.clone();
+        PUBLISHING.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        crate::tenants::spawn(async move {
+            bus.publish(
+                WAKE_CHANNEL,
+                serde_json::json!({"wake": wake, "from": wakes.sender()}),
+            )
+            .await;
+            wakes.publishing[wake.index()].store(false, std::sync::atomic::Ordering::Release);
+            if PUBLISHING.fetch_sub(1, std::sync::atomic::Ordering::AcqRel) == 1 {
+                PUBLISHED.notify_waiters();
+            }
+        });
     }
 
-    /// Sleep until `wake` is raised, the current interval passes, or the
-    /// instance is stopped.
-    ///
-    /// `Notify` keeps a permit raised while nobody was waiting, so a job
-    /// enqueued between an empty claim and this call ends the sleep at once
-    /// instead of waiting out the interval.
-    pub async fn idle(&mut self, wake: &tokio::sync::Notify, stop: &CancellationToken) {
+    /// Note that the instance is in use: a request, or work another process
+    /// queued for it.
+    pub fn mark_in_use(&self) {
+        // At least one second, so that zero still means never.
+        let now = process_clock().as_secs().max(1);
+        let before = self
+            .in_use
+            .at
+            .swap(now, std::sync::atomic::Ordering::Relaxed);
+        if before == 0 || now.saturating_sub(before) >= IN_USE_FOR.as_secs() {
+            self.in_use.woken.notify_waiters();
+        }
+    }
+
+    /// Whether nothing has used the instance for [`IN_USE_FOR`], or at all
+    /// since this process started. The timed tasks that Mastodon runs more
+    /// often than daily keep to once a day while it is, so that an instance
+    /// nobody uses touches its database only for its daily maintenance.
+    pub fn asleep(&self) -> bool {
+        let at = self.in_use.at.load(std::sync::atomic::Ordering::Relaxed);
+        at == 0 || process_clock().as_secs().saturating_sub(at) >= IN_USE_FOR.as_secs()
+    }
+
+    /// Sleep until the instance is in use again, `nap` has passed, or it is
+    /// stopped.
+    pub async fn until_in_use(&self, stop: &CancellationToken, nap: Duration) {
+        let woken = self.in_use.woken.notified();
+        if !self.asleep() {
+            return;
+        }
         tokio::select! {
             () = stop.cancelled() => {}
-            _ = wake.notified() => self.reset(),
-            _ = tokio::time::sleep(jittered(self.current, rand::random())) => {
-                self.current = (self.current * 2).min(self.ceiling);
+            () = woken => {}
+            () = tokio::time::sleep(nap) => {}
+        }
+    }
+
+    /// Wake every loop here, as a wake-up from another process would.
+    fn notify_all(&self) {
+        for wake in Wake::ALL {
+            self.notify(wake).notify_one();
+        }
+    }
+}
+
+/// Every request but the control plane's health check puts the instance in
+/// use ([`QueueWakes::asleep`]).
+pub async fn mark_in_use(
+    state: AppState,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    if req.uri().path() != "/api/eunha/v1/health" {
+        state.queues.mark_in_use();
+    }
+    next.run(req).await
+}
+
+/// Pass on to this process's loops the wake-ups the instance's other
+/// processes publish, and wake every loop each time the connection to Redis
+/// is made again, since what was published meanwhile is lost.
+pub async fn relay_wakes(state: AppState) {
+    let mut connections = state.streaming.connections();
+    let mut wakes = state.streaming.listen(WAKE_CHANNEL).await;
+    loop {
+        tokio::select! {
+            () = state.stop.cancelled() => return,
+            changed = connections.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                state.queues.notify_all();
+                state.deliverer.wake();
+            }
+            message = wakes.recv() => {
+                let Some(message) = message else {
+                    return;
+                };
+                if message.get("from").and_then(serde_json::Value::as_u64) == Some(state.queues.sender()) {
+                    continue;
+                }
+                let Some(wake) = message
+                    .get("wake")
+                    .and_then(|wake| serde_json::from_value::<Wake>(wake.clone()).ok())
+                else {
+                    continue;
+                };
+                state.queues.mark_in_use();
+                state.queues.notify(wake).notify_one();
+                if wake == Wake::Delivery {
+                    state.deliverer.wake();
+                }
             }
         }
     }
+}
+
+/// Sleep after a queue loop found nothing to claim: until `due`, when the
+/// next item can be claimed, or until `wake` is raised, or the instance is
+/// stopped — and never longer than `ceiling`, the `[workers]
+/// queue_idle_poll_seconds` backstop.
+///
+/// `Notify` keeps a permit raised while nobody was waiting, so a job enqueued
+/// between an empty claim and this call ends the sleep at once instead of
+/// waiting out the interval. Only a sleep with nothing due is jittered: what
+/// falls due is woken for on time.
+pub async fn idle_until(
+    wake: &tokio::sync::Notify,
+    stop: &CancellationToken,
+    due: Option<Duration>,
+    ceiling: Duration,
+) {
+    let nap = match due {
+        Some(due) if due < ceiling => due,
+        _ => jittered(ceiling, rand::random()),
+    };
+    sleep_or_wake(wake, stop, nap).await;
 }
 
 /// The most an idle sleep is shortened by, at random.
@@ -879,7 +1107,8 @@ async fn run_suspended_account_cleanup(state: AppState) {
             tracing::error!(error = %e, "could not find when the next deletion request is due");
             None
         });
-        rest(
+        sleep_or_wake(
+            &state.queues.account_deletions,
             &state.stop,
             timed_task_nap(due, DELETION_PASS_FLOOR, ceiling, rand::random()),
         )
@@ -1026,61 +1255,74 @@ pub async fn process_deletion_requests(state: &AppState) -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-mod idle_backoff_tests {
-    use super::IdleBackoff;
+mod idle_tests {
+    use super::idle_until;
     use std::time::Duration;
     use tokio::sync::Notify;
     use tokio_util::sync::CancellationToken;
+
+    const HOUR: Duration = Duration::from_secs(3600);
 
     #[tokio::test]
     async fn a_stopped_instance_does_not_sleep_out_its_interval() {
         let wake = Notify::new();
         let stop = CancellationToken::new();
-        let hour = Duration::from_secs(3600);
-        let mut backoff = IdleBackoff::new(hour, hour);
         stop.cancel();
-        tokio::time::timeout(Duration::from_secs(5), backoff.idle(&wake, &stop))
+        tokio::time::timeout(Duration::from_secs(5), idle_until(&wake, &stop, None, HOUR))
             .await
             .expect("a stop should end an idle sleep at once");
     }
 
     #[tokio::test]
-    async fn empty_passes_back_off_to_the_ceiling_and_work_resets_it() {
-        let wake = Notify::new();
-        let mut backoff = IdleBackoff::new(Duration::from_millis(1), Duration::from_millis(4));
-        for _ in 0..4 {
-            backoff.idle(&wake, &CancellationToken::new()).await;
-        }
-        assert_eq!(backoff.current, Duration::from_millis(4));
-        backoff.reset();
-        assert_eq!(backoff.current, Duration::from_millis(1));
-    }
-
-    #[tokio::test]
     async fn a_job_enqueued_before_the_loop_sleeps_is_not_missed() {
         let wake = Notify::new();
-        let hour = Duration::from_secs(3600);
-        let mut backoff = IdleBackoff::new(hour, hour);
         wake.notify_one();
         tokio::time::timeout(
             Duration::from_secs(5),
-            backoff.idle(&wake, &CancellationToken::new()),
+            idle_until(&wake, &CancellationToken::new(), None, HOUR),
         )
         .await
         .expect("a wake-up raised before the sleep should end it at once");
     }
 
     #[tokio::test]
-    async fn a_wake_up_shortens_the_next_sleep() {
-        let wake = Notify::new();
-        let mut backoff = IdleBackoff::new(Duration::from_millis(1), Duration::from_secs(3600));
-        for _ in 0..3 {
-            backoff.idle(&wake, &CancellationToken::new()).await;
-        }
-        assert_eq!(backoff.current, Duration::from_millis(8));
-        wake.notify_one();
-        backoff.idle(&wake, &CancellationToken::new()).await;
-        assert_eq!(backoff.current, Duration::from_millis(1));
+    async fn an_instance_is_asleep_until_it_is_used() {
+        let wakes = std::sync::Arc::new(super::QueueWakes::default());
+        assert!(wakes.asleep(), "unused since the process started");
+        let waiting = {
+            let wakes = wakes.clone();
+            crate::tenants::spawn(async move {
+                wakes.until_in_use(&CancellationToken::new(), HOUR).await;
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        wakes.mark_in_use();
+        assert!(!wakes.asleep());
+        tokio::time::timeout(Duration::from_secs(5), waiting)
+            .await
+            .expect("being used wakes what waits for it")
+            .unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            wakes.until_in_use(&CancellationToken::new(), HOUR),
+        )
+        .await
+        .expect("an instance in use is not waited for");
+    }
+
+    #[tokio::test]
+    async fn what_falls_due_is_woken_for() {
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            idle_until(
+                &Notify::new(),
+                &CancellationToken::new(),
+                Some(Duration::from_millis(10)),
+                HOUR,
+            ),
+        )
+        .await
+        .expect("the sleep should end when the next item is due");
     }
 }
 

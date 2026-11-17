@@ -206,6 +206,7 @@ impl AppState {
             redis_keys.clone(),
             stop.clone(),
         );
+        queues.relay_through(streaming.clone());
         Ok(Self {
             growth_limits: Arc::new(crate::growth_limits::GrowthLimits::new(&config.limits)),
             db,

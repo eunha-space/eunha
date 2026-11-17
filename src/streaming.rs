@@ -45,6 +45,10 @@ const HEARTBEAT: Duration = Duration::from_secs(6 * 60);
 /// How long a `subscribed:<channel>` key lives: three heartbeats.
 const SUBSCRIBED_TTL: u64 = 3 * 6 * 60;
 
+/// Channels under this prefix are eunha's own, not Mastodon's streams: they
+/// get no `subscribed:` keys ([`StreamBus::listen`]).
+pub const QUIET_PREFIX: &str = "eunha:";
+
 /// The most keys one `MGET` asks about.
 const MGET_CHUNK: usize = 1000;
 
@@ -67,6 +71,9 @@ struct Inner {
     channels: Channels,
     /// The subscribing connection's task, once a stream has opened it.
     commands: Mutex<Option<mpsc::UnboundedSender<Command>>>,
+    /// Counts the times the subscribing connection has (re)subscribed to every
+    /// channel listened to: what was published while it was away was missed.
+    connected: tokio::sync::watch::Sender<u64>,
     stop: tokio_util::sync::CancellationToken,
 }
 
@@ -124,6 +131,7 @@ impl StreamBus {
                 keys,
                 channels: Arc::default(),
                 commands: Mutex::new(None),
+                connected: tokio::sync::watch::Sender::new(0),
                 stop,
             }),
         }
@@ -172,6 +180,15 @@ impl StreamBus {
     /// confirmed the subscription, so that nothing published after it is
     /// missed.
     pub async fn subscribe(&self, channel: &str) -> Subscription {
+        let subscription = self.listen(channel).await;
+        self.tell_subscribed(&[channel.to_owned()]).await;
+        subscription
+    }
+
+    /// Subscribe to `channel` without telling anyone: no `subscribed:` key,
+    /// set now or by the heartbeat, for a channel that is the process's own
+    /// business rather than a stream's ([`QUIET_PREFIX`]).
+    pub async fn listen(&self, channel: &str) -> Subscription {
         let (rx, new) = {
             let mut channels = self.inner.channels.lock().expect("streaming channels");
             let new = !channels.contains_key(channel);
@@ -193,12 +210,18 @@ impl StreamBus {
                 tracing::warn!(channel, "Redis did not confirm a streaming subscription");
             }
         }
-        self.tell_subscribed(&[channel.to_owned()]).await;
         Subscription {
             rx,
             channel: channel.to_owned(),
             bus: self.clone(),
         }
+    }
+
+    /// Changes each time the subscribing connection has subscribed to every
+    /// channel listened to, the first time and after each reconnect. What was
+    /// published while it was away is lost, as Redis drops it.
+    pub fn connections(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.connected.subscribe()
     }
 
     /// `tellSubscribed`: `SET subscribed:<channel> 1 EX 1080` for each.
@@ -398,6 +421,7 @@ async fn run_subscriber(
         for ack in waiting.drain(..) {
             let _ = ack.send(());
         }
+        bus.connected.send_modify(|count| *count += 1);
         let keys = bus.keys.clone();
         let channels = bus.channels.clone();
         drop(bus);
@@ -445,8 +469,13 @@ async fn run_subscriber(
                     let Some(bus) = inner.upgrade() else {
                         return;
                     };
-                    let listened: Vec<String> =
-                        channels.lock().expect("streaming channels").keys().cloned().collect();
+                    let listened: Vec<String> = channels
+                        .lock()
+                        .expect("streaming channels")
+                        .keys()
+                        .filter(|channel| !channel.starts_with(QUIET_PREFIX))
+                        .cloned()
+                        .collect();
                     tell_subscribed(&bus, &listened).await;
                 }
             }

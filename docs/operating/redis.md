@@ -62,6 +62,13 @@ process serving streams for the instance subscribes to the channels its
 connections listen on. Pub/sub channels have ACL patterns of their own, so the
 tenant user needs `&tenant-example:*` as well as `~tenant-example:*`.
 
+eunha's processes also wake each other through pub/sub. What one process
+queues for an instance — a job, a delivery, a scheduled post — it announces
+on the instance's `eunha:wake` channel, and every process serving the instance
+listens there, so that its queues can sleep until there is work rather than
+poll for it (see [jobs](./jobs)). That is one more subscribing connection per
+instance per process, and no `subscribed:` key.
+
 Do not treat a prefix as authorization. Give each instance a distinct Redis
 user, the matching key pattern, and only the commands eunha uses:
 

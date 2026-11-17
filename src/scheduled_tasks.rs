@@ -475,6 +475,19 @@ async fn finished(db: &PgPool, name: &str, at: DateTime<Utc>) -> sqlx::Result<bo
 }
 
 /// Whether `name` last finished a run more than `period` ago, or never has.
+/// How long ago the task's last run started, or `None` if it never has.
+pub async fn since_last_run(db: &PgPool, name: &str) -> sqlx::Result<Option<Duration>> {
+    let seconds: Option<f64> = sqlx::query_scalar(
+        "SELECT EXTRACT(EPOCH FROM now() - last_slot)::float8
+         FROM eunha.scheduled_tasks WHERE name = $1",
+    )
+    .bind(name)
+    .fetch_optional(db)
+    .await?
+    .flatten();
+    Ok(seconds.map(|seconds| Duration::from_secs_f64(seconds.max(0.0))))
+}
+
 pub async fn overdue(db: &PgPool, name: &str, period: Duration) -> sqlx::Result<bool> {
     sqlx::query_scalar(
         r#"SELECT NOT EXISTS (
@@ -576,14 +589,56 @@ async fn run_every<F, Fut>(
             tracing::warn!(task = name, %error, "could not tell when a scheduled task last ran");
             false
         });
+    // When it last ran, for a task that keeps to [`ASLEEP_EVERY`] while the
+    // instance is asleep.
+    let stretched = every < ASLEEP_EVERY;
+    let mut last_run = if stretched {
+        since_last_run(&state.db, name)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(task = name, %error, "could not tell when a scheduled task last ran");
+                None
+            })
+            .and_then(|since| std::time::Instant::now().checked_sub(since))
+    } else {
+        None
+    };
     crate::background::rest(&state.stop, first_every_wait(first_in, overdue)).await;
     while !state.stop.is_cancelled() {
+        if stretched && state.queues.asleep() {
+            if let Some(nap) = asleep_nap(last_run) {
+                state.queues.until_in_use(&state.stop, nap).await;
+                if !state.queues.asleep() {
+                    // In use again: catch up soon, but not all at once with
+                    // every other task the same request woke.
+                    crate::background::rest(&state.stop, waking_delay()).await;
+                }
+                continue;
+            }
+        }
         if let Err(error) = attempt(&state.db, name, Slot::Every(every), work(state.clone())).await
         {
             tracing::error!(task = name, %error, "could not take a scheduled task's lease");
         }
+        last_run = Some(std::time::Instant::now());
         crate::background::rest(&state.stop, every).await;
     }
+}
+
+/// How often a task Mastodon runs more often than daily runs while the
+/// instance is asleep ([`crate::background::QueueWakes::asleep`]).
+pub const ASLEEP_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// How long a task on an asleep instance waits before its next run, or `None`
+/// when a day has passed since `last_run` and it is to run now.
+pub fn asleep_nap(last_run: Option<std::time::Instant>) -> Option<Duration> {
+    let since = last_run?.elapsed();
+    (since < ASLEEP_EVERY).then(|| ASLEEP_EVERY - since)
+}
+
+/// Up to a minute, at random.
+fn waking_delay() -> Duration {
+    Duration::from_millis(rand::random::<u64>() % 60_000)
 }
 
 async fn run_cron<F, Fut>(state: &AppState, name: &str, cron: Cron, work: F)
@@ -592,12 +647,23 @@ where
     Fut: Future<Output = ()>,
 {
     let mut wake = first_cron_wake(cron, Utc::now());
+    // An hourly entry keeps to once a day while the instance is asleep.
+    let stretched = cron.hour.is_none();
+    let mut last_run = None::<std::time::Instant>;
     loop {
         sleep_until(&state.stop, wake).await;
         if state.stop.is_cancelled() {
             break;
         }
         let now = Utc::now();
+        if stretched
+            && state.queues.asleep()
+            && last_run.is_some_and(|at| asleep_nap(Some(at)).is_some())
+        {
+            wake = cron.next(now);
+            continue;
+        }
+        last_run = Some(std::time::Instant::now());
         let slot = cron.previous(now);
         wake = match attempt(&state.db, name, Slot::Cron(slot), work(state.clone())).await {
             Ok(Outcome::Ran | Outcome::Done) => cron.next(now),

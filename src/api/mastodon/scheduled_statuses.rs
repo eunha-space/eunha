@@ -228,7 +228,9 @@ pub async fn update_scheduled_status(
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    state.queues.scheduled_statuses.notify_one();
+    state
+        .queues
+        .raise(crate::background::Wake::ScheduledStatuses);
 
     let media_attachments = fetch_scheduled_media(&state, row.id).await;
     Ok(Json(ScheduledStatus {

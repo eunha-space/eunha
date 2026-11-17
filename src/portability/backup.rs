@@ -133,7 +133,7 @@ pub async fn create(state: &AppState, account_id: i64) -> AppResult<Backup> {
     if crate::feed::sync_fanout() {
         drain(state).await?;
     } else {
-        state.queues.backups.notify_one();
+        state.queues.raise(crate::background::Wake::Backups);
     }
     let processed = sqlx::query!(
         "SELECT processed, dump_file_size FROM backups WHERE id = $1",
@@ -168,7 +168,7 @@ pub async fn request(state: &AppState, user_id: i64) -> anyhow::Result<i64> {
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    state.queues.backups.notify_one();
+    state.queues.raise(crate::background::Wake::Backups);
     Ok(id)
 }
 
@@ -221,20 +221,45 @@ async fn destroy(state: &AppState, backup_id: i64) -> AppResult<()> {
 /// Build requested archives until the instance stops.
 pub async fn run_queue(state: AppState) {
     let worker = format!("backups-{}", std::process::id());
-    let mut idle = crate::background::IdleBackoff::new(
-        Duration::from_secs(1),
-        state.config.workers.sanitized().queue_idle_poll(),
-    );
+    let ceiling = state.config.workers.sanitized().queue_idle_poll();
     while !state.stop.is_cancelled() {
         match work_once(&state, &worker).await {
-            Ok(true) => idle.reset(),
-            Ok(false) => idle.idle(&state.queues.backups, &state.stop).await,
+            Ok(true) => {}
+            Ok(false) => {
+                let due = next_due(&state).await.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "could not find when the next archive is due");
+                    Some(Duration::from_secs(30))
+                });
+                crate::background::idle_until(
+                    &state.queues.backups,
+                    &state.stop,
+                    due.map(|due| due.max(Duration::from_secs(1))),
+                    ceiling,
+                )
+                .await;
+            }
             Err(error) => {
                 tracing::error!(%error, "archive queue pass failed");
                 crate::background::rest(&state.stop, Duration::from_secs(30)).await;
             }
         }
     }
+}
+
+/// How long until an archive can next be claimed: the earliest `run_at` of
+/// those waiting, or when a claimed one's lease goes stale. `None` when there
+/// are none.
+async fn next_due(state: &AppState) -> anyhow::Result<Option<Duration>> {
+    let seconds = sqlx::query_scalar::<_, Option<f64>>(
+        "SELECT EXTRACT(EPOCH FROM min(CASE WHEN locked_at IS NULL THEN run_at
+                                            ELSE locked_at + $1::text::interval END)
+                      - now())::float8
+         FROM eunha.backup_jobs",
+    )
+    .bind(STALE_LEASE)
+    .fetch_one(&state.db)
+    .await?;
+    Ok(seconds.map(|seconds| Duration::from_secs_f64(seconds.max(0.0))))
 }
 
 /// Build every archive that is due. The tests, and a request while

@@ -214,7 +214,9 @@ pub async fn post_status(
         .execute(&mut *tx)
         .await?;
         tx.commit().await?;
-        state.queues.scheduled_statuses.notify_one();
+        state
+            .queues
+            .raise(crate::background::Wake::ScheduledStatuses);
         let resp = crate::api::mastodon::scheduled_statuses::load(&state, account.id, scheduled_id)
             .await?
             .ok_or(AppError::NotFound)?;

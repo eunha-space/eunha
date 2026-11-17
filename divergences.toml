@@ -1610,6 +1610,36 @@ since = "4.7.3"
 reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
+id = "idle-instances-sleep"
+kind = "behaviour"
+summary = "Lets an instance nobody uses sleep: its timed tasks keep to once a day, and its queues wait to be woken"
+mastodon = """
+Sidekiq polls its scheduled and retry sets every few seconds, and \
+sidekiq-scheduler fires every entry on its schedule whether or not anyone \
+uses the server: the trends refresh every five minutes, the server checks \
+every fifteen, the instance refresh and pending account notifications every \
+hour, and the statuses cleanup and suspended user cleanup every minute."""
+eunha = """
+Queue loops sleep until their next job falls due or a process queues one, \
+which wakes the instance's other processes over Redis pub/sub. The \
+statuses cleanup runs only while some account has a policy, and scheduled \
+statuses, announcements and account deletions wake when their next item is \
+due. The tasks Mastodon runs more often than daily keep their schedule for an \
+hour after any request but the health check, and otherwise run once a day, \
+picking their schedule up again within a minute of the next request."""
+why = """
+eunha.space serves many instances from one process, most of them unused at \
+any moment. Every pass of a task or poll of a queue takes a database \
+connection, which PgBouncer and the pool keep open for a while after it, so \
+waking every few minutes kept an unused instance holding one backend: 200 of \
+them filled a 300-connection PostgreSQL before any request. What a task does \
+on an instance nobody uses is either nothing or a refresh nobody reads, and a \
+request brings the schedule back."""
+evidence = "tests/integration/surfaces/jobs.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
 id = "no-pghero-space-stats"
 kind = "omission"
 summary = "Does not capture PgHero's daily space stats"

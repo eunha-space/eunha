@@ -317,7 +317,7 @@ pub async fn requeue_at<J: Job>(
     let args = serde_json::to_value(&job)?;
     let id = insert(&state.db, J::KIND, &J::OPTIONS, &args, delay).await?;
     if id.is_some() {
-        state.queues.jobs.notify_one();
+        state.queues.raise(crate::background::Wake::Jobs);
     }
     Ok(id)
 }
@@ -420,7 +420,7 @@ async fn enqueue<J: Job>(state: &AppState, delay: Duration, job: J) -> anyhow::R
 /// Wake the job loops for job `id`, which has just been queued, or run it
 /// at once under [`Mode::Immediate`].
 fn wake(state: &AppState, id: i64) {
-    state.queues.jobs.notify_one();
+    state.queues.raise(crate::background::Wake::Jobs);
     if state.jobs.mode() == Mode::Immediate {
         let state = state.clone();
         let running = Running::start(&state.jobs);
@@ -766,8 +766,6 @@ pub async fn run(state: AppState, index: usize) {
         std::process::id(),
         rand::random::<u32>()
     );
-    let mut idle =
-        crate::background::IdleBackoff::new(Duration::from_secs(1), workers.queue_idle_poll());
     let mut in_flight = futures::stream::FuturesUnordered::new();
     let mut last_prune = None::<std::time::Instant>;
     while !state.stop.is_cancelled() {
@@ -806,24 +804,31 @@ pub async fn run(state: AppState, index: usize) {
                 }
             }
         }
-        if claimed > 0 {
-            idle.reset();
-        }
-        if in_flight.is_empty() {
-            idle.idle(&state.queues.jobs, &state.stop).await;
-            continue;
-        }
         if claimed > 0 && in_flight.len() < concurrency {
             // There may be more due.
             continue;
         }
         // Nothing more is due, or there is no room: wait for a job to finish,
-        // for one to be queued, or for the poll that finds retries come due.
+        // for one to be queued, or for the next one to fall due — a retry, a
+        // job queued for later, or one whose worker died holding it.
         let room = in_flight.len() < concurrency;
+        let nap = if room {
+            next_due(&state)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::warn!(%error, "could not find when the next job is due");
+                    Some(Duration::from_secs(5))
+                })
+                .map_or(workers.queue_idle_poll(), |due| {
+                    due.clamp(Duration::from_millis(50), workers.queue_idle_poll())
+                })
+        } else {
+            workers.queue_idle_poll()
+        };
         tokio::select! {
-            _ = in_flight.next() => {}
+            _ = in_flight.next(), if !in_flight.is_empty() => {}
             _ = state.queues.jobs.notified(), if room => {}
-            () = tokio::time::sleep(workers.queue_idle_poll()), if room => {}
+            () = tokio::time::sleep(nap), if room => {}
             () = state.stop.cancelled() => {}
         }
     }
@@ -850,6 +855,22 @@ pub async fn run(state: AppState, index: usize) {
             Err(error) => tracing::error!(%error, "could not hand running jobs back to the queue"),
         }
     }
+}
+
+/// How long until a job can next be claimed: the earliest `run_at` of those
+/// waiting, or the end of the lease of one a worker holds, which another may
+/// take up if that worker died. `None` when the queue is empty.
+async fn next_due(state: &AppState) -> anyhow::Result<Option<Duration>> {
+    let seconds = sqlx::query_scalar::<_, Option<f64>>(
+        "SELECT EXTRACT(EPOCH FROM min(CASE WHEN locked_at IS NULL THEN run_at
+                                            ELSE locked_at + make_interval(secs => $1) END)
+                      - now())::float8
+         FROM eunha.jobs WHERE dead_at IS NULL",
+    )
+    .bind(LEASE.as_secs_f64())
+    .fetch_one(&state.db)
+    .await?;
+    Ok(seconds.map(|seconds| Duration::from_secs_f64(seconds.max(0.0))))
 }
 
 /// A job as the tests and the admin see it.

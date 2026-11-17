@@ -453,6 +453,14 @@ enum AccountsCommand {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let result = run().await;
+    // A command that queued work wakes the instance's servers over Redis; let
+    // that land before the process ends.
+    eunha::background::wakes_published(std::time::Duration::from_secs(5)).await;
+    result
+}
+
+async fn run() -> anyhow::Result<()> {
     let args = Args::parse();
     if let Some(Command::Try(options)) = args.command {
         anyhow::ensure!(

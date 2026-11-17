@@ -175,6 +175,9 @@ pub async fn suspend(
         .await?;
     }
     tx.commit().await?;
+    state
+        .queues
+        .raise(crate::background::Wake::AccountDeletions);
     // `update!`: the `account.updated` webhook of a local account.
     crate::moderation::webhooks::account_updated(state, account_id).await;
 
@@ -201,6 +204,9 @@ pub async fn mark_deleted(state: &AppState, account_id: i64) -> Result<()> {
     .await?
     .unwrap_or(false);
     tx.commit().await?;
+    state
+        .queues
+        .raise(crate::background::Wake::AccountDeletions);
     crate::moderation::webhooks::account_updated(state, account_id).await;
     if local {
         state.streaming.kill_account(account_id).await;

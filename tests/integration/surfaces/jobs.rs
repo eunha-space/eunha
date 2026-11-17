@@ -316,3 +316,96 @@ async fn test_immediate_mode_runs_a_job_as_it_is_queued() {
     ctx.state.jobs.settle().await;
     assert_eq!(jobs::probe_runs(&ctx.state, "immediate").await, (1, 0));
 }
+
+/// A job queued for later is run when it falls due by a loop that has been
+/// asleep since, not when the loop next polls, which by default is a day off.
+#[tokio::test]
+async fn test_an_idle_loop_wakes_when_a_job_falls_due() {
+    let ctx = durable("jobs-idle-due").await;
+    assert_eq!(
+        ctx.state.config.workers.sanitized().queue_idle_poll(),
+        Duration::from_secs(24 * 60 * 60)
+    );
+    let probe = Probe {
+        name: "idle-due".into(),
+        fail_times: 0,
+    };
+    jobs::perform_in(&ctx.state, Duration::from_secs(1), probe)
+        .await
+        .unwrap()
+        .expect("queued");
+    let worker = eunha::tenants::spawn(jobs::run(ctx.state.clone(), 0));
+    let ran = tokio::time::timeout(Duration::from_secs(10), async {
+        while jobs::probe_runs(&ctx.state, "idle-due").await.0 == 0 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    ctx.state.stop.cancel();
+    let _ = worker.await;
+    assert!(ran.is_ok(), "the job ran once it fell due");
+}
+
+/// What one process serving an instance queues wakes the instance's other
+/// processes over Redis, which would otherwise find it only at their idle
+/// poll; an instance under another key prefix hears nothing.
+#[tokio::test]
+async fn test_wake_ups_reach_the_instances_other_processes() {
+    use eunha::background::Wake;
+
+    let ctx = durable("jobs-wake-relay").await;
+    let config = (*ctx.state.config).clone();
+    let other_process = eunha::state::AppState::new(ctx.state.db.clone(), config.clone())
+        .await
+        .unwrap();
+    let other_tenant = {
+        let mut config = config;
+        config.redis_key_prefix = format!("{}-other", config.redis_key_prefix);
+        eunha::state::AppState::new(ctx.state.db.clone(), config)
+            .await
+            .unwrap()
+    };
+    let mut relays = Vec::new();
+    for state in [&other_process, &other_tenant] {
+        let mut connected = state.streaming.connections();
+        relays.push(eunha::tenants::spawn(eunha::background::relay_wakes(
+            state.clone(),
+        )));
+        tokio::time::timeout(Duration::from_secs(5), connected.changed())
+            .await
+            .expect("the relay connected")
+            .unwrap();
+    }
+    // Connecting wakes every loop, for what was missed while it was not; let
+    // that pass.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    for state in [&other_process, &other_tenant] {
+        let _ = tokio::time::timeout(Duration::from_millis(50), state.queues.jobs.notified()).await;
+    }
+    assert!(other_process.queues.asleep());
+
+    ctx.state.queues.raise(Wake::Jobs);
+    tokio::time::timeout(Duration::from_secs(5), other_process.queues.jobs.notified())
+        .await
+        .expect("the other process was woken");
+    assert!(
+        !other_process.queues.asleep(),
+        "work queued by another process puts the instance in use"
+    );
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(300),
+            other_tenant.queues.jobs.notified()
+        )
+        .await
+        .is_err(),
+        "another instance was woken"
+    );
+
+    for state in [&other_process, &other_tenant] {
+        state.stop.cancel();
+    }
+    for relay in relays {
+        let _ = relay.await;
+    }
+}

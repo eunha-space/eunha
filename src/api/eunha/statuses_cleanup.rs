@@ -301,7 +301,7 @@ pub async fn update(
     }
     if new.enabled {
         // The scheduler sleeps while no account has a policy.
-        state.queues.statuses_cleanup.notify_one();
+        state.queues.raise(crate::background::Wake::StatusesCleanup);
     }
     Ok(Json(new).into_response())
 }
