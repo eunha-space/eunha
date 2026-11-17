@@ -38,8 +38,8 @@
 //! Mastodon: app/serializers/node_info/serializer.rb
 
 use ojak::federation::{
-    Access, ActorRef, Collection, Context, Federation, First, Found, NodeInfo, Page, Signing,
-    Software, Uris, Usage, Values,
+    Access, ActorKind, ActorRef, Collection, CollectionKind, Context, Federation, First, Found,
+    NodeInfo, ObjectKind, Page, Signing, Software, Uris, Usage, Values,
 };
 use serde_json::{json, Value};
 use url::Url;
@@ -87,13 +87,13 @@ pub fn federation() -> Federation<AppState> {
         })
         // `acct:alice@{LOCAL_DOMAIN}`, wherever WebFinger is served.
         .handle_host(|ctx: &Ctx| Some(ctx.data().instance.local_domain.clone()))
-        .actor("instance", "/actor", |ctx: Ctx, _: String| async move {
+        .actor(INSTANCE, "/actor", |ctx: Ctx, _: String| async move {
             let actor = super::objects::instance_actor_json(ctx.data()).await?;
             expires_in(&ctx, Vary::Nothing, 600, true).await;
             Ok::<_, AppError>(Found::Found(actor))
         })
         .object(
-            "collection",
+            ObjectKind::new("collection"),
             "/collections/{id}",
             |ctx: Ctx, values: Values| async move {
                 let Some(id) = number(&values["id"]) else {
@@ -103,7 +103,7 @@ pub fn federation() -> Federation<AppState> {
             },
         )
         .object(
-            "feature_authorization",
+            ObjectKind::new("feature_authorization"),
             "/users/{username}/feature_authorizations/{id}",
             |ctx: Ctx, values: Values| async move {
                 let Some(id) = number(&values["id"]) else {
@@ -116,7 +116,7 @@ pub fn federation() -> Federation<AppState> {
         // collections, one of them, one of their items, and the stamp by
         // which a local account consented to being in one.
         .object(
-            "featured_collections",
+            ObjectKind::new("featured_collections"),
             "/ap/users/{id}/featured_collections",
             |ctx: Ctx, values: Values| async move {
                 let Some(id) = number(&values["id"]) else {
@@ -144,7 +144,7 @@ pub fn federation() -> Federation<AppState> {
             },
         )
         .object(
-            "account_collection",
+            ObjectKind::new("account_collection"),
             "/ap/users/{id}/collections/{collection_id}",
             |ctx: Ctx, values: Values| async move {
                 let (Some(owner), Some(id)) =
@@ -156,7 +156,7 @@ pub fn federation() -> Federation<AppState> {
             },
         )
         .object(
-            "collection_item",
+            ObjectKind::new("collection_item"),
             "/ap/users/{id}/collection_items/{item_id}",
             |ctx: Ctx, values: Values| async move {
                 let (Some(owner), Some(id)) = (number(&values["id"]), number(&values["item_id"]))
@@ -182,7 +182,7 @@ pub fn federation() -> Federation<AppState> {
             },
         )
         .object(
-            "feature_authorization_by_id",
+            ObjectKind::new("feature_authorization_by_id"),
             "/ap/users/{id}/feature_authorizations/{item_id}",
             |ctx: Ctx, values: Values| async move {
                 let (Some(account), Some(id)) =
@@ -195,13 +195,14 @@ pub fn federation() -> Federation<AppState> {
         )
         // A thread started here, which its posts name as their `context`
         // (`ActivityPub::ContextsController`).
-        .object("context", "/contexts/{id}", |ctx: Ctx, values: Values| async move {
+        .object(
+            ObjectKind::new("context"), "/contexts/{id}", |ctx: Ctx, values: Values| async move {
             let query = super::status_collections::Query::parse(ctx.query());
             let document = super::status_collections::context(ctx.data(), &values["id"], &query).await;
             cached_for_public(&ctx, Vary::Signature, 180, found(document)).await
         })
         .object(
-            "context_items",
+            ObjectKind::new("context_items"),
             "/contexts/{id}/items",
             |ctx: Ctx, values: Values| async move {
                 let query = super::status_collections::Query::parse(ctx.query());
@@ -213,7 +214,8 @@ pub fn federation() -> Federation<AppState> {
         )
         // `EmojisController#show`: a local emoji, `expires_in 3.minutes,
         // public: true` whatever the fetch mode.
-        .object("emoji", "/emojis/{id}", |ctx: Ctx, values: Values| async move {
+        .object(
+            ObjectKind::new("emoji"), "/emojis/{id}", |ctx: Ctx, values: Values| async move {
             let Some(id) = number(&values["id"]) else {
                 return Ok::<_, AppError>(Found::NotFound);
             };
@@ -224,7 +226,7 @@ pub fn federation() -> Federation<AppState> {
             Ok(document)
         })
         // The instance actor's outbox (`Account.representative`'s).
-        .collection("instance_outbox", "/actor/outbox", instance_outbox())
+        .collection(INSTANCE_OUTBOX, "/actor/outbox", instance_outbox())
         .handle(|ctx: Ctx, username: String| async move { by_username(&ctx, &username).await })
         .map_alias(|ctx: Ctx, url: Url| async move {
             // A profile page, /@username, names whom the handle does.
@@ -265,11 +267,11 @@ pub fn federation() -> Federation<AppState> {
         })
         .nodeinfo(nodeinfo)
         .on_error(|error| tracing::error!(error = %error, "ActivityPub"))
-        .inbox("actor", "/users/{username}/inbox")
-        .inbox("actor_by_id", "/ap/users/{id}/inbox")
-        .inbox("instance", "/actor/inbox")
+        .inbox(Scheme::Username.actor_kind(), "/users/{username}/inbox")
+        .inbox(Scheme::Id.actor_kind(), "/ap/users/{id}/inbox")
+        .inbox(INSTANCE, "/actor/inbox")
         .inbox_recipient(|ctx: Ctx, recipient: ActorRef| async move {
-            let scheme = match recipient.kind.as_str() {
+            let scheme = match recipient.kind.name() {
                 "actor" => Scheme::Username,
                 "actor_by_id" => Scheme::Id,
                 "instance" => return Ok::<_, AppError>(true),
@@ -416,7 +418,7 @@ pub fn federation() -> Federation<AppState> {
         builder =
             builder
                 .actor(
-                    &scheme.kind("actor"),
+                    scheme.actor_kind(),
                     &scheme.template(""),
                     move |ctx: Ctx, identifier: String| async move {
                         let Some(account) = scheme.account(&ctx, &identifier).await? else {
@@ -447,21 +449,21 @@ pub fn federation() -> Federation<AppState> {
                     },
                 )
                 .object(
-                    &scheme.kind("status"),
+                    scheme.object_kind("status"),
                     &scheme.template("/statuses/{status_id}"),
                     move |ctx: Ctx, values: Values| async move {
                         status(&ctx, scheme, &values, false).await
                     },
                 )
                 .object(
-                    &scheme.kind("status_activity"),
+                    scheme.object_kind("status_activity"),
                     &scheme.template("/statuses/{status_id}/activity"),
                     move |ctx: Ctx, values: Values| async move {
                         status(&ctx, scheme, &values, true).await
                     },
                 )
                 .object(
-                    &scheme.kind("quote_authorization"),
+                    scheme.object_kind("quote_authorization"),
                     &scheme.template("/quote_authorizations/{quote_id}"),
                     move |ctx: Ctx, values: Values| async move {
                         let identifier = match scheme {
@@ -495,7 +497,7 @@ pub fn federation() -> Federation<AppState> {
                     },
                 )
                 .object(
-                    &scheme.kind("account_collections"),
+                    scheme.object_kind("account_collections"),
                     &scheme.template("/collections"),
                     move |ctx: Ctx, values: Values| async move {
                         let who = scheme.who(values.single().unwrap_or_default());
@@ -509,27 +511,27 @@ pub fn federation() -> Federation<AppState> {
                     },
                 )
                 .collection(
-                    &scheme.kind("outbox"),
+                    scheme.collection_kind("outbox"),
                     &scheme.template("/outbox"),
                     outbox(scheme),
                 )
                 .collection(
-                    &scheme.kind("followers"),
+                    scheme.collection_kind("followers"),
                     &scheme.template("/followers"),
                     relation(scheme, Relation::Followers),
                 )
                 .collection(
-                    &scheme.kind("following"),
+                    scheme.collection_kind("following"),
                     &scheme.template("/following"),
                     relation(scheme, Relation::Following),
                 )
                 .collection(
-                    &scheme.kind("featured"),
+                    scheme.collection_kind("featured"),
                     &scheme.template("/collections/featured"),
                     featured(scheme),
                 )
                 .object(
-                    &scheme.kind("followers_synchronization"),
+                    scheme.object_kind("followers_synchronization"),
                     &scheme.template("/followers_synchronization"),
                     move |ctx: Ctx, values: Values| async move {
                         let Some(account) = scheme
@@ -553,12 +555,12 @@ pub fn federation() -> Federation<AppState> {
                     },
                 )
                 .collection(
-                    &scheme.kind("featured_tags"),
+                    scheme.collection_kind("featured_tags"),
                     &scheme.template("/collections/tags"),
                     featured_tags(scheme),
                 )
                 .object(
-                    &scheme.kind("replies"),
+                    scheme.object_kind("replies"),
                     &scheme.template("/statuses/{status_id}/replies"),
                     move |ctx: Ctx, values: Values| async move {
                         let Some((who, status_id)) = scheme.status(&values) else {
@@ -582,7 +584,7 @@ pub fn federation() -> Federation<AppState> {
             ("shares", super::status_collections::Interactions::Shares),
         ] {
             builder = builder.object(
-                &scheme.kind(kind),
+                scheme.object_kind(kind),
                 &scheme.template(&format!("/statuses/{{status_id}}/{kind}")),
                 move |ctx: Ctx, values: Values| async move {
                     let Some((who, status_id)) = scheme.status(&values) else {
@@ -605,7 +607,7 @@ pub fn federation() -> Federation<AppState> {
         // `require_account_signature!` in authorized fetch mode, and says
         // what its response varies by (`vary_by`) before anything else.
         // `AccountsController` asks it of an actor by `actors_require_signature?`.
-        builder = builder.guard(&scheme.kind("actor"), move |ctx: Ctx, _| async move {
+        builder = builder.guard(scheme.actor_kind(), move |ctx: Ctx, _| async move {
             vary_by(&ctx, Vary::Actor).await;
             require_signature_when(
                 &ctx,
@@ -615,9 +617,6 @@ pub fn federation() -> Federation<AppState> {
         });
         for (kind, vary) in [
             ("account_collections", Vary::Page),
-            ("outbox", Vary::Outbox),
-            ("featured", Vary::Signature),
-            ("featured_tags", Vary::Signature),
             ("status", Vary::Page),
             ("status_activity", Vary::Page),
             ("quote_authorization", Vary::Signature),
@@ -625,14 +624,27 @@ pub fn federation() -> Federation<AppState> {
             ("likes", Vary::Signature),
             ("shares", Vary::Signature),
         ] {
-            builder = builder.guard(&scheme.kind(kind), move |ctx: Ctx, _| async move {
+            builder = builder.guard(scheme.object_kind(kind), move |ctx: Ctx, _| async move {
                 vary_by(&ctx, vary).await;
                 require_signature(&ctx).await
             });
         }
+        for (kind, vary) in [
+            ("outbox", Vary::Outbox),
+            ("featured", Vary::Signature),
+            ("featured_tags", Vary::Signature),
+        ] {
+            builder = builder.guard(
+                scheme.collection_kind(kind),
+                move |ctx: Ctx, _| async move {
+                    vary_by(&ctx, vary).await;
+                    require_signature(&ctx).await
+                },
+            );
+        }
         for kind in ["followers", "following"] {
             builder = builder.guard(
-                &scheme.kind(kind),
+                scheme.collection_kind(kind),
                 move |ctx: Ctx, values: Values| async move {
                     vary_by(&ctx, Vary::Page).await;
                     relation_guard(&ctx, scheme, &values).await
@@ -642,7 +654,7 @@ pub fn federation() -> Federation<AppState> {
         // `ActivityPub::FollowersSynchronizationsController` asks for a
         // signature in either mode.
         builder = builder.guard(
-            &scheme.kind("followers_synchronization"),
+            scheme.object_kind("followers_synchronization"),
             |ctx: Ctx, _| async move {
                 vary_by(&ctx, Vary::Signature).await;
                 Ok::<_, AppError>(match ctx.signing().await {
@@ -655,7 +667,7 @@ pub fn federation() -> Federation<AppState> {
     }
     // The instance actor is exempt, as `InstanceActorsController` is: a peer
     // in authorized fetch mode has to fetch its key before it can sign.
-    builder = builder.guard("instance", |ctx: Ctx, _| async move {
+    builder = builder.guard(INSTANCE, |ctx: Ctx, _| async move {
         vary_by(&ctx, Vary::Nothing).await;
         Ok::<_, AppError>(Access::Allow)
     });
@@ -668,23 +680,29 @@ pub fn federation() -> Federation<AppState> {
         ("feature_authorization_by_id", Vary::Signature),
         ("context", Vary::Signature),
         ("context_items", Vary::Signature),
-        ("instance_outbox", Vary::Outbox),
     ] {
-        builder = builder.guard(kind, move |ctx: Ctx, _| async move {
+        builder = builder.guard(ObjectKind::new(kind), move |ctx: Ctx, _| async move {
             vary_by(&ctx, vary).await;
             require_signature(&ctx).await
         });
     }
+    builder = builder.guard(INSTANCE_OUTBOX, |ctx: Ctx, _| async move {
+        vary_by(&ctx, Vary::Outbox).await;
+        require_signature(&ctx).await
+    });
     // A status's page, /@{username}/{id}, is where Mastodon also serves its
     // Note to whoever asks for ActivityPub (`statuses#show`). Anything else
     // there, and any other request, goes on to eunha's pages.
-    builder = builder.object_alias(&Scheme::Username.kind("status"), "/@{username}/{status_id}");
+    builder = builder.object_alias(
+        Scheme::Username.object_kind("status"),
+        "/@{username}/{status_id}",
+    );
     // So are an account's followers and following, at the pages Mastodon
     // serves them at too (`follower_accounts#index`, `following_accounts#index`),
     // still named by their own URIs.
     for collection in ["followers", "following"] {
         builder = builder.collection_alias(
-            &Scheme::Username.kind(collection),
+            Scheme::Username.collection_kind(collection),
             &format!("/@{{username}}/{collection}"),
         );
     }
@@ -1006,7 +1024,7 @@ async fn recipient_account_id(
 ) -> AppResult<Option<i64>> {
     let scheme = [Scheme::Username, Scheme::Id]
         .into_iter()
-        .find(|scheme| scheme.kind("actor") == recipient.kind);
+        .find(|scheme| scheme.actor_kind() == recipient.kind);
     match scheme {
         Some(scheme) => Ok(scheme
             .account(ctx, &recipient.identifier)
@@ -1040,12 +1058,56 @@ async fn account_accepts_federation(ctx: &Ctx, account: &Account) -> AppResult<b
     Ok(reversible)
 }
 
+/// Every kind served under both schemes, and its name in the id scheme.
+const BY_ID: [(&str, &str); 14] = [
+    ("actor", "actor_by_id"),
+    ("status", "status_by_id"),
+    ("status_activity", "status_activity_by_id"),
+    ("quote_authorization", "quote_authorization_by_id"),
+    ("account_collections", "account_collections_by_id"),
+    ("outbox", "outbox_by_id"),
+    ("followers", "followers_by_id"),
+    ("following", "following_by_id"),
+    ("featured", "featured_by_id"),
+    (
+        "followers_synchronization",
+        "followers_synchronization_by_id",
+    ),
+    ("featured_tags", "featured_tags_by_id"),
+    ("replies", "replies_by_id"),
+    ("likes", "likes_by_id"),
+    ("shares", "shares_by_id"),
+];
+
+/// The instance actor, at `/actor`.
+pub const INSTANCE: ActorKind = ActorKind::new("instance");
+
+/// The instance actor's outbox.
+const INSTANCE_OUTBOX: CollectionKind = CollectionKind::new("instance_outbox");
+
 impl Scheme {
-    fn kind(self, what: &str) -> String {
+    /// The kind `what` is registered as in this scheme: its name in the
+    /// username scheme, and with `_by_id` in the other.
+    fn kind(self, what: &'static str) -> &'static str {
         match self {
-            Self::Username => what.to_owned(),
-            Self::Id => format!("{what}_by_id"),
+            Self::Username => what,
+            Self::Id => BY_ID
+                .iter()
+                .find_map(|(name, by_id)| (*name == what).then_some(*by_id))
+                .unwrap_or_else(|| panic!("{what} is not served by id")),
         }
+    }
+
+    fn actor_kind(self) -> ActorKind {
+        ActorKind::new(self.kind("actor"))
+    }
+
+    fn object_kind(self, what: &'static str) -> ObjectKind {
+        ObjectKind::new(self.kind(what))
+    }
+
+    fn collection_kind(self, what: &'static str) -> CollectionKind {
+        CollectionKind::new(self.kind(what))
     }
 
     fn template(self, suffix: &str) -> String {
@@ -1202,9 +1264,9 @@ impl<'a> AccountUris<'a> {
     pub fn actor(&self) -> anyhow::Result<Url> {
         Ok(match &self.served {
             Served::Account(scheme, identifier, _) => {
-                self.uris.actor_uri(&scheme.kind("actor"), identifier)?
+                self.uris.actor_uri(scheme.actor_kind(), identifier)
             }
-            Served::Instance => self.uris.actor_uri("instance", "")?,
+            Served::Instance => self.uris.actor_uri(INSTANCE, ""),
         })
     }
 
@@ -1216,9 +1278,9 @@ impl<'a> AccountUris<'a> {
     pub fn key_id(&self) -> anyhow::Result<Url> {
         Ok(match &self.served {
             Served::Account(scheme, identifier, _) => {
-                self.uris.key_id(&scheme.kind("actor"), identifier)?
+                self.uris.key_id(scheme.actor_kind(), identifier)
             }
-            Served::Instance => self.uris.key_id("instance", "")?,
+            Served::Instance => self.uris.key_id(INSTANCE, ""),
         })
     }
 
@@ -1231,13 +1293,14 @@ impl<'a> AccountUris<'a> {
         let Served::Account(scheme, identifier, id) = &self.served else {
             return self.beneath_actor(what.suffix());
         };
-        let kind = scheme.kind(what.kind());
         Ok(match what {
-            Own::Inbox => self.uris.inbox_uri(&kind, identifier)?,
+            Own::Inbox => self.uris.inbox_uri(scheme.actor_kind(), identifier),
             Own::Collections => self
                 .uris
-                .object_uri(what.kind(), &[("id", &id.to_string())])?,
-            _ => self.uris.collection_uri(&kind, identifier)?,
+                .object_uri(ObjectKind::new(what.kind()), &[("id", &id.to_string())]),
+            _ => self
+                .uris
+                .collection_uri(scheme.collection_kind(what.kind()), identifier),
         })
     }
 
@@ -1251,12 +1314,12 @@ impl<'a> AccountUris<'a> {
             return self.beneath_actor(&format!("/statuses/{id}"));
         };
         Ok(self.uris.object_uri(
-            &scheme.kind("status"),
+            scheme.object_kind("status"),
             &[
                 (scheme.expression(), identifier),
                 ("status_id", &id.to_string()),
             ],
-        )?)
+        ))
     }
 
     fn beneath_actor(&self, suffix: &str) -> anyhow::Result<Url> {
@@ -1876,7 +1939,7 @@ async fn by_username(ctx: &Ctx, username: &str) -> AppResult<Option<ActorRef>> {
     // as a username names the instance actor.
     let instance = &ctx.data().instance;
     if instance.is_local_domain(username) || instance.is_web_domain(username) {
-        return Ok(Some(ActorRef::new("instance", "")));
+        return Ok(Some(ActorRef::new(INSTANCE, "")));
     }
     let account = sqlx::query!(
         "SELECT id, username, id_scheme FROM accounts WHERE lower(username) = lower($1) AND domain IS NULL",
@@ -1886,9 +1949,9 @@ async fn by_username(ctx: &Ctx, username: &str) -> AppResult<Option<ActorRef>> {
     .await?;
     Ok(account.map(|account| {
         if account.id_scheme == Some(crate::federation::tag::NUMERIC_AP_ID) {
-            ActorRef::new("actor_by_id", account.id.to_string())
+            ActorRef::new(Scheme::Id.actor_kind(), account.id.to_string())
         } else {
-            ActorRef::new("actor", account.username)
+            ActorRef::new(Scheme::Username.actor_kind(), account.username)
         }
     }))
 }
@@ -1982,11 +2045,11 @@ mod tests {
             );
         }
         assert_eq!(
-            uris.shared_inbox_uri().unwrap().as_str(),
+            uris.shared_inbox_uri().as_str(),
             "https://seoul.earth/inbox"
         );
         assert_eq!(
-            uris.key_id("instance", "").unwrap().as_str(),
+            uris.key_id(INSTANCE, "").as_str(),
             crate::federation::instance_actor::key_id("seoul.earth")
         );
     }

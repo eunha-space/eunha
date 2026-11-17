@@ -97,12 +97,12 @@ pub async fn instance_actor_json(state: &AppState) -> AppResult<Value> {
         "url": format!("https://{}/about/more?instance_actor=true", instance.web_domain()),
         "manuallyApprovesFollowers": true,
         "publicKey": {
-            "id": uris.key_id("instance", "").map_err(anyhow::Error::from)?,
+            "id": uris.key_id(crate::api::ap::serving::INSTANCE, ""),
             "owner": actor_url,
             "publicKeyPem": public_key,
         },
         "endpoints": {
-            "sharedInbox": uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
+            "sharedInbox": uris.shared_inbox_uri(),
         },
     });
 
@@ -568,7 +568,7 @@ pub async fn actor_json(
     members.insert(
         "endpoints".into(),
         json!({
-            "sharedInbox": state.uris.shared_inbox_uri().map_err(anyhow::Error::from)?,
+            "sharedInbox": state.uris.shared_inbox_uri(),
         }),
     );
     if has_avatar {

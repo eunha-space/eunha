@@ -216,7 +216,7 @@ async fn insert_local_account(
     let uri = own.actor()?.to_string();
     let inbox_url = own.uri(Own::Inbox)?;
     let outbox_url = own.uri(Own::Outbox)?;
-    let shared_inbox_url = uris.shared_inbox_uri()?;
+    let shared_inbox_url = uris.shared_inbox_uri();
 
     let account_id = sqlx::query_scalar!(
         r#"INSERT INTO accounts
