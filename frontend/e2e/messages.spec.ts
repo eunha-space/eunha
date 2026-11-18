@@ -233,3 +233,71 @@ test('a thread whose audience changes is shown as posts', async ({ page }) => {
   await expect(page.getByText('only to alice')).toBeVisible()
   await expect(page.locator('[data-message]')).toHaveCount(0)
 })
+
+// A message of the reader's can be edited where it sits. The source keeps the
+// handle it opens with, so the edit still goes to the same people.
+test('a message bubble can be edited', async ({ page }) => {
+  await signedIn(page)
+  const mineMsg = {
+    ...status('3', 'x', 'direct', me), mentions: [mention(bob)],
+    content: `<p>${atHtml(bob)} see you at 3</p>`,
+  }
+  await page.route('**/api/v1/statuses/3/context', (r) =>
+    r.fulfill({ json: { ancestors: [], descendants: [] } }),
+  )
+  await page.route('**/api/v1/statuses/3/source', (r) =>
+    r.fulfill({ json: { id: '3', text: '@bob see you at 3', spoiler_text: '' } }),
+  )
+  let sent: Record<string, unknown> | undefined
+  await page.route('**/api/v1/statuses/3', async (r) => {
+    if (r.request().method() === 'PUT') {
+      sent = r.request().postDataJSON()
+      return r.fulfill({ json: {
+        ...mineMsg, edited_at: '2026-01-01T00:10:00.000Z',
+        content: `<p>${atHtml(bob)} see you at 4</p>`,
+      } })
+    }
+    return r.fulfill({ json: mineMsg })
+  })
+
+  await page.goto('/@alice/3')
+  const bubble = page.locator('[data-message="3"]')
+  await expect(bubble).toHaveText('see you at 3')
+  await bubble.hover()
+  await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Edit' }).click()
+  const box = page.getByRole('textbox').last()
+  await expect(box).toHaveValue('@bob see you at 3')
+  await box.fill('@bob see you at 4')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(bubble).toContainText('see you at 4')
+  await expect(bubble).toContainText('(edited)')
+  expect(sent?.status).toBe('@bob see you at 4')
+})
+
+// As in a chat, a picture comes first and what was said about it under it.
+test('a message bubble puts its text under its media', async ({ page }) => {
+  await signedIn(page)
+  const withPhoto = {
+    ...status('3', 'look at this', 'direct', bob), mentions: [mention(me)],
+    media_attachments: [{
+      id: '9', type: 'image', url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
+      preview_url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', remote_url: null,
+      description: 'a photo', blurhash: null,
+      meta: { original: { width: 100, height: 100 }, small: { width: 100, height: 100 } },
+    }],
+  }
+  await page.route('**/api/v1/statuses/3/context', (r) =>
+    r.fulfill({ json: { ancestors: [], descendants: [] } }),
+  )
+  await page.route('**/api/v1/statuses/3', (r) => r.fulfill({ json: withPhoto }))
+
+  await page.goto('/@bob/3')
+  const bubble = page.locator('[data-message="3"]')
+  const image = bubble.getByRole('img', { name: 'a photo' }).or(bubble.getByRole('button', { name: /a photo/ })).first()
+  const text = bubble.getByText('look at this')
+  await expect(text).toBeVisible()
+  const imageBox = await image.boundingBox()
+  const textBox = await text.boundingBox()
+  expect(textBox!.y).toBeGreaterThan(imageBox!.y)
+})

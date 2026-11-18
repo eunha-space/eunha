@@ -1,16 +1,19 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { ExternalLink, Flag, MoreHorizontal, Reply, Star, Trash2 } from 'lucide-react'
+import { ExternalLink, Flag, MoreHorizontal, Pencil, Reply, Star, Trash2 } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
-import { deleteStatus, setFavourite } from '../api.ts'
+import { deleteStatus, getStatusSource, setFavourite, updateStatus } from '../api.ts'
 import { getMeId } from '../me.ts'
 import { getActiveAccountId } from '../auth.ts'
 import { useReadingPreferences } from '../reading-preferences.ts'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { Button } from '@/components/ui/button.tsx'
+import { Input } from '@/components/ui/input.tsx'
+import { Textarea } from '@/components/ui/textarea.tsx'
+import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,6 +95,11 @@ export function MessageBubble({
   const [reporting, setReporting] = useState(false)
   const { expandSpoilers } = useReadingPreferences()
   const [expanded, setExpanded] = useState(expandSpoilers || !initial.spoilerText)
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editSpoiler, setEditSpoiler] = useState('')
+  const [editLanguage, setEditLanguage] = useState('')
+  const [saving, setSaving] = useState(false)
   const [statusBefore, setStatusBefore] = useState(initial)
   if (statusBefore !== initial) {
     setStatusBefore(initial)
@@ -115,6 +123,40 @@ export function MessageBubble({
       toast.error(errorMessage(e))
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Edits the source text, leading mentions included: they are who the
+  // message goes to, and dropping one would drop that person. Media and the
+  // poll are left alone — an edit that names neither keeps both.
+  const startEdit = async () => {
+    try {
+      const src = await getStatusSource(status.id, token)
+      setEditText(src.text)
+      setEditSpoiler(src.spoilerText)
+      setEditLanguage(status.language ?? '')
+      setEditing(true)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+
+  const saveEdit = async () => {
+    if (saving) return
+    setSaving(true)
+    try {
+      const updated = await updateStatus(
+        status.id,
+        { status: editText, spoilerText: editSpoiler, language: editLanguage || undefined },
+        token,
+      )
+      setStatus(updated)
+      setExpanded(expandSpoilers || !updated.spoilerText)
+      setEditing(false)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -173,6 +215,11 @@ export function MessageBubble({
             </DropdownMenuItem>
           )}
           {mine && (
+            <DropdownMenuItem onClick={() => void startEdit()}>
+              <Pencil /> {t({ id: 'status.edit', defaultMessage: 'Edit' })}
+            </DropdownMenuItem>
+          )}
+          {mine && (
             <DropdownMenuItem variant="destructive" onClick={() => void remove()}>
               <Trash2 /> {t({ id: 'confirmations.delete.confirm', defaultMessage: 'Delete' })}
             </DropdownMenuItem>
@@ -181,6 +228,40 @@ export function MessageBubble({
       </DropdownMenu>
     </div>
   )
+
+  if (editing) {
+    return (
+      <form
+        className="ml-auto w-full max-w-[80%] space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void saveEdit()
+        }}
+      >
+        <Input
+          value={editSpoiler}
+          onChange={(e) => setEditSpoiler(e.target.value)}
+          placeholder={t({ id: 'eunha.status_card.content_warning_optional', defaultMessage: 'Content warning (optional)' })}
+        />
+        <Textarea
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          rows={3}
+          className="resize-y"
+          autoFocus
+        />
+        <div className="flex justify-end gap-2">
+          <PostLanguagePicker value={editLanguage} onChange={setEditLanguage} disabled={saving} />
+          <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            {t({ id: 'confirmation_modal.cancel', defaultMessage: 'Cancel' })}
+          </Button>
+          <Button type="submit" size="sm" disabled={saving || !editText.trim()}>
+            {t({ id: 'lists.save', defaultMessage: 'Save' })}
+          </Button>
+        </div>
+      </form>
+    )
+  }
 
   return (
     <div className={cn('group flex items-end gap-1', mine && 'flex-row-reverse')}>
@@ -210,15 +291,16 @@ export function MessageBubble({
         )}
         {expanded && (
           <>
+            {/* As in a chat, a picture comes first and its words under it. */}
+            {status.mediaAttachments.length > 0 && (
+              <MediaAttachments attachments={status.mediaAttachments} sensitive={status.sensitive} />
+            )}
             {hasText && (
               <EmojiHtml
                 className="status-content rich-text break-words [&_a]:font-medium"
                 html={content}
                 emojis={status.emojis}
               />
-            )}
-            {status.mediaAttachments.length > 0 && (
-              <MediaAttachments attachments={status.mediaAttachments} sensitive={status.sensitive} />
             )}
             {status.poll && <Poll poll={status.poll} token={token} />}
             {status.mediaAttachments.length === 0 && !status.quote && status.card && (
