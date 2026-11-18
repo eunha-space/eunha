@@ -3,13 +3,14 @@ import { Link, useLocation, useNavigationType, useParams } from 'react-router-do
 
 import type { mastodon } from '../masto.ts'
 import { getStatus, getStatusContext } from '../api.ts'
-import { getActiveAccountId, getToken } from '../auth.ts'
+import { getToken } from '../auth.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { StatusCard } from '@/components/status-card.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
+import { isOneConversation, MessageList, readerId } from '@/components/message-bubble.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { Button } from '@/components/ui/button.tsx'
-import { ArrowLeft, LockOpen, Pencil } from 'lucide-react'
+import { ArrowLeft, LockOpen, Pencil, Users } from 'lucide-react'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
 import { cn } from '@/lib/utils.ts'
 import { t } from '@/i18n.tsx'
@@ -124,7 +125,7 @@ export default function StatusThread() {
   )
 
   if (direct && status) {
-    const names = participantNames(messages, getActiveAccountId())
+    const names = participantNames(messages, readerId())
     return (
       <div className="page-frame flex flex-col">
         <TopBar />
@@ -148,19 +149,37 @@ export default function StatusThread() {
               <LockOpen className="mt-0.5 size-3.5 shrink-0" />
               {t({ id: 'eunha.messages.messages_are_not_end_to_end', defaultMessage: 'Messages are not end-to-end encrypted. Don\'\'t share anything here you wouldn\'\'t share with the servers involved.' })}
             </p>
-            <TimelineStack>
-              {messages.map((s) => (
-                <div
-                  key={s.id}
-                  // The post the link pointed at keeps its highlight only when
-                  // it is not simply the newest — opening a conversation from
-                  // Messages lands on the latest, and marking that is noise.
-                  className={cn(s.id === status.id && s.id !== latest?.id && 'bg-primary/5')}
-                >
-                  {render(s)}
-                </div>
-              ))}
-            </TimelineStack>
+            {isOneConversation(messages) ? (
+              <MessageList
+                messages={messages}
+                token={token ?? ''}
+                focusedId={status.id}
+                onReply={(replyTo) => openCompose({ replyTo, onPosted: reloadAndPin })}
+              />
+            ) : (
+              <>
+                {/* Mastodon has no group: each post goes to the people it
+                    mentions. Once that changes partway, a chat would claim
+                    everyone saw everything, so the thread is shown as posts,
+                    each with its own audience. */}
+                <p className="text-muted-foreground mb-2 flex items-start gap-1.5 text-xs">
+                  <Users className="mt-0.5 size-3.5 shrink-0" />
+                  {t({ id: 'eunha.messages.audience_changes', defaultMessage: 'Not everyone here was sent every message, so this thread is shown as posts.' })}
+                </p>
+                <TimelineStack>
+                  {messages.map((s) => (
+                    <div
+                      key={s.id}
+                      // The post the link pointed at keeps its highlight only
+                      // when it is not simply the newest.
+                      className={cn(s.id === status.id && s.id !== latest?.id && 'bg-primary/5')}
+                    >
+                      {render(s)}
+                    </div>
+                  ))}
+                </TimelineStack>
+              </>
+            )}
           </>
         )}
 

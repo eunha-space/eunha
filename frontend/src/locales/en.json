@@ -1057,6 +1057,7 @@
   "eunha.media_attachments.matches_filter": "Matches filter “{filters}”",
   "eunha.media_attachments.view_image": "View image: {description}",
   "eunha.media_attachments.view_image_attachment": "View image attachment",
+  "eunha.messages.audience_changes": "Not everyone here was sent every message, so this thread is shown as posts.",
   "eunha.messages.delete_conversation_with": "Delete conversation with {name}",
   "eunha.messages.messages_are_not_end_to_end": "Messages are not end-to-end encrypted. Don''t share anything here you wouldn''t share with the servers involved.",
   "eunha.messages.no_messages_left": "No messages left in this thread.",

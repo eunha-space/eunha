@@ -179,3 +179,57 @@ test('a message thread opens at its newest message', async ({ page }) => {
   expect(order.at(-1)).toBe('message 30')
   await expect(page.getByRole('button', { name: 'Reply', exact: true }).last()).toBeInViewport()
 })
+
+const mention = (who: typeof bob) => ({ id: who.id, username: who.username, acct: who.acct, url: who.url })
+const atHtml = (who: typeof bob) =>
+  `<span class="h-card" translate="no"><a href="${who.url}" class="u-url mention">@<span>${who.username}</span></a></span>`
+
+// A thread that goes to the same people throughout is drawn as chat bubbles:
+// the reader's on the right, the handles every private mention opens with
+// left off, and a run of messages from one person under one time.
+test('a message thread with one audience is drawn as chat bubbles', async ({ page }) => {
+  await signedIn(page)
+  const thread = [
+    { ...status('1', 'x', 'direct', bob), created_at: '2026-01-01T09:00:00.000Z', mentions: [mention(me)],
+      content: `<p>${atHtml(me)} are you coming saturday?</p>` },
+    { ...status('2', 'x', 'direct', bob), created_at: '2026-01-01T09:01:00.000Z', mentions: [mention(me)],
+      content: `<p>${atHtml(me)} it's at 3pm, ask ${atHtml(me)} again</p>` },
+    { ...status('3', 'x', 'direct', me), created_at: '2026-01-01T09:05:00.000Z', mentions: [mention(bob)],
+      in_reply_to_id: '2', content: `<p>${atHtml(bob)} yes, bringing stickers</p>` },
+  ]
+  await page.route('**/api/v1/statuses/3/context', (r) =>
+    r.fulfill({ json: { ancestors: thread.slice(0, 2), descendants: [] } }),
+  )
+  await page.route('**/api/v1/statuses/3', (r) => r.fulfill({ json: thread[2] }))
+
+  await page.goto('/@alice/3')
+  const first = page.locator('[data-message="1"]')
+  await expect(first).toHaveText('are you coming saturday?')
+  // Only the leading handles go; one mid-sentence is part of what was said.
+  await expect(page.locator('[data-message="2"]')).toHaveText("it's at 3pm, ask @alice again")
+  const mine = await page.locator('[data-message="3"]').boundingBox()
+  const theirs = await first.boundingBox()
+  expect(mine!.x).toBeGreaterThan(theirs!.x)
+  // Bob's two messages a minute apart are one run with one avatar.
+  await expect(page.getByRole('link', { name: 'Bob' })).toHaveCount(1)
+})
+
+// Mastodon has no group: each post goes to whom it mentions. Once that
+// changes partway, bubbles would claim everyone saw everything.
+test('a thread whose audience changes is shown as posts', async ({ page }) => {
+  await signedIn(page)
+  const carol = account('4', 'carol', 'Carol')
+  const thread = [
+    { ...status('1', 'to both', 'direct', me), created_at: '2026-01-01T09:00:00.000Z', mentions: [mention(bob), mention(carol)] },
+    { ...status('2', 'only to alice', 'direct', bob), created_at: '2026-01-01T09:01:00.000Z', mentions: [mention(me)] },
+  ]
+  await page.route('**/api/v1/statuses/2/context', (r) =>
+    r.fulfill({ json: { ancestors: thread.slice(0, 1), descendants: [] } }),
+  )
+  await page.route('**/api/v1/statuses/2', (r) => r.fulfill({ json: thread[1] }))
+
+  await page.goto('/@bob/2')
+  await expect(page.getByText(/shown as posts/)).toBeVisible()
+  await expect(page.getByText('only to alice')).toBeVisible()
+  await expect(page.locator('[data-message]')).toHaveCount(0)
+})
