@@ -236,8 +236,32 @@ fn seal_secret(state: &AppState, secret: &str) -> AppResult<String> {
 
 /// Open `users.otp_secret`. `None` when it cannot be read, which Mastodon
 /// treats as a wrong code (`rescue OpenSSL::Cipher::CipherError`).
-fn open_secret(state: &AppState, sealed: &str) -> Option<String> {
-    state.encryptor.as_ref()?.decrypt(sealed).ok()
+///
+/// The member only sees a wrong code, so the reason is logged: a secret no
+/// configured key opens almost always means the instance was given different
+/// ActiveRecord encryption keys from the ones that sealed it, and every such
+/// member is locked out of TOTP until an administrator finds out.
+fn open_secret(state: &AppState, user_id: i64, sealed: &str) -> Option<String> {
+    let Some(encryptor) = state.encryptor.as_ref() else {
+        tracing::warn!(
+            user_id,
+            "cannot check a TOTP code: the user has an OTP secret, but no ActiveRecord \
+             encryption keys are configured"
+        );
+        return None;
+    };
+    match encryptor.decrypt(sealed) {
+        Ok(secret) => Some(secret),
+        Err(error) => {
+            tracing::warn!(
+                user_id,
+                error = format!("{error:#}"),
+                "cannot check a TOTP code: the user's OTP secret does not open with the \
+                 configured ActiveRecord encryption keys"
+            );
+            None
+        }
+    }
 }
 
 /// `User#validate_and_consume_otp!(code, otp_secret:)`: whether `code` is the
@@ -254,7 +278,7 @@ pub async fn validate_and_consume_otp(
         None => user
             .otp_secret
             .as_deref()
-            .and_then(|sealed| open_secret(state, sealed)),
+            .and_then(|sealed| open_secret(state, user.user_id, sealed)),
     };
     let Some(secret) = secret.filter(|s| !s.is_empty()) else {
         return false;
@@ -558,6 +582,49 @@ mod tests {
         assert_eq!(totp_at(&secret, 1_111_111_109).as_deref(), Some("081804"));
         assert_eq!(totp_at(&secret, 1_234_567_890).as_deref(), Some("005924"));
         assert_eq!(totp_at(&secret, 2_000_000_000).as_deref(), Some("279037"));
+    }
+
+    /// Codes `ROTP::TOTP#at` 6.4.0 gave for a secret from devise-two-factor
+    /// 6.4.1's `generate_otp_secret` and for a 32-character pre-4.3 one.
+    #[test]
+    fn matches_rotp() {
+        let cases = [
+            (
+                "IHUBLWKL7QCXUFA5ESRZYSV3YDUS2HPSDTY3TSBTFRSMZAKJEHLQ",
+                [
+                    (59, "057358"),
+                    (1_111_111_109, "655306"),
+                    (1_234_567_890, "282373"),
+                    (2_000_000_000, "283387"),
+                    (1_795_112_310, "204972"),
+                ],
+            ),
+            (
+                "S35YOJGWJ6ILOCUGO6GV7V3ANWDCCDJ7",
+                [
+                    (59, "998482"),
+                    (1_111_111_109, "847576"),
+                    (1_234_567_890, "448909"),
+                    (2_000_000_000, "209534"),
+                    (1_795_112_310, "186503"),
+                ],
+            ),
+        ];
+        for (secret, codes) in cases {
+            for (at, code) in codes {
+                assert_eq!(
+                    totp_at(secret, at).as_deref(),
+                    Some(code),
+                    "{secret} at {at}"
+                );
+                let lower = secret.to_ascii_lowercase();
+                assert_eq!(
+                    totp_at(&lower, at).as_deref(),
+                    Some(code),
+                    "{lower} at {at}"
+                );
+            }
+        }
     }
 
     #[test]

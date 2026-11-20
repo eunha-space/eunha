@@ -61,9 +61,14 @@ DATABASE_URL=postgres:///mastodon_production eunha maintenance fix-duplicates
 ~~~~
 
 An imported instance keeps its accounts'
-[signing keys](../mastodon/signing-keys), so it needs the ActiveRecord
-encryption secrets the source Mastodon used. The import reads a dump, not the
-source's *.env.production*, so these come across by hand. So should its
+[signing keys](../mastodon/signing-keys) and its members'
+[TOTP secrets](./accounts#two-factor-authentication), both encrypted, so it
+needs the ActiveRecord encryption secrets the source Mastodon used. The import
+reads a dump, not the source's *.env.production*, so these come across by
+hand. Other secrets do not always fail loudly: signing keys that came from
+the unencrypted `accounts.private_key` are encrypted again under whatever
+secrets eunha has, and keep working, while every member who set up TOTP under
+Mastodon is refused their codes. So should its
 [`SECRET_KEY_BASE`](./instances#mastodon-s-secret-key-base), which keeps the
 unsubscribe and password reset links that Mastodon mailed working.
 

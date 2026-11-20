@@ -17,12 +17,17 @@
 //!   * AES-256-GCM, random 12-byte IV, 16-byte tag, empty AAD.
 //!   * Payloads over 140 bytes are zlib-deflated first and flagged `c`.
 //!   * The result is JSON: `{"p":<base64>,"h":{"iv":<base64>,"at":<base64>}}`.
+//!   * A string Ruby holds as binary, such as `ROTP::Base32.random`'s, is
+//!     tagged `"e":"ASCII-8BIT"` (base64). Decryption ignores the tag: what
+//!     eunha stores is UTF-8, which Rails assumes when there is none.
 //!
-//! Deterministic encryption is not implemented: `keypairs.private_key` is the
-//! only encrypted column in Mastodon's schema, and it is not deterministic.
+//! Deterministic encryption is not implemented: Mastodon's encrypted columns,
+//! `keypairs.private_key` and devise-two-factor's `users.otp_secret`, are not
+//! deterministic.
 //!
 //! Mastodon: config/initializers/active_record_encryption.rb
 //! Mastodon: app/models/keypair.rb
+//! Mastodon: app/models/user.rb
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -308,6 +313,59 @@ mod tests {
         };
         let sealed = sha1_only.encrypt("legacy value").unwrap();
         assert_eq!(full.decrypt(&sealed).unwrap(), "legacy value");
+    }
+
+    /// Envelopes written by Mastodon 5.0.0-beta.1's own gems (Ruby 4.0.9,
+    /// activerecord 8.1.4.1) through `encrypts` columns, configured as its
+    /// initializer and `load_defaults 8.1` configure them, under
+    /// [`encryptor`]'s keys. Rails tags a binary string, which
+    /// `ROTP::Base32.random` returns, with `e: ASCII-8BIT`.
+    ///
+    /// The other direction was checked against the same gems: Rails decrypts
+    /// what [`Encryptor::encrypt`] writes, `e` tag or not.
+    const RAILS_ENVELOPES: &[(&str, &str, &str)] = &[
+        (
+            "otp_secret, SHA-256 key, ASCII-8BIT",
+            r#"{"p":"6CyFTd/iRdlx03DVCARyOe61/8qJf03PEOJglhat/IWc4slO7wqgN2X0N5/G7eqe/WPQ/w==","h":{"iv":"ZWjXx8LmZquz2jZp","at":"N8/PPsd3w7rQ3ieD5vtR/w==","e":"QVNDSUktOEJJVA=="}}"#,
+            "IHUBLWKL7QCXUFA5ESRZYSV3YDUS2HPSDTY3TSBTFRSMZAKJEHLQ",
+        ),
+        (
+            "otp_secret, SHA-1 key, ASCII-8BIT",
+            r#"{"p":"KEIH1b09cbF3avFhCwOvYQxImMKB1ovOkt0XsU8DAY4HakA18vRPzzLt67YnIkRwHYhL/Q==","h":{"iv":"4/tdAG8MaMznGYFv","at":"Xld0tbfbz9sIH1YfAWjHRQ==","e":"QVNDSUktOEJJVA=="}}"#,
+            "IHUBLWKL7QCXUFA5ESRZYSV3YDUS2HPSDTY3TSBTFRSMZAKJEHLQ",
+        ),
+        (
+            "pre-4.3 otp_secret as re-encrypted in 2024",
+            r#"{"p":"r+5hIdpLb9FZJhhxohjJ52+rKGgYahXTtaqR8LNfdCk=","h":{"iv":"MZVEVjLf2rzWZDfX","at":"/RQROIpilOYC+S/rl3omgg==","e":"QVNDSUktOEJJVA=="}}"#,
+            "S35YOJGWJ6ILOCUGO6GV7V3ANWDCCDJ7",
+        ),
+        (
+            "UTF-8",
+            r#"{"p":"DEflkBFUIBI1Rew46w==","h":{"iv":"pUMbqSb3A59ONGFX","at":"bHMrbZoSN05Qe6gCj3Ennw=="}}"#,
+            "은하 ☄ é",
+        ),
+        (
+            "compressed private_key",
+            r#"{"p":"QokPEDGoG1upZtCaefJKMQxTfIbIseltBOO8UQtEUOX2+huEK1kx+/2qOwlp0YGF","h":{"iv":"/3E+ZdP8JZxLuXxT","at":"oCyQvS22kxwBWV1CeXpe9Q==","c":true}}"#,
+            "",
+        ),
+    ];
+
+    #[test]
+    fn decrypts_what_rails_wrote() {
+        let e = encryptor();
+        let pem = format!(
+            "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
+            "eunha".repeat(40)
+        );
+        for (name, sealed, plaintext) in RAILS_ENVELOPES {
+            let plaintext = if plaintext.is_empty() {
+                &pem
+            } else {
+                *plaintext
+            };
+            assert_eq!(e.decrypt(sealed).unwrap(), plaintext, "{name}");
+        }
     }
 
     #[test]
