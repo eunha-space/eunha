@@ -32,6 +32,13 @@ struct Args {
     #[arg(long, value_name = "ADDRESS", global = true)]
     metrics_bind_address: Option<String>,
 
+    /// Report errors, and warnings an operator has to act on, to this Sentry
+    /// DSN, tagged with the tenant they happened in. `SENTRY_DSN` when not
+    /// given; nothing is reported without either. See
+    /// docs/operating/error-reporting.md.
+    #[arg(long, value_name = "DSN", global = true)]
+    sentry_dsn: Option<String>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -472,13 +479,24 @@ async fn run() -> anyhow::Result<()> {
         return try_instance::run(options).await;
     }
 
+    let sentry_dsn = args
+        .sentry_dsn
+        .clone()
+        .or_else(|| std::env::var("SENTRY_DSN").ok());
+    // Kept to the end of `run`: dropping it sends what is still queued.
+    let sentry_guard = eunha::error_reporting::init(sentry_dsn.as_deref())?;
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "eunha=debug,tower_http=info,sqlx=warn".into()),
         )
         .with(tracing_subscriber::fmt::layer())
+        .with(eunha::error_reporting::ErrorLayer)
+        .with(eunha::error_reporting::sentry_layer())
         .init();
+    if sentry_guard.is_some() {
+        tracing::info!("reporting errors to Sentry");
+    }
 
     match eunha::open_files::raise() {
         Ok((before, after)) if after < eunha::open_files::COMFORTABLE => tracing::warn!(
@@ -1004,6 +1022,11 @@ async fn migrate_databases(
                 }
                 migrate::run(&db).await?;
                 println!("{label}Migrations applied.");
+                if let Some(encryptor) = &encryptor {
+                    for problem in eunha::encryption_keys::check_and_report(&db, encryptor).await {
+                        println!("{label}Warning: {problem}");
+                    }
+                }
                 move_custom_emojis(&label, &db, media_storage.as_ref()).await?;
                 // The one-time `eunha settings import-config` an instance that
                 // was serving before eunha read the settings alone is owed, so

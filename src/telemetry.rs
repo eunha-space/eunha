@@ -66,6 +66,10 @@ pub async fn start(
         "Requests dropped before producing a response."
     );
     metrics::describe_counter!(
+        "eunha_errors_total",
+        "Errors, and warnings an operator has to act on, by tenant and kind."
+    );
+    metrics::describe_counter!(
         "eunha_http_capacity_rejections_total",
         "Requests refused by a tenant's admission limit."
     );

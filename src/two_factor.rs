@@ -244,6 +244,8 @@ fn seal_secret(state: &AppState, secret: &str) -> AppResult<String> {
 fn open_secret(state: &AppState, user_id: i64, sealed: &str) -> Option<String> {
     let Some(encryptor) = state.encryptor.as_ref() else {
         tracing::warn!(
+            report = true,
+            kind = "secret_undecryptable",
             user_id,
             "cannot check a TOTP code: the user has an OTP secret, but no ActiveRecord \
              encryption keys are configured"
@@ -254,6 +256,8 @@ fn open_secret(state: &AppState, user_id: i64, sealed: &str) -> Option<String> {
         Ok(secret) => Some(secret),
         Err(error) => {
             tracing::warn!(
+                report = true,
+                kind = "secret_undecryptable",
                 user_id,
                 error = format!("{error:#}"),
                 "cannot check a TOTP code: the user's OTP secret does not open with the \

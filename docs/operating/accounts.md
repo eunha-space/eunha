@@ -21,10 +21,12 @@ can read what the other wrote:
     them the settings page says two-factor authentication is not available,
     as a Mastodon without the keys cannot offer it either. A secret the
     configured keys cannot open counts as a wrong code, as in Mastodon, so
-    eunha also logs a warning naming the user. An imported instance given
-    keys other than its Mastodon's shows it this way: every secret Mastodon
-    wrote fails, and those members can only get in with a recovery code
-    until `eunha accounts modify --disable-2fa` lets them set TOTP up again.
+    eunha also logs a warning naming the user, which is
+    [reported](./error-reporting.md) as `secret_undecryptable`. An imported
+    instance given keys other than its Mastodon's shows it this way: every
+    secret Mastodon wrote fails, and those members can only get in with a
+    recovery code until `eunha accounts modify --disable-2fa` lets them set
+    TOTP up again.
  -  `users.otp_backup_codes`: bcrypt digests of ten 16-character recovery
     codes, each usable once.
  -  `users.consumed_timestep`: the time step of the last code used, so a code

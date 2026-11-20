@@ -336,6 +336,34 @@ since = "4.7.1"
 reviewed_for = "5.0.0-beta.1"
 
 [[divergence]]
+id = "error-reporting"
+kind = "addition"
+summary = "Counts errors per tenant, and can send them to a Sentry-protocol server"
+mastodon = "Writes errors to its log, and can export OpenTelemetry traces; it has no error reporting of its own."
+eunha = """
+Counts errors, and warnings an operator has to act on, in \
+`eunha_errors_total` on the private metrics listener, and sends them to a \
+Sentry DSN given to the process, tagged with the tenant they happened in."""
+why = """
+One process serves many instances, often for a host that is not their \
+administrator; the host has to hear what went wrong, and in which instance, \
+without reading every instance's log."""
+evidence = "src/error_reporting.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "encryption-key-check"
+kind = "addition"
+summary = "Checks the ActiveRecord encryption keys against what the database holds"
+mastodon = "Finds keys that do not fit only when a value fails to decrypt, which for a TOTP secret looks like a wrong code."
+eunha = "Opens a sample of `keypairs.private_key` and `users.otp_secret` when a tenant starts and when `eunha migrate` runs, and reports any it cannot open."
+why = "An instance imported with new keys instead of its Mastodon's locked its members out of TOTP with nothing in the log to say why."
+evidence = "tests/integration/federation/keypairs.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
 id = "preview-card-charset-sniffing"
 kind = "behaviour"
 summary = "Reads a linked page's character set by declaration before guessing"

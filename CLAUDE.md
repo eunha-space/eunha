@@ -93,6 +93,8 @@ Running an instance:
  -  *docs/operating/update-notices.md*: the optional update check.
  -  *docs/operating/self-destruct.md*: `eunha self-destruct` and the
     `self_destruct` setting, Mastodon's `SELF_DESTRUCT` mode.
+ -  *docs/operating/error-reporting.md*: `eunha_errors_total`, `--sentry-dsn`,
+    and the encryption key check at start and in `eunha migrate`.
  -  *docs/operating/hosted.md*: `hosted = true`, what an instance a
     hosting service runs hides from its administrators, and the host's About
     page credit (`[instance.hosting_provider]`).

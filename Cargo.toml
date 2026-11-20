@@ -216,8 +216,14 @@ roxmltree = "0.21.1"
 encoding_rs = "0.8"
 # The public suffix list, for `PublicSuffix.domain` (src/federation/process_account.rs)
 psl = "2"
+# Optional error reporting to a Sentry-protocol server (src/error_reporting.rs)
+sentry ={ version = "0.49.6", default-features = false, features = ["backtrace", "contexts", "panic", "reqwest", "rustls", "tracing"] }
 
 [dev-dependencies]
+# `DebuggingRecorder` and captured Sentry events, to read back what a test
+# reported (src/error_reporting.rs)
+sentry = { version = "0.49.6", default-features = false, features = ["test", "tracing"] }
+metrics-util = { version = "0.20", default-features = false, features = ["debugging"] }
 axum-test = "17"
 # Used to build signatures by hand in tests, independently of the signer under
 # test, so that a test of "does this verify?" is not also a test of our own

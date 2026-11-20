@@ -68,7 +68,9 @@ reads a dump, not the source's *.env.production*, so these come across by
 hand. Other secrets do not always fail loudly: signing keys that came from
 the unencrypted `accounts.private_key` are encrypted again under whatever
 secrets eunha has, and keep working, while every member who set up TOTP under
-Mastodon is refused their codes. So should its
+Mastodon is refused their codes. The
+[encryption key check](./error-reporting.md#the-encryption-key-check) that
+`eunha migrate` and every start run says so. So should its
 [`SECRET_KEY_BASE`](./instances#mastodon-s-secret-key-base), which keeps the
 unsubscribe and password reset links that Mastodon mailed working.
 

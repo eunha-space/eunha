@@ -92,21 +92,29 @@ impl IntoResponse for AppError {
             AppError::Gone(msg) => (StatusCode::GONE, msg.clone()),
             AppError::ServiceUnavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
             AppError::Database(e) => {
-                tracing::error!("database error: {e}");
+                tracing::error!(
+                    kind = "database",
+                    error = e as &dyn std::error::Error,
+                    "database error"
+                );
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Database error".to_string(),
                 )
             }
             AppError::Internal(e) => {
-                tracing::error!("internal error: {e}");
+                tracing::error!(
+                    kind = "internal",
+                    error = &**e as &dyn std::error::Error,
+                    "internal error"
+                );
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
                 )
             }
             AppError::Unrescued(e) => {
-                tracing::error!("unrescued exception: {e}");
+                tracing::error!(kind = "internal", "unrescued exception: {e}");
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(json!({ "status": 500, "error": "Internal Server Error" })),

@@ -165,3 +165,57 @@ async fn test_actor_document_serves_the_moved_public_key() {
         "the actor document lost its key when it moved"
     );
 }
+
+/// The keys an instance runs with are checked against a sample of what the
+/// database holds, so that keys from somewhere other than its Mastodon are
+/// found when it starts, not by members whose TOTP stops working.
+#[tokio::test]
+async fn test_encryption_keys_are_checked_against_what_the_database_holds() {
+    use eunha::{encryption_keys, rails_encryption::Encryptor};
+
+    let ctx = TestContext::new("kp-key-check").await;
+    let encryptor = ctx.state.encryptor.clone().unwrap();
+    let account_id: i64 = ctx.alice_id.parse().unwrap();
+    let (private_key, public_key) = ojak::sig::signature::generate_rsa_keypair(
+        &mut rand::rand_core::UnwrapErr(rand::rngs::SysRng),
+    )
+    .unwrap();
+    keypair::store_local(&ctx.state, account_id, &private_key, &public_key)
+        .await
+        .unwrap();
+    // TOTP set up under the instance's own keys.
+    sqlx::query("UPDATE users SET otp_secret = $2 WHERE account_id = $1")
+        .bind(account_id)
+        .bind(
+            encryptor
+                .encrypt("IHUBLWKL7QCXUFA5ESRZYSV3YDUS2HPSDTY3TSBTFRSMZAKJEHLQ")
+                .unwrap(),
+        )
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+
+    let checks = encryption_keys::check(&ctx.db, &encryptor).await.unwrap();
+    assert!(
+        checks
+            .iter()
+            .all(|check| check.checked > 0 && check.failed == 0),
+        "{checks:?}"
+    );
+    assert!(encryption_keys::check_and_report(&ctx.db, &encryptor)
+        .await
+        .is_empty());
+
+    // The same database under keys it was never sealed with.
+    let other = Encryptor::new("not-this-instances-primary-key", "nor-its-salt");
+    let checks = encryption_keys::check(&ctx.db, &other).await.unwrap();
+    for check in &checks {
+        assert_eq!(check.failed, check.checked, "{check:?}");
+    }
+    let problems = encryption_keys::check_and_report(&ctx.db, &other).await;
+    assert_eq!(problems.len(), 2, "{problems:?}");
+    assert!(problems.iter().any(|p| p.contains("`users.otp_secret`")));
+    assert!(problems
+        .iter()
+        .any(|p| p.contains("`keypairs.private_key`")));
+}

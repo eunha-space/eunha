@@ -36,6 +36,7 @@ export default defineConfig({
           { text: "Update notices", link: "/operating/update-notices" },
           { text: "Self-destruct", link: "/operating/self-destruct" },
           { text: "Hosted instances", link: "/operating/hosted" },
+          { text: "Error reporting", link: "/operating/error-reporting" },
         ],
       },
       {

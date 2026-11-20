@@ -747,6 +747,7 @@ async fn start_all(configs: Vec<TenantConfig>) -> Vec<(String, TenantConfig, Res
 
 fn not_started(host: &str, source: &str, error: &anyhow::Error) {
     tracing::error!(
+        kind = "tenant_not_started",
         tenant = %host,
         source = %source,
         error = %format!("{error:#}"),
@@ -794,6 +795,15 @@ async fn start_on(tenant: &TenantConfig, db: sqlx::PgPool) -> Result<Running> {
         .with_context(|| format!("{source}: starting"))?;
 
     let tasks = crate::background::spawn(state.clone());
+    if let Some(encryptor) = state.encryptor.clone() {
+        let db = state.db.clone();
+        spawn(
+            async move {
+                crate::encryption_keys::check_and_report(&db, &encryptor).await;
+            }
+            .instrument(self::span(&state.instance.local_domain)),
+        );
+    }
     Ok(Running {
         state,
         fingerprint: fingerprint(config),

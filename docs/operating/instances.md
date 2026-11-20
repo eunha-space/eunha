@@ -420,6 +420,8 @@ The initial metrics are:
     HTTP request. These are observations, not unique activities or a durable
     billing ledger.
  -  `eunha_serving_tenants`, the number of tenants currently running.
+ -  `eunha_errors_total`, errors and warnings an operator has to act on, by
+    `tenant`, `level` and `kind`; see [Error reporting](./error-reporting.md).
 
 An alias uses its configured canonical tenant label. Arbitrary Host headers,
 raw paths, query strings, credentials and account identifiers are never metric

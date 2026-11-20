@@ -32,6 +32,11 @@ could not act on:
 Everything else is as on any instance: the server settings, rules, roles,
 federation, moderation and the rest of the admin pages.
 
+What goes wrong with the server is the host's to hear about. The host's own
+process, not the instance's configuration, reports errors, so it is
+[Error reporting](./error-reporting.md) that sends them to the host, tagged
+with the instance they happened in. The administrators are not told.
+
 
 Crediting the host
 ------------------
