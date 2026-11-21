@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { mastodon } from '../masto.ts'
 import { getRelationship } from '../api.ts'
@@ -8,18 +8,28 @@ import { getRelationship } from '../api.ts'
 // further apart, so that a request left for days costs little.
 const FIRST_CHECK_MS = 2_000
 const LATEST_CHECK_MS = 60_000
+// How long a request to an unlocked account counts as still being sent. Its
+// server accepts on its own, so the answer is expected soon; past this, the
+// request is left to wait like any other.
+const SETTLING_MS = 30_000
 
 /** Keeps a pending follow request's relationship up to date, so that a
  *  Requested button turns into Following once the request is accepted, or
  *  back into Follow once it is rejected. Nothing announces either, neither on
  *  the streaming API nor in Mastodon's, so this asks again while the request
  *  is pending: further apart each time, never while the tab is hidden, and
- *  once whenever the tab comes back into view. */
+ *  once whenever the tab comes back into view.
+ *
+ *  Returns whether the request is settling: just sent to an unlocked account,
+ *  whose server is expected to accept it by itself within seconds. A locked
+ *  account's request waits on a person, so it never settles, and neither does
+ *  one that was already pending when the page opened. */
 export function usePendingFollow(
   relationship: mastodon.v1.Relationship | null | undefined,
   token: string | null | undefined,
   onChange: (relationship: mastodon.v1.Relationship) => void,
-) {
+  locked: boolean | undefined,
+): boolean {
   const pending = !!relationship && relationship.requested && !relationship.following
   const id = relationship?.id
   // The latest callback, so that a parent passing a new one on each render
@@ -28,6 +38,21 @@ export function usePendingFollow(
   useEffect(() => {
     onChangeRef.current = onChange
   })
+
+  const [settling, setSettling] = useState(false)
+  const wasPending = useRef(pending)
+  useEffect(() => {
+    const sent = pending && !wasPending.current
+    wasPending.current = pending
+    if (!pending) {
+      setSettling(false)
+      return
+    }
+    if (!sent || locked !== false) return
+    setSettling(true)
+    const timer = setTimeout(() => setSettling(false), SETTLING_MS)
+    return () => clearTimeout(timer)
+  }, [pending, locked])
 
   useEffect(() => {
     if (!pending || !id || !token) return
@@ -63,4 +88,6 @@ export function usePendingFollow(
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [pending, id, token])
+
+  return settling
 }

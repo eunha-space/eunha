@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Send } from 'lucide-react'
 import { toast } from 'sonner'
 
 import type { mastodon } from '../masto.ts'
@@ -11,8 +12,7 @@ import { t } from '@/i18n.tsx'
 /** Follow, Requested or Following, for an account in a list: the profile's
  *  follow button without the rest of its menu. Pressing it again unfollows,
  *  or withdraws a pending request, as on the profile. A pending request
- *  turns into Following by itself once it is accepted. A spinner shows while
- *  the follow or unfollow is being sent. */
+ *  turns into Following by itself once it is accepted. */
 export function FollowButton({
   account,
   relationship,
@@ -25,7 +25,7 @@ export function FollowButton({
   onChange: (relationship: mastodon.v1.Relationship) => void
 }) {
   const [busy, setBusy] = useState(false)
-  usePendingFollow(relationship, token, onChange)
+  const settling = usePendingFollow(relationship, token, onChange, account.locked)
   // Neither side can follow across a block; the profile says why.
   if (relationship.blocking || relationship.blockedBy) return null
   const on = relationship.following || relationship.requested
@@ -45,10 +45,10 @@ export function FollowButton({
       variant={on ? 'outline' : 'default'}
       onClick={toggle}
       disabled={busy}
-      aria-busy={busy}
+      aria-busy={busy || settling}
       title={relationship.requested && !relationship.following ? t({ id: 'eunha.profile.withdraw_follow_request', defaultMessage: 'Withdraw follow request' }) : undefined}
     >
-      {busy && <Spinner data-icon="inline-start" className="size-3.5" aria-hidden />}
+      <FollowButtonIcon busy={busy || settling} requested={relationship.requested && !relationship.following} />
       {relationship.following
         ? t({ id: 'account.following', defaultMessage: 'Following' })
         : relationship.requested
@@ -56,4 +56,15 @@ export function FollowButton({
           : t({ id: 'account.follow', defaultMessage: 'Follow' })}
     </Button>
   )
+}
+
+/** What goes before a follow button's label. A spinner while the follow is
+ *  being sent, which for an unlocked account includes waiting a little for
+ *  its server to accept. A sent request otherwise shows as sent: at once for
+ *  a locked account, whose owner decides when to answer. */
+export function FollowButtonIcon({ busy, requested }: { busy: boolean; requested: boolean }) {
+  // Hidden from screen readers: the label and `aria-busy` already say it.
+  if (busy) return <Spinner data-icon="inline-start" className="size-3.5" aria-hidden />
+  if (requested) return <Send data-icon="inline-start" data-follow-request-sent="" aria-hidden />
+  return null
 }

@@ -170,6 +170,10 @@ test('a follow request found in the results turns into Following once accepted',
   const people = page.locator('section', { has: page.getByRole('heading', { name: 'People' }) })
   await people.getByRole('button', { name: 'Follow' }).click()
   await expect(people.getByRole('button', { name: 'Requested' })).toBeVisible()
+  // A locked account's owner decides when to answer: shown as sent at once,
+  // not as still sending.
+  await expect(people.locator('[data-follow-request-sent]')).toBeVisible()
+  await expect(people.locator('[data-slot="spinner"]')).toHaveCount(0)
 
   // Still pending at the first check.
   await page.clock.runFor(2_000)
@@ -180,3 +184,50 @@ test('a follow request found in the results turns into Following once accepted',
   await expect(people.getByRole('button', { name: 'Following' })).toBeVisible()
   expect(await page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument)).toBe(true)
 })
+
+for (const accepted of [true, false]) {
+  test(`a follow request to an unlocked account spins ${accepted ? 'until it is accepted' : 'for thirty seconds at most'}`, async ({ page }) => {
+    await signedIn(page)
+    await page.clock.install()
+    const erin = account('5', 'erin@remote.example')
+    await page.route('**/api/v2/search**', (r) => {
+      const type = new URL(r.request().url()).searchParams.get('type')
+      const empty = { accounts: [], hashtags: [], statuses: [] }
+      return r.fulfill({ json: type === 'accounts' ? { ...empty, accounts: [erin] } : empty })
+    })
+    const relationship = (state: 'none' | 'requested' | 'following') => ({
+      id: '5', following: state === 'following', requested: state === 'requested',
+      followed_by: false, blocking: false, blocked_by: false, muting: false,
+      muting_notifications: false, domain_blocking: false, endorsed: false,
+      showing_reblogs: true, notifying: false, languages: null, note: '',
+    })
+    let state: 'none' | 'requested' | 'following' = 'none'
+    await page.route('**/api/v1/accounts/relationships**', (r) => r.fulfill({ json: [relationship(state)] }))
+    await page.route('**/api/v1/accounts/5/follow', (r) => {
+      state = 'requested'
+      return r.fulfill({ json: relationship(state) })
+    })
+
+    await page.goto('/search?q=erin')
+    const people = page.locator('section', { has: page.getByRole('heading', { name: 'People' }) })
+    await people.getByRole('button', { name: 'Follow' }).click()
+    // Waiting for erin's server to accept is still part of sending.
+    const requested = people.getByRole('button', { name: 'Requested' })
+    await expect(requested).toHaveAttribute('aria-busy', 'true')
+    await expect(requested.locator('[data-slot="spinner"]')).toBeVisible()
+    // It can still be withdrawn meanwhile.
+    await expect(requested).toBeEnabled()
+
+    if (accepted) {
+      state = 'following'
+      await page.clock.runFor(2_000)
+      await expect(people.getByRole('button', { name: 'Following' })).toBeVisible()
+      await expect(people.locator('[data-slot="spinner"]')).toHaveCount(0)
+    } else {
+      await page.clock.runFor(30_000)
+      await expect(requested).toHaveAttribute('aria-busy', 'false')
+      await expect(requested.locator('[data-slot="spinner"]')).toHaveCount(0)
+      await expect(requested.locator('[data-follow-request-sent]')).toBeVisible()
+    }
+  })
+}

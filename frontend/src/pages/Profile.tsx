@@ -41,7 +41,7 @@ import { getToken } from '../auth.ts'
 import { withoutMessages } from '../lib/statuses.ts'
 import { useInfiniteFeed } from '../hooks/use-infinite-feed.ts'
 import { usePendingFollow } from '@/hooks/use-pending-follow.ts'
-import { Spinner } from '@/components/ui/spinner.tsx'
+import { FollowButtonIcon } from '@/components/follow-button.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import {
   ActivityFilterBar,
@@ -674,7 +674,6 @@ export default function Profile() {
 
   const [account, setAccount] = useState<mastodon.v1.Account | null>(null)
   const [rel, setRel] = useState<mastodon.v1.Relationship | null>(null)
-  usePendingFollow(rel, token, setRel)
   const [selfId, setSelfId] = useState<string | null>(null)
   const [sourceNote, setSourceNote] = useState('')
   const [sourceDisplayName, setSourceDisplayName] = useState('')
@@ -684,6 +683,7 @@ export default function Profile() {
   const [relationshipBusy, setRelationshipBusy] = useState(false)
   // Only the follow button spins; the other relationship actions are in a menu.
   const [followBusy, setFollowBusy] = useState(false)
+  const followSettling = usePendingFollow(rel, token, setRel, account?.locked)
   const [confirmingBlock, setConfirmingBlock] = useState(false)
   const [reporting, setReporting] = useState(false)
   const { openCompose } = useComposeModal()
@@ -1170,10 +1170,10 @@ export default function Profile() {
                     variant={rel.following || rel.requested ? 'outline' : 'default'}
                     onClick={toggleFollow}
                     disabled={relationshipBusy}
-                    aria-busy={followBusy}
+                    aria-busy={followBusy || followSettling}
                     title={rel.requested && !rel.following ? t({ id: 'eunha.profile.withdraw_follow_request', defaultMessage: 'Withdraw follow request' }) : undefined}
                   >
-                    {followBusy && <Spinner data-icon="inline-start" className="size-3.5" aria-hidden />}
+                    <FollowButtonIcon busy={followBusy || followSettling} requested={rel.requested && !rel.following} />
                     {rel.following ? t({ id: 'account.following', defaultMessage: 'Following' }) : rel.requested ? t({ id: 'eunha.profile.requested', defaultMessage: 'Requested' }) : t({ id: 'account.follow', defaultMessage: 'Follow' })}
                   </Button>
                   {actionsMenu}

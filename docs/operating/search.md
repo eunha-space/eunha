@@ -125,6 +125,14 @@ into Following when the request is accepted, or back into Follow when it is
 rejected, without reloading the page. A profile's follow button does the same.
 Mastodon's web client shows the change only after a reload.
 
+The button shows a spinner while a follow or unfollow is being sent. For an
+unlocked account the spinner stays while it shows Requested, because the other
+server is expected to accept on its own. It stops after 30 seconds if no
+acceptance comes, and the button keeps checking. A request to a locked account
+waits on a person, so it shows a sent icon at once instead. So does an unlocked
+account's request once the spinner stops, and a request that was already
+pending when the page opened.
+
 `GET /api/v1/accounts/search` needs a signed-in user with the `read:accounts`
 scope. It takes `q`, `limit` (40 by default, at most 80), `offset`, `resolve`
 and `following`.
