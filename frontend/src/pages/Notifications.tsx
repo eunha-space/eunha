@@ -95,7 +95,7 @@ function severanceText(event: mastodon.v1.RelationshipSeveranceEvent): string {
  */
 function SystemNotice({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }) {
   return (
-    <Card className="rounded-none border-0 py-3 shadow-none">
+    <Card className="rounded-none border-0 py-3 shadow-none ring-0">
       <CardContent className="space-y-1 px-3 sm:px-4">
         <div className="flex items-center gap-1.5 text-sm font-medium">
           {icon}
@@ -178,7 +178,7 @@ function NotificationItem({
     )
   }
   return (
-    <Card className="rounded-none border-0 py-3 shadow-none">
+    <Card className="rounded-none border-0 py-3 shadow-none ring-0">
       <CardContent className="space-y-2 px-3 sm:px-4">
         {header}
         {n.type === 'admin.sign_up' && (
