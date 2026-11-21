@@ -668,6 +668,7 @@
   "eunha.compose.emoji_suggestions": "에모지 추천",
   "eunha.compose.enter_2_4_distinct_poll_options": "서로 다른 투표 항목을 2–4개, 각각 50자 이내로 입력하세요.",
   "eunha.compose.file_too_large": "{name}이 업로드 한도 {size} MiB를 넘습니다.",
+  "eunha.compose.link_preview": "링크 미리보기",
   "eunha.compose.mark_media_as_sensitive": "미디어를 민감함으로 표시",
   "eunha.compose.messages_are_not_end_to_end": "메시지는 종단간 암호화되지 않습니다.",
   "eunha.compose.post_character_count": "게시물 글자 수",

@@ -442,3 +442,74 @@ async fn test_no_card_without_a_title_or_for_media() {
         "a post with media has no card"
     );
 }
+
+/// The composer's preview (`POST /api/eunha/v1/link_card`): the link is
+/// picked as a post's is, and the card is the one the post will get, fetched
+/// once and kept, so the post finds it rather than fetching the page again.
+#[tokio::test]
+async fn test_composer_preview_is_the_card_the_post_gets() {
+    let ctx = TestContext::new("cards-preview").await;
+    let site = spawn_site(&format!("@alice@{}", ctx.domain)).await;
+    let state = local_state(&ctx);
+
+    // The extractor wants a real top-level domain, as Mastodon's does, so
+    // the local stand-in is reached by its URL rather than through a draft.
+    assert_eq!(
+        eunha::preview_card::draft_link(
+            &state,
+            &format!(
+                "see https://{}/@alice/1 and https://news.example.com/story?x=1 too",
+                ctx.domain
+            )
+        )
+        .as_deref(),
+        Some("https://news.example.com/story?x=1"),
+        "this instance's own links get no card"
+    );
+    assert_eq!(eunha::preview_card::draft_link(&state, "no links"), None);
+
+    let article = format!("{}/article", site.base);
+    let card_id = eunha::preview_card::preview(&state, &article)
+        .await
+        .expect("a card for the link");
+    assert_eq!(site.article_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        eunha::preview_card::preview(&state, &article).await,
+        Some(card_id),
+        "a fresh card is not fetched again"
+    );
+
+    let status = ctx
+        .api
+        .post_status(&ctx.alice_token, "worth reading", "public")
+        .await;
+    let status_id: i64 = status["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(
+        eunha::preview_card::fetch_link_card(&state, status_id, Some(article)).await,
+        Some(card_id),
+        "the post gets the card the composer showed"
+    );
+    assert_eq!(site.article_hits.load(Ordering::SeqCst), 1);
+
+    // A draft with no link gets no card, and the route wants a signed-in
+    // writer.
+    let none = ctx
+        .api
+        .post_json(
+            "/api/eunha/v1/link_card",
+            Some(&ctx.alice_token),
+            &json!({"text": "no links here"}),
+        )
+        .await;
+    assert_eq!(none.status(), StatusCode::OK);
+    assert_eq!(none.json::<Value>().await.unwrap(), Value::Null);
+    let anonymous = ctx
+        .api
+        .post_json(
+            "/api/eunha/v1/link_card",
+            None,
+            &json!({"text": "no links here"}),
+        )
+        .await;
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+}

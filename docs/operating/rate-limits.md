@@ -74,11 +74,12 @@ Families
 Some of what an account creates through the API counts towards a limit of
 its own, per account:
 
-| Family     | Counts                                                                                          | Limit | Period   |
-| ---------- | ----------------------------------------------------------------------------------------------- | ----: | -------- |
-| `statuses` | posts made with `POST /api/v1/statuses`, and their edits                                        |   300 | 3 hours  |
-| `follows`  | follows and follow requests made with `POST /api/v1/accounts/:id/follow`, and hashtags followed |   400 | 24 hours |
-| `reports`  | nothing: only its headers are given                                                             |   400 | 24 hours |
+| Family       | Counts                                                                                          | Limit | Period   |
+| ------------ | ----------------------------------------------------------------------------------------------- | ----: | -------- |
+| `statuses`   | posts made with `POST /api/v1/statuses`, and their edits                                        |   300 | 3 hours  |
+| `follows`    | follows and follow requests made with `POST /api/v1/accounts/:id/follow`, and hashtags followed |   400 | 24 hours |
+| `reports`    | nothing: only its headers are given                                                             |   400 | 24 hours |
+| `link_cards` | drafts with a link sent to `POST /api/eunha/v1/link_card`, which may fetch a page               |   300 | 1 hour   |
 
 Only what is new counts: following someone already followed, a hashtag
 already followed, an edit that changes nothing, a scheduled post or a post

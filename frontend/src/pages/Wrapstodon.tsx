@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.t
 import { DetailSkeleton } from '@/components/skeletons.tsx'
 import { currentLocale, t } from '@/i18n.tsx'
 import { FormattedMessage } from 'react-intl'
+import { camelize } from '@/lib/camelize.ts'
 
 // Mastodon's shared Wrapstodon page (`WrapstodonController#show`), at its
 // `/@:account_username/wrapstodon/:year/:share_key`. The server puts the report
@@ -83,20 +84,6 @@ const ARCHETYPES: Record<string, { name: string; description: (name: string, sel
         ? t({ id: 'annual_report.summary.archetype.replier.desc_self', defaultMessage: 'You frequently replied to other people’s posts, pollinating Mastodon with new discussions.' })
         : t({ id: 'annual_report.summary.archetype.replier.desc_public', defaultMessage: '{name} frequently replied to other people’s posts, pollinating Mastodon with new discussions.' }, { name }),
   },
-}
-
-// masto.js hands entities back in camelCase; the cards here are masto's.
-function camelize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(camelize)
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, v]) => [
-        key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase()),
-        camelize(v),
-      ]),
-    )
-  }
-  return value
 }
 
 function readData(doc: Document): SharedData | null {

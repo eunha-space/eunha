@@ -10,6 +10,7 @@ pub mod health;
 pub mod instance;
 pub mod invite_grants;
 pub mod invite_tree;
+pub mod link_card;
 pub mod portability;
 pub mod preferences;
 pub mod sessions;
@@ -40,4 +41,5 @@ pub fn router() -> Router {
         .merge(preferences::routes())
         .merge(statuses_cleanup::routes())
         .merge(account_email::routes())
+        .merge(link_card::routes())
 }

@@ -170,6 +170,33 @@ pub async fn fetch_link_card(
     Some(card_id)
 }
 
+/// The link a local post with `text` gets its card from, as
+/// [`fetch_link_card`] picks it: the first URL in the text that is not this
+/// instance's own.
+pub fn draft_link(state: &AppState, text: &str) -> Option<String> {
+    local_urls(text)
+        .into_iter()
+        .filter_map(|u| Url::parse(&u).ok())
+        .find(|u| !bad_url(state, u))
+        .map(|u| u.to_string())
+}
+
+/// The card for `url`, for the composer to show before the post is made:
+/// found or fetched as [`fetch_link_card`] would, under the same lock, and
+/// kept, so the post finds it rather than fetching the page again. `None`
+/// when the page gives none, or another fetch of it is running.
+pub async fn preview(state: &AppState, url: &str) -> Option<i64> {
+    let lock = crate::redis_lock::try_acquire_lockable(
+        state,
+        &format!("fetch:{url}"),
+        crate::redis_lock::DEFAULT_TTL_MS,
+    )
+    .await?;
+    let card = find_or_fetch(state, url).await;
+    lock.release().await;
+    card?.id
+}
+
 /// What `FetchLinkCardService#call` does under `with_redis_lock("fetch:…")`:
 /// the card known for the page, fetched again when it is two weeks old or
 /// has no image, or fetched for the first time.

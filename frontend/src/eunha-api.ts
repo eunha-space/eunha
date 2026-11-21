@@ -1,4 +1,6 @@
 import { t } from '@/i18n.tsx'
+import type { mastodon } from './masto.ts'
+import { camelize } from '@/lib/camelize.ts'
 // eunha-specific APIs with no Mastodon C2S equivalent. Mastodon has no
 // invite-tree endpoint nor a REST API for invite CRUD, so these are served by
 // eunha's own routes and called with a plain fetch (masto.js only models the
@@ -440,4 +442,22 @@ export async function confirmImport(token: string, id: string): Promise<BulkImpo
 
 export async function cancelImport(token: string, id: string): Promise<void> {
   await eunhaFetch(`/api/eunha/v1/imports/${id}`, token, { method: 'DELETE' })
+}
+
+/**
+ * The link preview a post with `text` would get, for the composer: the server
+ * picks the link as it does once the post is made, and fetches the card if it
+ * has none fresh. `null` when the text gets no card.
+ */
+export async function getLinkCard(
+  token: string,
+  text: string,
+  signal?: AbortSignal,
+): Promise<mastodon.v1.PreviewCard | null> {
+  const res = await eunhaFetch('/api/eunha/v1/link_card', token, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+    signal,
+  })
+  return camelize(await res.json()) as mastodon.v1.PreviewCard | null
 }

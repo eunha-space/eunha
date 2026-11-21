@@ -54,6 +54,25 @@ sanitized as Mastodon sanitizes oEmbed: only `audio`, `iframe`, `source` and
 `video`, with `http` and `https` sources, and every frame sandboxed.
 
 
+While a post is written
+-----------------------
+
+The web client shows the card a post will get while it is being written.
+When typing pauses on a draft with an `http` or `https` link, it sends the
+draft to `POST /api/eunha/v1/link_card`, which picks the link as it is
+picked for a local post and answers with the card, or `null`. The card is
+found or fetched as above, under the same lock, and kept, so publishing the
+post finds it rather than fetching the page again. A card two weeks old or
+with no image is fetched again here too, which refreshes it for every post
+that links the page. A draft with media or a quote gets no card, so it shows
+none.
+
+The route needs a token with `write:statuses`. Each draft with a link counts
+towards the `link_cards` family, 300 an hour (see
+[Rate limits](./rate-limits#families)). Mastodon's composer shows no card;
+the entry is `composer-link-card` in *divergences.toml*.
+
+
 Images
 ------
 
@@ -94,3 +113,4 @@ Differences from Mastodon
  -  A remote edit fetches the card again when its text changed, where
     Mastodon also does when its warning, media or poll did.
  -  A WebP that has to be shrunk is stored lossless.
+ -  The composer previews the card, as above.

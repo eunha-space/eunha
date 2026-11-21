@@ -864,6 +864,26 @@ reviewed_for = "5.0.0-beta.1"
 
 
 [[divergence]]
+id = "composer-link-card"
+kind = "addition"
+summary = "The composer previews the link card a post will get"
+mastodon = "Fetches a card only once a post is made, in `LinkCrawlWorker`; the web composer shows no card."
+eunha = """
+`POST /api/eunha/v1/link_card` takes a draft's text, picks its link as \
+`FetchLinkCardService` does for a local post, and answers with the card, found \
+or fetched under the same `fetch:{url}` lock and kept. The web client asks when \
+typing pauses on a draft with a link, and shows the card under it. Drafts with \
+a link count towards a `link_cards` rate-limit family, 300 an hour."""
+why = """
+A writer sees what the post will look like before publishing it. Because the \
+card is kept, the post reuses it rather than fetching the page again, and the \
+fetch goes through the same SSRF-guarded client as every other."""
+evidence = "tests/integration/surfaces/preview_cards.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+
+[[divergence]]
 id = "invite-resolution-api"
 kind = "addition"
 summary = "Resolves public signup invites for the web client"

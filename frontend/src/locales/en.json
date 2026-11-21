@@ -810,6 +810,7 @@
   "eunha.compose.emoji_suggestions": "Emoji suggestions",
   "eunha.compose.enter_2_4_distinct_poll_options": "Enter 2–4 distinct poll options, each at most 50 characters.",
   "eunha.compose.file_too_large": "{name} exceeds the {size} MiB upload limit.",
+  "eunha.compose.link_preview": "Link preview",
   "eunha.compose.mark_media_as_sensitive": "Mark media as sensitive",
   "eunha.compose.messages_are_not_end_to_end": "Messages are not end-to-end encrypted.",
   "eunha.compose.post_character_count": "Post character count",

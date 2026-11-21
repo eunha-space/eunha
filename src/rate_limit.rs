@@ -71,6 +71,13 @@ pub const REPORTS: Family = Family {
     limit: 400,
     period: 24 * 3600,
 };
+/// eunha's own: the composer's link previews (`POST /api/eunha/v1/link_card`),
+/// each of which may fetch a page.
+pub const LINK_CARDS: Family = Family {
+    name: "link_cards",
+    limit: 300,
+    period: 3600,
+};
 
 /// What a request may record: its account, and the family its route counts
 /// in (`with_rate_limit: true`, `rate_limit: true`).
@@ -204,6 +211,8 @@ fn family_route(method: &Method, path: &str) -> Option<(Family, bool)> {
         Method::POST if FOLLOW.is_match(path) => Some((FOLLOWS, true)),
         // `ReportsController#create`: the headers alone.
         Method::POST if path == "/api/v1/reports" => Some((REPORTS, false)),
+        // eunha's composer previews.
+        Method::POST if path == "/api/eunha/v1/link_card" => Some((LINK_CARDS, true)),
         _ => None,
     }
 }

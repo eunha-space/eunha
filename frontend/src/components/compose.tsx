@@ -49,6 +49,8 @@ import { Input } from '@/components/ui/input.tsx'
 import { Textarea } from '@/components/ui/textarea.tsx'
 import type { QuotePolicy } from '../api.ts'
 import { QuotedPost } from '@/components/quoted-post.tsx'
+import { PreviewCard } from '@/components/preview-card.tsx'
+import { useLinkCard } from '@/hooks/use-link-card.ts'
 import { ComposeAudience } from '@/components/compose-audience.tsx'
 import { ComposeHints } from '@/components/compose-hints.tsx'
 import { cn } from '@/lib/utils.ts'
@@ -207,6 +209,12 @@ export function Compose({
   const [sensitive, setSensitive] = useState<boolean>()
   const [defaultSensitive, setDefaultSensitive] = useState(getMeAccount()?.defaultSensitive ?? false)
   const warningOpen = warningOverride ?? defaultWarning
+  // The card the post will get, shown as it is written. A post with media or
+  // a quote gets none (`FetchLinkCardService`), and one with a content
+  // warning is sensitive, which hides the card's image as it will be hidden
+  // once posted.
+  const linkCard = useLinkCard(token, text, attachments.length === 0 && !uploading && !quoteOf)
+  const warned = warningOpen && !!warning.trim()
 
   useEffect(() => {
     let active = true
@@ -698,6 +706,15 @@ export function Compose({
                 />
               </div>
             ))}
+          </div>
+        )}
+
+        {linkCard && attachments.length === 0 && (
+          <div className="space-y-1" data-testid="compose-link-card">
+            <p className="text-muted-foreground text-xs">
+              {t({ id: 'eunha.compose.link_preview', defaultMessage: 'Link preview' })}
+            </p>
+            <PreviewCard card={linkCard} sensitive={warned} />
           </div>
         )}
 

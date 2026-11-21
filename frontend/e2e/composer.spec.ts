@@ -443,3 +443,57 @@ test('a new post starts with the account’s default quote policy', async ({ pag
   await page.getByRole('button', { name: 'Publish' }).click()
   await expect.poll(() => posted).toMatchObject({ quote_approval_policy: 'followers' })
 })
+
+// eunha shows the card a post will get while it is written; Mastodon's
+// composer shows none. The server picks the link, so the whole text is sent.
+test('the composer previews the card a link will get, and drops it for media', async ({ page }) => {
+  await signedIn(page)
+  const asked: string[] = []
+  await page.route('**/api/eunha/v1/link_card', (route) => {
+    const { text } = route.request().postDataJSON() as { text: string }
+    asked.push(text)
+    return route.fulfill({ json: text.includes('https://news.example/story') ? {
+      url: 'https://news.example/story', title: 'A story worth reading', description: 'What happened next',
+      type: 'link', author_name: '', author_url: '', provider_name: 'News Example', provider_url: '',
+      html: '', width: 400, height: 200, image: '/cards/story.png', image_description: 'A harbour',
+      embed_url: '', blurhash: null, published_at: null, authors: [],
+    } : null })
+  })
+  await page.route(/\/cards\//, (r) => r.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>',
+  }))
+  await page.route('**/api/v2/media', (r) => r.fulfill({ json: {
+    id: '5', type: 'image', url: '/media/a.png', preview_url: '/media/a.png', description: null, meta: null, blurhash: null,
+  } }))
+  await page.route(/\/media\//, (r) => r.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>',
+  }))
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'New post', exact: true }).click()
+  const preview = page.getByTestId('compose-link-card')
+
+  // Text without a link asks nothing.
+  await page.getByRole('textbox').fill('just words')
+  await page.waitForTimeout(900)
+  expect(asked).toEqual([])
+
+  await page.getByRole('textbox').fill('Look at https://news.example/story today')
+  await expect(preview.getByText('A story worth reading')).toBeVisible()
+  await expect(preview.locator('img[src="/cards/story.png"]')).toBeVisible()
+  expect(asked).toEqual(['Look at https://news.example/story today'])
+
+  // Words around the same link do not ask again.
+  await page.getByRole('textbox').fill('Look at https://news.example/story tonight')
+  await page.waitForTimeout(900)
+  expect(asked).toHaveLength(1)
+  await expect(preview).toBeVisible()
+
+  // A post with media gets no card.
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'a.png', mimeType: 'image/png', buffer: Buffer.alloc(16),
+  })
+  await expect(preview).toBeHidden()
+})
