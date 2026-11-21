@@ -40,6 +40,7 @@ import {
 import { getToken } from '../auth.ts'
 import { withoutMessages } from '../lib/statuses.ts'
 import { useInfiniteFeed } from '../hooks/use-infinite-feed.ts'
+import { usePendingFollow } from '@/hooks/use-pending-follow.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import {
   ActivityFilterBar,
@@ -672,6 +673,7 @@ export default function Profile() {
 
   const [account, setAccount] = useState<mastodon.v1.Account | null>(null)
   const [rel, setRel] = useState<mastodon.v1.Relationship | null>(null)
+  usePendingFollow(rel, token, setRel)
   const [selfId, setSelfId] = useState<string | null>(null)
   const [sourceNote, setSourceNote] = useState('')
   const [sourceDisplayName, setSourceDisplayName] = useState('')

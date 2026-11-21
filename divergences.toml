@@ -2319,3 +2319,14 @@ why = "eunha's own messages are translated by hand, a locale at a time; offering
 evidence = "frontend/e2e/interface-language.spec.ts"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "pending-follow-settles-in-place"
+kind = "addition"
+summary = "A Requested follow button turns into Following on its own"
+mastodon = "The web client shows a follow of a locked or remote account as Requested until something reloads the relationship. Nothing on the streaming API says that a request was accepted or rejected."
+eunha = "While a follow button in the search results or on a profile shows Requested, the web client asks `GET /api/v1/accounts/relationships` again: two seconds after the follow, then twice as long after each check, up to once a minute. It skips the check while the tab is hidden and checks once when the tab is shown again. The button turns into Following or Follow without reloading the page."
+why = "A follow of a remote account is Requested until its server sends `Accept`, which usually comes within seconds. A button that stays Requested looks as if the follow did not go through."
+evidence = "frontend/e2e/search.spec.ts"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

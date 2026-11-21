@@ -4,11 +4,13 @@ import { toast } from 'sonner'
 import type { mastodon } from '../masto.ts'
 import { setFollow } from '../api.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { usePendingFollow } from '@/hooks/use-pending-follow.ts'
 import { t } from '@/i18n.tsx'
 
 /** Follow, Requested or Following, for an account in a list: the profile's
  *  follow button without the rest of its menu. Pressing it again unfollows,
- *  or withdraws a pending request, as on the profile. */
+ *  or withdraws a pending request, as on the profile. A pending request
+ *  turns into Following by itself once it is accepted. */
 export function FollowButton({
   account,
   relationship,
@@ -21,6 +23,7 @@ export function FollowButton({
   onChange: (relationship: mastodon.v1.Relationship) => void
 }) {
   const [busy, setBusy] = useState(false)
+  usePendingFollow(relationship, token, onChange)
   // Neither side can follow across a block; the profile says why.
   if (relationship.blocking || relationship.blockedBy) return null
   const on = relationship.following || relationship.requested

@@ -130,3 +130,42 @@ test('people found can be followed and unfollowed from the results', async ({ pa
   await expect(people.getByRole('button', { name: 'Follow' })).toBeVisible()
   await expect(page).toHaveURL(/\/search\?q=a$/)
 })
+
+test('a follow request found in the results turns into Following once accepted', async ({ page }) => {
+  await signedIn(page)
+  await page.clock.install()
+  const dave = { ...account('4', 'dave@remote.example'), locked: true }
+  await page.route('**/api/v2/search**', (r) => {
+    const type = new URL(r.request().url()).searchParams.get('type')
+    const empty = { accounts: [], hashtags: [], statuses: [] }
+    return r.fulfill({ json: type === 'accounts' ? { ...empty, accounts: [dave] } : empty })
+  })
+  const relationship = (state: 'none' | 'requested' | 'following') => ({
+    id: '4', following: state === 'following', requested: state === 'requested',
+    followed_by: false, blocking: false, blocked_by: false, muting: false,
+    muting_notifications: false, domain_blocking: false, endorsed: false,
+    showing_reblogs: true, notifying: false, languages: null, note: '',
+  })
+  let state: 'none' | 'requested' | 'following' = 'none'
+  await page.route('**/api/v1/accounts/relationships**', (r) => r.fulfill({ json: [relationship(state)] }))
+  await page.route('**/api/v1/accounts/4/follow', (r) => {
+    state = 'requested'
+    return r.fulfill({ json: relationship(state) })
+  })
+
+  await page.goto('/search?q=dave')
+  // Gone if the page reloads.
+  await page.evaluate(() => ((window as unknown as { sameDocument: boolean }).sameDocument = true))
+  const people = page.locator('section', { has: page.getByRole('heading', { name: 'People' }) })
+  await people.getByRole('button', { name: 'Follow' }).click()
+  await expect(people.getByRole('button', { name: 'Requested' })).toBeVisible()
+
+  // Still pending at the first check.
+  await page.clock.runFor(2_000)
+  await expect(people.getByRole('button', { name: 'Requested' })).toBeVisible()
+
+  state = 'following'
+  await page.clock.runFor(4_000)
+  await expect(people.getByRole('button', { name: 'Following' })).toBeVisible()
+  expect(await page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument)).toBe(true)
+})

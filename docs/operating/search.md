@@ -114,6 +114,17 @@ web client. The page asks `GET /api/v1/accounts/relationships` about the people
 each step finds, in one request for those not asked about yet, and leaves the
 button off the user's own account and either side of a block.
 
+A follow that is waiting on the other side shows as Requested. That is any
+follow of a locked account, and any follow of a remote one until its server
+sends `Accept`. Neither eunha nor Mastodon pushes a relationship change on the
+streaming API, so while the button shows Requested it asks
+`GET /api/v1/accounts/relationships` again: two seconds after the follow,
+then twice as long after each check, up to once a minute. It skips the check
+while the tab is hidden and checks at once when the tab comes back. It turns
+into Following when the request is accepted, or back into Follow when it is
+rejected, without reloading the page. A profile's follow button does the same.
+Mastodon's web client shows the change only after a reload.
+
 `GET /api/v1/accounts/search` needs a signed-in user with the `read:accounts`
 scope. It takes `q`, `limit` (40 by default, at most 80), `offset`, `resolve`
 and `following`.
