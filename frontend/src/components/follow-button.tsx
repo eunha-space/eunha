@@ -4,13 +4,15 @@ import { toast } from 'sonner'
 import type { mastodon } from '../masto.ts'
 import { setFollow } from '../api.ts'
 import { Button } from '@/components/ui/button.tsx'
+import { Spinner } from '@/components/ui/spinner.tsx'
 import { usePendingFollow } from '@/hooks/use-pending-follow.ts'
 import { t } from '@/i18n.tsx'
 
 /** Follow, Requested or Following, for an account in a list: the profile's
  *  follow button without the rest of its menu. Pressing it again unfollows,
  *  or withdraws a pending request, as on the profile. A pending request
- *  turns into Following by itself once it is accepted. */
+ *  turns into Following by itself once it is accepted. A spinner shows while
+ *  the follow or unfollow is being sent. */
 export function FollowButton({
   account,
   relationship,
@@ -43,8 +45,10 @@ export function FollowButton({
       variant={on ? 'outline' : 'default'}
       onClick={toggle}
       disabled={busy}
+      aria-busy={busy}
       title={relationship.requested && !relationship.following ? t({ id: 'eunha.profile.withdraw_follow_request', defaultMessage: 'Withdraw follow request' }) : undefined}
     >
+      {busy && <Spinner data-icon="inline-start" className="size-3.5" aria-hidden />}
       {relationship.following
         ? t({ id: 'account.following', defaultMessage: 'Following' })
         : relationship.requested

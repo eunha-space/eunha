@@ -116,7 +116,12 @@ test('people found can be followed and unfollowed from the results', async ({ pa
     asked = new URL(r.request().url()).searchParams.getAll('id[]')
     return r.fulfill({ json: asked.map((id) => relationship(id, false)) })
   })
-  await page.route('**/api/v1/accounts/3/follow', (r) => r.fulfill({ json: relationship('3', true) }))
+  let releaseFollow = () => {}
+  const followHeld = new Promise<void>((resolve) => (releaseFollow = resolve))
+  await page.route('**/api/v1/accounts/3/follow', async (r) => {
+    await followHeld
+    return r.fulfill({ json: relationship('3', true) })
+  })
   await page.route('**/api/v1/accounts/3/unfollow', (r) => r.fulfill({ json: relationship('3', false) }))
 
   await page.goto('/search?q=a')
@@ -125,7 +130,13 @@ test('people found can be followed and unfollowed from the results', async ({ pa
   await expect(people.getByRole('button', { name: 'Follow' })).toHaveCount(1)
   expect(asked).toEqual(['3'])
   await people.getByRole('button', { name: 'Follow' }).click()
+  // A spinner while the follow is on its way.
+  const sending = people.locator('button[aria-busy="true"]')
+  await expect(sending.locator('[data-slot="spinner"]')).toBeVisible()
+  await expect(sending).toBeDisabled()
+  releaseFollow()
   await expect(people.getByRole('button', { name: 'Following' })).toBeVisible()
+  await expect(people.locator('[data-slot="spinner"]')).toHaveCount(0)
   await people.getByRole('button', { name: 'Following' }).click()
   await expect(people.getByRole('button', { name: 'Follow' })).toBeVisible()
   await expect(page).toHaveURL(/\/search\?q=a$/)

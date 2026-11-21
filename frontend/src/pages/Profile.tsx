@@ -41,6 +41,7 @@ import { getToken } from '../auth.ts'
 import { withoutMessages } from '../lib/statuses.ts'
 import { useInfiniteFeed } from '../hooks/use-infinite-feed.ts'
 import { usePendingFollow } from '@/hooks/use-pending-follow.ts'
+import { Spinner } from '@/components/ui/spinner.tsx'
 import { TopBar } from '@/components/top-bar.tsx'
 import {
   ActivityFilterBar,
@@ -681,6 +682,8 @@ export default function Profile() {
   const [editingProfile, setEditingProfile] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [relationshipBusy, setRelationshipBusy] = useState(false)
+  // Only the follow button spins; the other relationship actions are in a menu.
+  const [followBusy, setFollowBusy] = useState(false)
   const [confirmingBlock, setConfirmingBlock] = useState(false)
   const [reporting, setReporting] = useState(false)
   const { openCompose } = useComposeModal()
@@ -788,6 +791,7 @@ export default function Profile() {
   const toggleFollow = async () => {
     if (!account || !token || !rel || relationshipBusy) return
     setRelationshipBusy(true)
+    setFollowBusy(true)
     try {
       // A pending request is undone as a follow is: `unfollow` withdraws it,
       // as upstream's `UnfollowService` does. Following again would only
@@ -795,6 +799,7 @@ export default function Profile() {
       setRel(await setFollow(account.id, token, !(rel.following || rel.requested)))
     } finally {
       setRelationshipBusy(false)
+      setFollowBusy(false)
     }
   }
 
@@ -1165,8 +1170,10 @@ export default function Profile() {
                     variant={rel.following || rel.requested ? 'outline' : 'default'}
                     onClick={toggleFollow}
                     disabled={relationshipBusy}
+                    aria-busy={followBusy}
                     title={rel.requested && !rel.following ? t({ id: 'eunha.profile.withdraw_follow_request', defaultMessage: 'Withdraw follow request' }) : undefined}
                   >
+                    {followBusy && <Spinner data-icon="inline-start" className="size-3.5" aria-hidden />}
                     {rel.following ? t({ id: 'account.following', defaultMessage: 'Following' }) : rel.requested ? t({ id: 'eunha.profile.requested', defaultMessage: 'Requested' }) : t({ id: 'account.follow', defaultMessage: 'Follow' })}
                   </Button>
                   {actionsMenu}
