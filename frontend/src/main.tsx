@@ -15,6 +15,7 @@ import StatusThread from './pages/StatusThread.tsx'
 import PublicTimeline from './pages/PublicTimeline.tsx'
 import Notifications from './pages/Notifications.tsx'
 import FollowRequests from './pages/FollowRequests.tsx'
+import OnboardingProfile from './pages/OnboardingProfile.tsx'
 import SearchPage from './pages/Search.tsx'
 import FollowedTags from './pages/FollowedTags.tsx'
 import TagTimeline from './pages/TagTimeline.tsx'
@@ -144,6 +145,8 @@ const routes = [
   { path: '/invite/:code', element: <SignUpForm /> },
   // Mastodon's `start`, where signing in after confirming an address lands.
   { path: '/start', element: <Start /> },
+  // Its profile step, where a new account chooses to be discoverable.
+  { path: '/start/profile', element: <OnboardingProfile /> },
   { path: '/filters', element: <Filters /> },
   // The settings pages, at Mastodon's paths, listed at `/settings`.
   { path: '/settings', element: <SettingsIndex /> },

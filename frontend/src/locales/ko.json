@@ -951,6 +951,7 @@
   "eunha.notifications.review_account": "@{acct} 님 검토",
   "eunha.notifications.sign_in_to_see_your_notifications": "알림을 보려면 로그인하세요.",
   "eunha.notifications.you_have_blocked_removing": "{targetName}을 차단해 {lost}이 제거되었습니다.",
+  "eunha.onboarding.discoverable_hint": "발견하기 기능에 참여하면 게시물이 검색 결과와 유행 란에 표시될 수 있고, 비슷한 관심사를 가진 사람들에게 자신의 프로필이 추천될 수 있으며, 다른 사람들이 자신의 컬렉션에 나를 소개할 수 있습니다.",
   "eunha.panes.federated": "연합",
   "eunha.poll.closed_suffix": "· 마감됨",
   "eunha.poll.ends": "· {date}에 마감",

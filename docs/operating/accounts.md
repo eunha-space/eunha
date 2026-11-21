@@ -434,8 +434,16 @@ There are two ways in, as on Mastodon:
     current account from hiding the result and lets the user sign in to the
     newly confirmed account. Signing in there goes on into the web app at
     `/start`, Mastodon's first stop after confirming, which signs the web app
-    in and lands on the home timeline; a browser already on its way to an
-    app's authorization page goes there instead.
+    in and lands on `/start/profile`, Mastodon's onboarding profile step; a
+    browser already on its way to an app's authorization page goes there
+    instead. The profile step takes a display name, a bio, a picture and a
+    header, and whether the profile is discoverable, which starts on unless
+    the account already chose; saving it sets `discoverable` and `indexable`
+    together and goes on to the home timeline. It leaves *Include profile
+    page in search engines* alone. An account that never passes through it
+    keeps `discoverable` empty, which other servers read as not letting
+    anyone feature it in a collection (see the actor's `interactionPolicy`
+    in [serving](../mastodon/serving.md)).
  -  `POST /auth`, which the sign-up page posts to (form-encoded or JSON, no
     token). The new user is signed in and sent to `/auth/setup`, Mastodon's
     `Auth::SetupController`: it names the address the link went to and lets the

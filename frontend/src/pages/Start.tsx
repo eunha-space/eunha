@@ -29,7 +29,8 @@ export function SignUpForm() {
  * `/start`, Mastodon's first stop after confirming an address: where signing
  * in on the confirmation result lands. The browser is signed in to the
  * account pages by then, so the web app's own sign-in goes straight through
- * the authorization page and comes back home.
+ * the authorization page and comes back to the onboarding profile step,
+ * `/start/profile`.
  */
 // Once per page load: registering the app twice would leave the browser
 // holding the other registration's secret.
@@ -38,7 +39,7 @@ let starting: Promise<void> | null = null
 export function Start() {
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    starting ??= beginLogin(false, '/')
+    starting ??= beginLogin(false, '/start/profile')
     starting.catch((e) => setError(String(e)))
   }, [])
   return (
