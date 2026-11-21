@@ -25,11 +25,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Build and deploy are separate jobs: deploy-pages in the job that uploaded
+  # the artifact can run before the artifact is listed, and fails with "No
+  # artifacts named github-pages". The artifact is named per attempt, because
+  # a re-run keeps the earlier attempt's artifact and deploy-pages refuses to
+  # pick between two of the same name.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      artifact: ${{ steps.name.outputs.artifact }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -49,8 +53,21 @@ jobs:
           cp -RL site _site
           cp -RL docs/.vitepress/dist _site/docs
       - uses: actions/configure-pages@v5
+      - id: name
+        run: echo "artifact=github-pages-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+          name: ${{ steps.name.outputs.artifact }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact }}
