@@ -520,6 +520,15 @@ export async function getRelationship(
   return rels[0]
 }
 
+// Several accounts' relationships in one request, for a list that offers to
+// follow each of them.
+export function getRelationships(
+  ids: string[],
+  token: string,
+): Promise<mastodon.v1.Relationship[]> {
+  return restClient(token).v1.accounts.relationships.fetch({ id: ids })
+}
+
 export function setFollow(
   id: string,
   token: string,

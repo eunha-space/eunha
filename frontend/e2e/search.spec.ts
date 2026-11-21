@@ -97,3 +97,36 @@ test('the boost button offers boosting and quoting, and quoting a found post ope
   await page.getByRole('button', { name: 'More' }).click()
   await expect(page.getByRole('menuitem', { name: 'Quote' })).toHaveCount(0)
 })
+
+test('people found can be followed and unfollowed from the results', async ({ page }) => {
+  await signedIn(page)
+  const carol = account('3', 'carol')
+  await page.route('**/api/v2/search**', (r) => {
+    const type = new URL(r.request().url()).searchParams.get('type')
+    const empty = { accounts: [], hashtags: [], statuses: [] }
+    return r.fulfill({ json: type === 'accounts' ? { ...empty, accounts: [me, carol] } : empty })
+  })
+  const relationship = (id: string, following: boolean) => ({
+    id, following, requested: false, followed_by: false, blocking: false, blocked_by: false,
+    muting: false, muting_notifications: false, domain_blocking: false, endorsed: false,
+    showing_reblogs: true, notifying: false, languages: null, note: '',
+  })
+  let asked: string[] = []
+  await page.route('**/api/v1/accounts/relationships**', (r) => {
+    asked = new URL(r.request().url()).searchParams.getAll('id[]')
+    return r.fulfill({ json: asked.map((id) => relationship(id, false)) })
+  })
+  await page.route('**/api/v1/accounts/3/follow', (r) => r.fulfill({ json: relationship('3', true) }))
+  await page.route('**/api/v1/accounts/3/unfollow', (r) => r.fulfill({ json: relationship('3', false) }))
+
+  await page.goto('/search?q=a')
+  const people = page.locator('section', { has: page.getByRole('heading', { name: 'People' }) })
+  // One button, for carol: the signed-in account is not offered to itself.
+  await expect(people.getByRole('button', { name: 'Follow' })).toHaveCount(1)
+  expect(asked).toEqual(['3'])
+  await people.getByRole('button', { name: 'Follow' }).click()
+  await expect(people.getByRole('button', { name: 'Following' })).toBeVisible()
+  await people.getByRole('button', { name: 'Following' }).click()
+  await expect(people.getByRole('button', { name: 'Follow' })).toBeVisible()
+  await expect(page).toHaveURL(/\/search\?q=a$/)
+})

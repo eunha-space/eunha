@@ -867,6 +867,7 @@
   "eunha.filters.save_filter": "Save filter",
   "eunha.filters.show_a_warning": "Show a warning",
   "eunha.filters.threads": "Threads",
+  "eunha.follow_button.could_not_update": "Could not update the follow for @{acct}",
   "eunha.follow_requests.no_pending_follow_requests": "No pending follow requests.",
   "eunha.follow_requests.sign_in_to_review_your_follow": "Sign in to review your follow requests.",
   "eunha.followed_tags.could_not_load_followed_hashtags": "Could not load followed hashtags.",

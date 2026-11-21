@@ -1,0 +1,52 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+
+import type { mastodon } from '../masto.ts'
+import { setFollow } from '../api.ts'
+import { Button } from '@/components/ui/button.tsx'
+import { t } from '@/i18n.tsx'
+
+/** Follow, Requested or Following, for an account in a list: the profile's
+ *  follow button without the rest of its menu. Pressing it again unfollows,
+ *  or withdraws a pending request, as on the profile. */
+export function FollowButton({
+  account,
+  relationship,
+  token,
+  onChange,
+}: {
+  account: mastodon.v1.Account
+  relationship: mastodon.v1.Relationship
+  token: string
+  onChange: (relationship: mastodon.v1.Relationship) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  // Neither side can follow across a block; the profile says why.
+  if (relationship.blocking || relationship.blockedBy) return null
+  const on = relationship.following || relationship.requested
+  const toggle = async () => {
+    setBusy(true)
+    try {
+      onChange(await setFollow(account.id, token, !on))
+    } catch {
+      toast.error(t({ id: 'eunha.follow_button.could_not_update', defaultMessage: 'Could not update the follow for @{acct}' }, { acct: account.acct }))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Button
+      size="sm"
+      variant={on ? 'outline' : 'default'}
+      onClick={toggle}
+      disabled={busy}
+      title={relationship.requested && !relationship.following ? t({ id: 'eunha.profile.withdraw_follow_request', defaultMessage: 'Withdraw follow request' }) : undefined}
+    >
+      {relationship.following
+        ? t({ id: 'account.following', defaultMessage: 'Following' })
+        : relationship.requested
+          ? t({ id: 'eunha.profile.requested', defaultMessage: 'Requested' })
+          : t({ id: 'account.follow', defaultMessage: 'Follow' })}
+    </Button>
+  )
+}

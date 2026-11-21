@@ -5,11 +5,13 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { Check, CircleAlert, LoaderCircle } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
-import { search } from '../api.ts'
+import { getRelationships, search } from '../api.ts'
 import { beginLogin, getToken } from '../auth.ts'
+import { getMeId } from '../me.ts'
 import { TopBar } from '@/components/top-bar.tsx'
 import { StatusCard } from '@/components/status-card.tsx'
 import { AccountRow } from '@/components/account-row.tsx'
+import { FollowButton } from '@/components/follow-button.tsx'
 import { TimelineStack } from '@/components/timeline-stack.tsx'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
@@ -113,6 +115,9 @@ export default function Search() {
   const [input, setInput] = useState(q)
   const [steps, setSteps] = useState<Step[]>([])
   const [found, setFound] = useState<Record<string, Found>>({})
+  // Relationships to the people found, by account id, so each can be followed
+  // from here; an account without one yet shows no button.
+  const [relationships, setRelationships] = useState<Record<string, mastodon.v1.Relationship>>({})
 
   useEffect(() => setInput(q), [q])
 
@@ -161,6 +166,29 @@ export default function Search() {
     hashtags: ordered.flatMap((r) => r.hashtags),
     statuses: uniqueById(ordered.flatMap((r) => r.statuses)),
   }
+  const meId = getMeId()
+  // Each part of the search finds people at its own pace; ask only about the
+  // ones not asked about yet.
+  const unknownIds = token
+    ? results.accounts.filter((a) => a.id !== meId && !(a.id in relationships)).map((a) => a.id)
+    : []
+  const unknownKey = unknownIds.join(',')
+  useEffect(() => {
+    if (!token || !unknownKey) return
+    let cancelled = false
+    getRelationships(unknownKey.split(','), token)
+      .then((rels) => {
+        if (cancelled) return
+        setRelationships((all) => ({ ...all, ...Object.fromEntries(rels.map((r) => [r.id, r])) }))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [unknownKey, token])
+  const setRelationship = (r: mastodon.v1.Relationship) =>
+    setRelationships((all) => ({ ...all, [r.id]: r }))
+
   const finished = steps.length > 0 && steps.every((step) => step.state !== 'running')
   const empty =
     finished &&
@@ -221,7 +249,20 @@ export default function Search() {
             <h2 className="text-muted-foreground mb-2 text-sm font-semibold">{t({ id: 'explore.suggested_follows', defaultMessage: 'People' })}</h2>
             <div className="space-y-1">
               {results.accounts.map((a) => (
-                <AccountRow key={a.id} account={a} />
+                <AccountRow
+                  key={a.id}
+                  account={a}
+                  action={
+                    token && relationships[a.id] ? (
+                      <FollowButton
+                        account={a}
+                        relationship={relationships[a.id]}
+                        token={token}
+                        onChange={setRelationship}
+                      />
+                    ) : undefined
+                  }
+                />
               ))}
             </div>
           </section>

@@ -109,6 +109,11 @@ looked up, not searched for as text. Mastodon's web client sends one request
 and shows one loading indicator; the difference is in
 [the divergence list](../mastodon/divergences).
 
+For a signed-in user, each person found has a follow button, as in Mastodon's
+web client. The page asks `GET /api/v1/accounts/relationships` about the people
+each step finds, in one request for those not asked about yet, and leaves the
+button off the user's own account and either side of a block.
+
 `GET /api/v1/accounts/search` needs a signed-in user with the `read:accounts`
 scope. It takes `q`, `limit` (40 by default, at most 80), `offset`, `resolve`
 and `following`.

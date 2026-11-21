@@ -725,6 +725,7 @@
   "eunha.filters.save_filter": "필터 저장",
   "eunha.filters.show_a_warning": "경고 표시",
   "eunha.filters.threads": "스레드",
+  "eunha.follow_button.could_not_update": "@{acct} 팔로우 상태를 바꾸지 못했습니다",
   "eunha.follow_requests.no_pending_follow_requests": "대기 중인 팔로우 요청이 없습니다.",
   "eunha.follow_requests.sign_in_to_review_your_follow": "팔로우 요청을 검토하려면 로그인하세요.",
   "eunha.followed_tags.could_not_load_followed_hashtags": "팔로우한 해시태그를 불러오지 못했습니다.",
