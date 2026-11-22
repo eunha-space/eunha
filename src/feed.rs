@@ -440,15 +440,17 @@ async fn eligible_statuses(
     after: Option<i64>,
     limit: i64,
 ) -> Vec<Candidate> {
-    sqlx::query!(
+    let rows = sqlx::query!(
         r#"SELECT s.id, s.account_id, s.reply, s.in_reply_to_id, s.in_reply_to_account_id,
                   s.language, s.reblog_of_id,
                   r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?",
-                  lm.account_id AS "leading_mention?"
+                  CASE WHEN NOT s.reply
+                            AND eunha.opens_with_mention(left(s.text, 2048), COALESCE(s.local, false) OR s.uri IS NULL)
+                       THEN left(s.text, 2048) END AS "opening?",
+                  (COALESCE(s.local, false) OR s.uri IS NULL) AS "local!"
            FROM statuses s
            LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL
            LEFT JOIN accounts ra ON ra.id = r.account_id
-           LEFT JOIN eunha.leading_mentions lm ON lm.status_id = s.id
            WHERE s.account_id = $1
              AND s.deleted_at IS NULL
              AND s.visibility IN (0, 1, 2)
@@ -461,20 +463,33 @@ async fn eligible_statuses(
     )
     .fetch_all(db)
     .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|s| Candidate {
-        id: s.id,
-        account_id: s.account_id,
-        reply: s.reply,
-        in_reply_to_id: s.in_reply_to_id,
-        in_reply_to_account_id: s.in_reply_to_account_id,
-        language: s.language,
-        reblog_of_id: s.reblog_of_id,
-        reblog: s.reblog_account_id.map(|id| (id, s.reblog_domain)),
-        leading_mention: s.leading_mention,
-    })
-    .collect()
+    .unwrap_or_default();
+    let openings: Vec<crate::leading_mention::Opening> = rows
+        .iter()
+        .filter_map(|s| {
+            Some(crate::leading_mention::Opening {
+                id: s.id,
+                account_id: s.account_id,
+                reply: s.reply,
+                local: s.local,
+                text: s.opening.as_deref()?,
+            })
+        })
+        .collect();
+    let leading = crate::leading_mention::leading_mentions(db, &openings).await;
+    rows.into_iter()
+        .map(|s| Candidate {
+            id: s.id,
+            account_id: s.account_id,
+            reply: s.reply,
+            in_reply_to_id: s.in_reply_to_id,
+            in_reply_to_account_id: s.in_reply_to_account_id,
+            language: s.language,
+            reblog_of_id: s.reblog_of_id,
+            reblog: s.reblog_account_id.map(|id| (id, s.reblog_domain)),
+            leading_mention: leading.get(&s.id).copied(),
+        })
+        .collect()
 }
 
 /// `FeedManager#build_crutches`: what [`filter_from_home`] needs to know
@@ -1124,12 +1139,14 @@ async fn distributed(db: &PgPool, status_id: i64) -> Option<Distributed> {
                   a.suspended_at IS NOT NULL AS "author_suspended!",
                   r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?",
                   ra.suspended_at IS NOT NULL AS "reblog_suspended?",
-                  lm.account_id AS "leading_mention?"
+                  CASE WHEN NOT s.reply
+                            AND eunha.opens_with_mention(left(s.text, 2048), a.domain IS NULL)
+                       THEN left(s.text, 2048) END AS "opening?",
+                  (a.domain IS NULL) AS "local!"
            FROM statuses s
            JOIN accounts a ON a.id = s.account_id
            LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL
            LEFT JOIN accounts ra ON ra.id = r.account_id
-           LEFT JOIN eunha.leading_mentions lm ON lm.status_id = s.id
            WHERE s.id = $1 AND s.deleted_at IS NULL"#,
         status_id,
     )
@@ -1144,6 +1161,21 @@ async fn distributed(db: &PgPool, status_id: i64) -> Option<Distributed> {
     if proper_suspended {
         return None;
     }
+    let leading_mention = match row.opening.as_deref() {
+        Some(text) => crate::leading_mention::leading_mentions(
+            db,
+            &[crate::leading_mention::Opening {
+                id: row.id,
+                account_id: row.account_id,
+                reply: row.reply,
+                local: row.local,
+                text,
+            }],
+        )
+        .await
+        .remove(&row.id),
+        None => None,
+    };
     Some(Distributed {
         status: Candidate {
             id: row.id,
@@ -1154,7 +1186,7 @@ async fn distributed(db: &PgPool, status_id: i64) -> Option<Distributed> {
             language: row.language,
             reblog_of_id: row.reblog_of_id,
             reblog: row.reblog_account_id.map(|id| (id, row.reblog_domain)),
-            leading_mention: row.leading_mention,
+            leading_mention,
         },
         visibility: row.visibility,
         author_domain: row.author_domain,

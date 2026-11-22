@@ -1,10 +1,21 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT a.id, a.username, a.domain, a.url, a.uri, a.id_scheme\n           FROM mentions m JOIN accounts a ON a.id = m.account_id\n           WHERE m.status_id = $1 AND NOT m.silent",
+  "query": "SELECT m.status_id, a.id, a.username, a.domain, a.url, a.uri\n           FROM mentions m JOIN accounts a ON a.id = m.account_id\n           WHERE m.status_id = ANY($1) AND NOT m.silent",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "mentions",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
         "name": "id",
         "type_info": "Int8",
         "origin": {
@@ -15,7 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
+        "ordinal": 2,
         "name": "username",
         "type_info": "Varchar",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "domain",
         "type_info": "Varchar",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "url",
         "type_info": "Varchar",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "uri",
         "type_info": "Varchar",
         "origin": {
@@ -57,32 +68,21 @@
             "name": "uri"
           }
         }
-      },
-      {
-        "ordinal": 5,
-        "name": "id_scheme",
-        "type_info": "Int4",
-        "origin": {
-          "Table": {
-            "table": "accounts",
-            "name": "id_scheme"
-          }
-        }
       }
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
       false,
       false,
-      true,
+      false,
       true,
       true,
       true
     ]
   },
-  "hash": "aad3387cb85eef21591fae8cb8c498d1c5c10c13b8ce5df1ae10d22ecdfd857a"
+  "hash": "58b70daab45e6f4827df4be8733b0a636a3cd3923154d61be1104f7ae41c8358"
 }

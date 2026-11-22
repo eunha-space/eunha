@@ -437,10 +437,6 @@ pub async fn edit_status(
     // `update_metadata!`.
     store_statuses_tags(&state, id, auth.account_id, &hashtags).await?;
     store_status_mentions(&state, id, &resolved).await?;
-    // Whom the post opens by mentioning, for the timelines.
-    if let Err(error) = crate::leading_mention::record(&state, id).await {
-        tracing::warn!(%error, "could not record whom a status opens by mentioning");
-    }
     // `update_index('statuses', :proper)`.
     crate::search::elasticsearch::indexing::status(&state, id).await;
     // `UpdateStatusService#reset_preview_card!`: a changed text gets its card

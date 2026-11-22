@@ -69,6 +69,14 @@ async fn test_a_post_opening_with_a_mention_goes_where_a_reply_would() {
     let local = local_timeline(&ctx).await;
     assert!(!local.iter().any(|id| id == addressed_id));
     assert!(local.iter().any(|id| id == dotted_id));
+    // One that opens by mentioning its own author is an ordinary post.
+    let own = ctx
+        .api
+        .post_status(&ctx.bob_token, "@bob a note to self", "public")
+        .await;
+    let own_id = own["id"].as_str().unwrap();
+    assert!(feed_holds(&ctx, own_id).await);
+    assert!(local_timeline(&ctx).await.iter().any(|id| id == own_id));
     // It is still an ordinary post to the API: no reply.
     assert!(addressed["in_reply_to_id"].is_null());
 

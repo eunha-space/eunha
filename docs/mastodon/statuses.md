@@ -113,10 +113,10 @@ lists take it only where they would take a reply to `@alice`, so a follower who
 does not follow `@alice` does not see it, and the local and federated timelines
 and their streams leave it out. Anything before the `@`, as in `.@alice hello`,
 makes it an ordinary post. It stays an ordinary post in the API and in
-ActivityPub, so other servers show it to everyone. The account is recorded
-when the post is written, received or edited, so posts from before the
-migration that added `eunha.leading_mentions` are read as Mastodon reads them.
-See [divergences](./divergences.md).
+ActivityPub, so other servers show it to everyone. Nothing about it is
+stored: the start of the post's text is read when a timeline is, so older
+and imported posts are read the same way. A post that opens by mentioning its
+own author is an ordinary post. See [divergences](./divergences.md).
 
 
 Context

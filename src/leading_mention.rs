@@ -5,21 +5,38 @@
 //! reply to `@someone` would go, and the public timelines leave it out. Mastodon
 //! decides this by `in_reply_to_id` alone, and shows such a post to everyone.
 //!
-//! The account is recorded in `eunha.leading_mentions` when a post is written,
-//! received or edited, after its mentions are, so that the timeline queries
-//! can read it; [`addressed_to`] is the rule the feeds apply. Replies, and
-//! posts that open by mentioning their own author, get no row.
+//! Nothing is recorded: whom a post opens by mentioning is read from its text
+//! and its active mentions when a feed takes it ([`leading_mentions`]), and the
+//! public timelines ask `eunha.opens_with_mention` for the same opening. Both
+//! only look at the start of the text, so a long post costs no more than a
+//! short one. A post that opens by mentioning its own author is no one's.
 //!
 //! Mastodon: none
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
+use regex::Regex;
+use sqlx::PgPool;
+
 use crate::formatter::extractor::{extract_mentions, Kind};
-use crate::state::AppState;
+
+/// How much of a local post's text a handle can take up: a username of 30
+/// characters, a domain of 253, the `@`s and some whitespace.
+const HANDLE_PREFIX: usize = 320;
 
 /// The handle a local post's source text opens with, after any whitespace.
 pub fn opening_handle(text: &str) -> Option<(String, Option<String>)> {
-    let start = text.len() - text.trim_start().len();
-    let first = extract_mentions(text).into_iter().next()?;
-    if first.start != start {
+    let trimmed = text.trim_start();
+    if !trimmed.starts_with(['@', '＠']) {
+        return None;
+    }
+    let mut end = trimmed.len().min(HANDLE_PREFIX);
+    while !trimmed.is_char_boundary(end) {
+        end -= 1;
+    }
+    let first = extract_mentions(&trimmed[..end]).into_iter().next()?;
+    if first.start != 0 {
         return None;
     }
     let Kind::Mention(screen_name) = first.kind else {
@@ -31,22 +48,17 @@ pub fn opening_handle(text: &str) -> Option<(String, Option<String>)> {
     })
 }
 
-/// The `href` of the link a remote post's HTML opens with, when nothing but
-/// whitespace and paragraph or span wrappers comes before it.
-pub fn opening_link(html: &str) -> Option<String> {
-    let document = scraper::Html::parse_fragment(html);
-    for node in document.root_element().descendants() {
-        match node.value() {
-            scraper::Node::Text(text) if !text.trim().is_empty() => return None,
-            scraper::Node::Element(element) => match element.name() {
-                "a" => return element.attr("href").map(str::to_owned),
-                "html" | "body" | "p" | "span" | "div" => {}
-                _ => return None,
-            },
-            _ => {}
-        }
-    }
-    None
+/// The `href` of the link a remote post's HTML opens with, inside at most a
+/// paragraph and a span, as `eunha.opens_with_mention` reads it.
+pub fn opening_link(html: &str) -> Option<&str> {
+    static OPENING_LINK: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"^\s*(?:<p[^>]*>\s*)?(?:<span[^>]*>\s*)?<a\s[^>]*href="([^"]+)""#)
+            .expect("valid pattern")
+    });
+    OPENING_LINK
+        .captures(html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
 }
 
 /// Whom a status in a feed is addressed to: the account it replies to, or,
@@ -63,92 +75,114 @@ pub fn addressed_to(
     }
 }
 
-/// Records whom `status_id` opens by mentioning, or that it opens with no
-/// one, from its text and its active mentions.
-pub async fn record(state: &AppState, status_id: i64) -> sqlx::Result<()> {
-    let Some(status) = sqlx::query!(
-        r#"SELECT s.text, s.account_id, s.reply, a.domain IS NULL AS "local!"
-           FROM statuses s JOIN accounts a ON a.id = s.account_id
-           WHERE s.id = $1"#,
-        status_id,
-    )
-    .fetch_optional(&state.db)
-    .await?
-    else {
-        return Ok(());
-    };
-    let mentioned = sqlx::query!(
-        r#"SELECT a.id, a.username, a.domain, a.url, a.uri, a.id_scheme
-           FROM mentions m JOIN accounts a ON a.id = m.account_id
-           WHERE m.status_id = $1 AND NOT m.silent"#,
-        status_id,
-    )
-    .fetch_all(&state.db)
-    .await?;
+/// A status as [`leading_mentions`] reads it.
+pub struct Opening<'a> {
+    pub id: i64,
+    pub account_id: i64,
+    pub reply: bool,
+    /// `Status#local?`.
+    pub local: bool,
+    pub text: &'a str,
+}
 
-    let instance = &state.instance;
-    let addressee = if status.reply {
-        None
-    } else if status.local {
-        opening_handle(&status.text).and_then(|(username, domain)| {
-            let domain = domain.filter(|d| !instance.is_local_domain(d));
-            mentioned.iter().find(|a| {
-                a.username.eq_ignore_ascii_case(&username)
-                    && match (&domain, &a.domain) {
+/// An account a status mentions, as matched against its opening.
+struct Mentioned {
+    id: i64,
+    username: String,
+    domain: Option<String>,
+    url: Option<String>,
+    uri: String,
+}
+
+/// Whom each of `statuses` that replies to nothing opens by mentioning, among
+/// its active mentions, other than its author; by status id.
+pub async fn leading_mentions(db: &PgPool, statuses: &[Opening<'_>]) -> HashMap<i64, i64> {
+    enum Open<'a> {
+        Handle(String, Option<String>),
+        Link(&'a str),
+    }
+    let opening: Vec<(&Opening, Open)> = statuses
+        .iter()
+        .filter(|s| !s.reply)
+        .filter_map(|s| {
+            let open = if s.local {
+                opening_handle(s.text).map(|(u, d)| Open::Handle(u, d))
+            } else {
+                opening_link(s.text).map(Open::Link)
+            };
+            open.map(|o| (s, o))
+        })
+        .collect();
+    if opening.is_empty() {
+        return HashMap::new();
+    }
+    let ids: Vec<i64> = opening.iter().map(|(s, _)| s.id).collect();
+    let rows = match sqlx::query!(
+        r#"SELECT m.status_id, a.id, a.username, a.domain, a.url, a.uri
+           FROM mentions m JOIN accounts a ON a.id = m.account_id
+           WHERE m.status_id = ANY($1) AND NOT m.silent"#,
+        &ids,
+    )
+    .fetch_all(db)
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, "could not read whom statuses open by mentioning");
+            return HashMap::new();
+        }
+    };
+    let mut mentioned: HashMap<i64, Vec<Mentioned>> = HashMap::new();
+    for r in rows {
+        mentioned.entry(r.status_id).or_default().push(Mentioned {
+            id: r.id,
+            username: r.username,
+            domain: r.domain,
+            url: r.url,
+            uri: r.uri.unwrap_or_default(),
+        });
+    }
+
+    let mut found = HashMap::new();
+    for (status, open) in opening {
+        let Some(accounts) = mentioned.get(&status.id) else {
+            continue;
+        };
+        let account = match open {
+            Open::Handle(username, domain) => {
+                let named = |a: &&Mentioned| a.username.eq_ignore_ascii_case(&username);
+                // `@bob@this.instance` names the local `bob`, whose domain
+                // is empty; only the status's own mentions are looked at.
+                accounts
+                    .iter()
+                    .filter(named)
+                    .find(|a| match (&domain, &a.domain) {
                         (None, None) => true,
                         (Some(d), Some(ad)) => d.eq_ignore_ascii_case(ad),
                         _ => false,
-                    }
-            })
-        })
-    } else {
-        opening_link(&status.text).and_then(|href| {
-            mentioned.iter().find(|a| {
-                let urls: Vec<String> = match a.domain {
-                    None => [instance.web_domain(), instance.local_domain.as_str()]
-                        .into_iter()
-                        .flat_map(|domain| {
-                            [
-                                format!("https://{domain}/@{}", a.username),
-                                crate::federation::tag::account_uri(
-                                    domain,
-                                    a.id,
-                                    a.id_scheme,
-                                    &a.username,
-                                ),
-                            ]
+                    })
+                    .or_else(|| {
+                        domain.as_ref().and_then(|_| {
+                            accounts.iter().filter(named).find(|a| a.domain.is_none())
                         })
-                        .collect(),
-                    Some(_) => a.url.iter().chain(&a.uri).cloned().collect(),
-                };
-                urls.iter().any(|url| url == &href)
-            })
-        })
-    }
-    .map(|a| a.id)
-    .filter(|&id| id != status.account_id);
-
-    match addressee {
-        Some(account_id) => {
-            sqlx::query!(
-                "INSERT INTO eunha.leading_mentions (status_id, account_id) VALUES ($1, $2)
-                 ON CONFLICT (status_id) DO UPDATE SET account_id = EXCLUDED.account_id",
-                status_id,
-                account_id,
-            )
-            .execute(&state.db)
-            .await?;
-        }
-        None => {
-            sqlx::query!(
-                "DELETE FROM eunha.leading_mentions WHERE status_id = $1",
-                status_id
-            )
-            .execute(&state.db)
-            .await?;
+                    })
+            }
+            Open::Link(href) => accounts.iter().find(|a| match a.domain {
+                Some(_) => a.url.as_deref() == Some(href) || a.uri == href,
+                // A local account's links are this instance's:
+                // `/@username`, `/users/username` or `/ap/users/id`.
+                None => {
+                    href.ends_with(&format!("/@{}", a.username))
+                        || href.ends_with(&format!("/users/{}", a.username))
+                        || href.ends_with(&format!("/ap/users/{}", a.id))
+                }
+            }),
+        };
+        if let Some(account) = account.filter(|a| a.id != status.account_id) {
+            found.insert(status.id, account.id);
         }
     }
-    Ok(())
+    found
 }
 
 #[cfg(test)]
@@ -162,6 +196,7 @@ mod tests {
             Some(("hellel".into(), Some("xxx.example".into())))
         );
         assert_eq!(opening_handle("  @bob hi"), Some(("bob".into(), None)));
+        assert_eq!(opening_handle("@bob"), Some(("bob".into(), None)));
     }
 
     #[test]
@@ -172,9 +207,19 @@ mod tests {
     }
 
     #[test]
+    fn only_the_start_of_a_long_post_is_read() {
+        let long = format!("@bob {}", "é".repeat(400_000));
+        assert_eq!(opening_handle(&long), Some(("bob".into(), None)));
+        let long = format!("@{}", "é".repeat(400_000));
+        assert_eq!(opening_handle(&long), None);
+    }
+
+    #[test]
     fn a_remote_post_opening_with_a_link_has_an_opening_link() {
         let html = r#"<p><span class="h-card" translate="no"><a href="https://x.example/@hellel" class="u-url mention">@<span>hellel</span></a></span> hello</p>"#;
-        assert_eq!(opening_link(html), Some("https://x.example/@hellel".into()));
+        assert_eq!(opening_link(html), Some("https://x.example/@hellel"));
+        let html = r#"<p><a class="u-url mention" href="https://x.example/users/a">@a</a> hi</p>"#;
+        assert_eq!(opening_link(html), Some("https://x.example/users/a"));
     }
 
     #[test]

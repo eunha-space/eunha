@@ -114,12 +114,18 @@ async fn subject(state: &AppState, status_id: i64) -> anyhow::Result<Option<Subj
     )
     .fetch_all(&state.db)
     .await?;
-    let leading_mention = sqlx::query_scalar!(
-        "SELECT account_id FROM eunha.leading_mentions WHERE status_id = $1",
-        status.id
+    let leading_mention = crate::leading_mention::leading_mentions(
+        &state.db,
+        &[crate::leading_mention::Opening {
+            id: status.id,
+            account_id: status.account_id,
+            reply: status.reply || status.in_reply_to_id.is_some(),
+            local: author.domain.is_none(),
+            text: &status.text,
+        }],
     )
-    .fetch_optional(&state.db)
-    .await?;
+    .await
+    .remove(&status.id);
     Ok(Some(Subject {
         leading_mention,
         local: author.domain.is_none(),

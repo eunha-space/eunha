@@ -183,7 +183,10 @@ pub async fn public_timeline(
                  AND s.reblog_of_id IS NULL
                  AND (NOT s.reply OR s.in_reply_to_account_id = s.account_id)
                  -- A post opening with someone else's mention (`crate::leading_mention`).
-                 AND NOT EXISTS (SELECT 1 FROM eunha.leading_mentions lm WHERE lm.status_id = s.id)
+                 AND NOT (NOT s.reply AND eunha.opens_with_mention(s.text, a.domain IS NULL)
+                          AND EXISTS (SELECT 1 FROM mentions om
+                                      WHERE om.status_id = s.id AND NOT om.silent
+                                        AND om.account_id <> s.account_id))
                  AND (NOT $1::bool OR a.domain IS NULL)
                  AND (NOT $4::bool OR a.domain IS NOT NULL)
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL
@@ -233,7 +236,10 @@ pub async fn public_timeline(
                  AND s.reblog_of_id IS NULL
                  AND (NOT s.reply OR s.in_reply_to_account_id = s.account_id)
                  -- A post opening with someone else's mention (`crate::leading_mention`).
-                 AND NOT EXISTS (SELECT 1 FROM eunha.leading_mentions lm WHERE lm.status_id = s.id)
+                 AND NOT (NOT s.reply AND eunha.opens_with_mention(s.text, a.domain IS NULL)
+                          AND EXISTS (SELECT 1 FROM mentions om
+                                      WHERE om.status_id = s.id AND NOT om.silent
+                                        AND om.account_id <> s.account_id))
                  AND (NOT $1::bool OR a.domain IS NULL)
                  AND (NOT $5::bool OR a.domain IS NOT NULL)
                  AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL

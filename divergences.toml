@@ -2407,8 +2407,9 @@ home feed and lists take it only if they would take a reply to that account, \
 and the public timelines and their streams leave it out. Anything before the \
 `@`, such as `.@someone`, makes it an ordinary post again. The post itself is \
 unchanged: it is no reply in the API or in ActivityPub, so other servers show \
-it as Mastodon does. Only posts written, received or edited since the \
-`eunha.leading_mentions` migration are read this way."""
+it as Mastodon does. Whom a post opens with is read from the start of its \
+text when a timeline is read, so older and imported posts are read the same \
+way."""
 why = "A post that starts by addressing someone is a reply in all but name. Twitter and X have shown such posts only to followers who also follow the account addressed, and people expect it to stay out of the public timelines."
 evidence = "tests/integration/c2s/leading_mentions.rs"
 since = "5.0.0-beta.1"
