@@ -21,6 +21,7 @@ mod note_members;
 mod objects;
 mod outbound_activities;
 mod ownership;
+mod payload_limits;
 mod private_addresses;
 mod quote;
 mod served_to_signers;
