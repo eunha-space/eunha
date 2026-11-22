@@ -25,9 +25,10 @@ import { Poll } from '@/components/poll.tsx'
 import { PreviewCard } from '@/components/preview-card.tsx'
 import { QuotedStatus } from '@/components/quoted-post.tsx'
 import { ReportDialog } from '@/components/report-dialog.tsx'
-import { AnimateEmoji, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
+import { AnimateEmoji, EmojiText } from '@/components/emoji.tsx'
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
+import { PostContent } from '@/components/post-content.tsx'
 import { currentLocale, t } from '@/i18n.tsx'
 
 // The reader's account. `getMeId` is cached from the last `loadMe`; on a first
@@ -296,7 +297,9 @@ export function MessageBubble({
               <MediaAttachments attachments={status.mediaAttachments} sensitive={status.sensitive} />
             )}
             {hasText && (
-              <EmojiHtml
+              <PostContent
+                key={status.id}
+                buttonClassName="text-inherit"
                 className="status-content rich-text break-words [&_a]:font-medium"
                 html={content}
                 emojis={status.emojis}

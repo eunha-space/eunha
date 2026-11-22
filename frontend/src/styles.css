@@ -375,6 +375,12 @@
   }
 }
 
+/* A post's text cut by `PostContent`: its last 80px fade out, as Mastodon's
+   `StatusContent` does, so the cut reads as one rather than as the end. */
+.post-content-cut {
+  mask-image: linear-gradient(to bottom, black calc(100% - 80px), transparent);
+}
+
 /* `TextFormatter.shortened_link` writes a URL as three spans: the scheme in
    an `invisible` one, then at most 30 characters, marked `ellipsis` when the
    rest is cut, then the rest in another `invisible` one. Copying the link

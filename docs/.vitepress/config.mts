@@ -65,6 +65,7 @@ export default defineConfig({
         items: [
           { text: "Media", link: "/operating/media" },
           { text: "Image viewer", link: "/operating/media-viewer" },
+          { text: "Long posts", link: "/operating/long-posts" },
           { text: "Preview cards", link: "/operating/preview-cards" },
           { text: "Remote replies", link: "/operating/remote-replies" },
           { text: "Search", link: "/operating/search" },

@@ -955,6 +955,7 @@
   "eunha.panes.federated": "연합",
   "eunha.poll.closed_suffix": "· 마감됨",
   "eunha.poll.ends": "· {date}에 마감",
+  "eunha.post_content.read_more": "더 읽기",
   "eunha.post_language.could_not_load_post_languages": "게시물 언어를 불러오지 못했습니다",
   "eunha.post_language_picker.could_not_load_languages_reopen_the": "언어를 불러오지 못했습니다. 선택기를 다시 열어 시도하세요.",
   "eunha.post_language_picker.no_languages_found": "언어를 찾을 수 없습니다.",

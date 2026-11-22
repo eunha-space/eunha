@@ -7,8 +7,8 @@ import { getMeId } from '../me.ts'
 import { Button } from '@/components/ui/button.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
-import { stripQuoteFallback } from '@/lib/content.ts'
-import { cn } from '@/lib/utils.ts'
+import { stripQuoteFallback, truncateHtml } from '@/lib/content.ts'
+import { PostContent, TEXT_LIMIT } from '@/components/post-content.tsx'
 import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
 import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { Poll } from '@/components/poll.tsx'
@@ -339,12 +339,22 @@ function CompactBody({
         <p className="text-muted-foreground mt-1 text-xs">{t({ id: 'status.continued_thread', defaultMessage: 'Continued thread' })}</p>
       )}
       {html.trim() && (
-        <EmojiHtml
-          // Clamped in the composer, as Mastodon's preview is; whole elsewhere.
-          className={cn('rich-text text-foreground/90 mt-1 text-sm [&_a]:underline', !linked && 'line-clamp-6')}
-          html={html}
-          emojis={status.emojis}
-        />
+        linked ? (
+          <PostContent
+            key={status.id}
+            wrapperClassName="mt-1"
+            className="rich-text text-foreground/90 text-sm [&_a]:underline"
+            html={html}
+            emojis={status.emojis}
+          />
+        ) : (
+          <EmojiHtml
+            // Cut shorter in the composer, as Mastodon's preview is.
+            className="rich-text text-foreground/90 mt-1 line-clamp-6 text-sm [&_a]:underline"
+            html={truncateHtml(html, TEXT_LIMIT).html}
+            emojis={status.emojis}
+          />
+        )
       )}
       {status.poll && (
         <p className="text-muted-foreground mt-1 text-sm">
@@ -500,8 +510,10 @@ export function QuotedPost({
       )}
       {variant === 'full' && expanded && (
         <>
-          <EmojiHtml
-            className="rich-text text-foreground/90 mt-1 text-sm [&_a]:underline"
+          <PostContent
+            key={status.id}
+            wrapperClassName="mt-1"
+            className="rich-text text-foreground/90 text-sm [&_a]:underline"
             html={status.quote ? stripQuoteFallback(status.content) : status.content}
             emojis={status.emojis}
           />

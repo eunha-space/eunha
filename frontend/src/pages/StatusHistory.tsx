@@ -9,7 +9,8 @@ import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar.tsx'
 import { useAnimatedImage } from '@/hooks/use-animated-image.ts'
-import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
+import { AnimateEmoji, DisplayName, EmojiText } from '@/components/emoji.tsx'
+import { PostContent } from '@/components/post-content.tsx'
 import { FeedSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 import { FormattedMessage } from 'react-intl'
@@ -37,7 +38,7 @@ function Version({
           <EmojiText text={edit.spoilerText} emojis={edit.emojis} />
         </AnimateEmoji>
       )}
-      <EmojiHtml
+      <PostContent
         className="status-content rich-text text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
         html={edit.content}
         emojis={edit.emojis}

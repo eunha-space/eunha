@@ -70,7 +70,7 @@ import { MediaAttachments } from '@/components/media-attachments.tsx'
 import { Poll } from '@/components/poll.tsx'
 import { QuotedStatus } from '@/components/quoted-post.tsx'
 import { RelativeTime } from '@/components/relative-time.tsx'
-import { AnimateEmoji, DisplayName, EmojiHtml, EmojiText } from '@/components/emoji.tsx'
+import { AnimateEmoji, DisplayName, EmojiText } from '@/components/emoji.tsx'
 import { PreviewCard } from '@/components/preview-card.tsx'
 import { useComposeModal } from '@/components/compose-modal.tsx'
 import { PostLanguagePicker } from '@/components/post-language-picker.tsx'
@@ -79,6 +79,7 @@ import { dismissRemoveQuoteHint, RemoveQuoteHint } from '@/components/remove-quo
 import { stripQuoteFallback } from '@/lib/content.ts'
 import { boostItemState, quoteItemState } from '@/lib/statuses.ts'
 import { cn, errorMessage } from '@/lib/utils.ts'
+import { PostContent } from '@/components/post-content.tsx'
 
 import { useTagFollow } from '../hooks/use-tag-follow.ts'
 import { currentLocale, t } from '@/i18n.tsx'
@@ -642,7 +643,9 @@ export function StatusCard({
             )}
             {expanded && (
               <>
-                <EmojiHtml
+                <PostContent
+                  key={status.id}
+                  whole={detailed}
                   className="status-content rich-text text-sm [&_a]:font-medium [&_a]:text-primary [&_a]:underline"
                   html={content}
                   emojis={status.emojis}

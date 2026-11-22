@@ -864,6 +864,24 @@ reviewed_for = "5.0.0-beta.1"
 
 
 [[divergence]]
+id = "web-post-text-limit"
+kind = "behaviour"
+summary = "The web client also cuts a long post's text by length, and opens it in place"
+mastodon = "The web client's `StatusContent` cuts text taller than 35 lines to 35, with a \"View full post\" that goes to the post; all of the text is rendered under the cut."
+eunha = """
+Text taller than 35 of its lines is cut to 35, everywhere but the focused post \
+of a thread. Past 5,000 characters only the first 5,000 are parsed and drawn \
+until the reader asks for the rest. \"Read more\" opens the post in place."""
+why = """
+A remote post can be up to the megabyte an inbox accepts, and posts made to \
+flood timelines come close to it. A height cut alone still has the browser \
+build and lay out every character under it, in every timeline and notification \
+the post reaches."""
+evidence = "frontend/e2e/post-content.spec.ts"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
 id = "composer-link-card"
 kind = "addition"
 summary = "The composer previews the link card a post will get"

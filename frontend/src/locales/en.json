@@ -1097,6 +1097,7 @@
   "eunha.panes.federated": "Federated",
   "eunha.poll.closed_suffix": "· closed",
   "eunha.poll.ends": "· ends {date}",
+  "eunha.post_content.read_more": "Read more",
   "eunha.post_language.could_not_load_post_languages": "Could not load post languages",
   "eunha.post_language_picker.could_not_load_languages_reopen_the": "Could not load languages. Reopen the picker to retry.",
   "eunha.post_language_picker.no_languages_found": "No languages found.",
