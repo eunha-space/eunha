@@ -89,8 +89,10 @@ The hashtag in a subscription is normalized as the streaming server's
 
  -  `update` and `status.update` on the public and hashtag streams: a public
     post that is not a boost, by an account not silenced, rendered for nobody;
-    a reply to someone else reaches the hashtag streams but not the public
-    ones. A remote post only within six hours of being written.
+    a reply to someone else, or a post that opens with someone else's
+    mention ([statuses](./statuses.md#mentions)), reaches the hashtag streams
+    but not the public ones. A remote post only within six hours of being
+    written.
  -  The same on `timeline:<id>` for the author, the followers and the
     followers of its hashtags whose home it would enter by
     `FeedManager#filter_from_home` and `#filter_from_tags?`, and on

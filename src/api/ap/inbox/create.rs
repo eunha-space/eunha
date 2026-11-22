@@ -703,6 +703,10 @@ async fn create_locked(
         .execute(&state.db)
         .await?;
     }
+    // Whom the post opens by mentioning, for the timelines.
+    if let Err(error) = crate::leading_mention::record(state, inserted_id).await {
+        tracing::warn!(%error, "could not record whom a status opens by mentioning");
+    }
     // `resolve_unresolved_mentions`.
     for uri in unresolved_mentions {
         resolve_mention_later(state, inserted_id, uri, create_options.request_id.clone()).await;

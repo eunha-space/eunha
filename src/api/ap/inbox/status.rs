@@ -1084,6 +1084,10 @@ pub(super) async fn handle_update(
             for uri in unresolved {
                 super::create::resolve_mention_later(state, row.id, uri, None).await;
             }
+            // Whom the edited post opens by mentioning, for the timelines.
+            if let Err(error) = crate::leading_mention::record(state, row.id).await {
+                tracing::warn!(%error, "could not record whom a status opens by mentioning");
+            }
 
             // `update_tags!`: the featured tags the edit added or took away.
             if let Some(counted) = sqlx::query!(

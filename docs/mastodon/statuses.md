@@ -106,6 +106,18 @@ addressed to them, and does not tag them. Naming them again makes the mention
 active again. An account the author blocks, or one on a domain the author
 blocks, is never mentioned, and a mention of it made before is removed.
 
+A post that replies to nothing but opens with a mention of someone else, such
+as `@alice hello`, is taken for a reply to that account in the timelines, as
+Twitter and X take it; Mastodon does not do this. A follower's home feed and
+lists take it only where they would take a reply to `@alice`, so a follower who
+does not follow `@alice` does not see it, and the local and federated timelines
+and their streams leave it out. Anything before the `@`, as in `.@alice hello`,
+makes it an ordinary post. It stays an ordinary post in the API and in
+ActivityPub, so other servers show it to everyone. The account is recorded
+when the post is written, received or edited, so posts from before the
+migration that added `eunha.leading_mentions` are read as Mastodon reads them.
+See [divergences](./divergences.md).
+
 
 Context
 -------

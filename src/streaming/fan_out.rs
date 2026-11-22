@@ -42,6 +42,25 @@ struct Subject {
     mentions: Vec<i64>,
     tag_names: Vec<String>,
     tag_ids: Vec<i64>,
+    /// Whom the status opens by mentioning (`crate::leading_mention`).
+    leading_mention: Option<i64>,
+}
+
+impl Subject {
+    /// Whether the status is a reply, or opens with someone else's mention.
+    fn addressed(&self) -> bool {
+        self.status.reply || self.status.in_reply_to_id.is_some() || self.leading_mention.is_some()
+    }
+
+    /// Whom it replies to, or whom it opens by mentioning.
+    fn addressee(&self) -> Option<i64> {
+        let st = &self.status;
+        crate::leading_mention::addressed_to(
+            st.reply || st.in_reply_to_id.is_some(),
+            st.in_reply_to_account_id,
+            self.leading_mention,
+        )
+    }
 }
 
 async fn subject(state: &AppState, status_id: i64) -> anyhow::Result<Option<Subject>> {
@@ -95,7 +114,14 @@ async fn subject(state: &AppState, status_id: i64) -> anyhow::Result<Option<Subj
     )
     .fetch_all(&state.db)
     .await?;
+    let leading_mention = sqlx::query_scalar!(
+        "SELECT account_id FROM eunha.leading_mentions WHERE status_id = $1",
+        status.id
+    )
+    .fetch_optional(&state.db)
+    .await?;
     Ok(Some(Subject {
+        leading_mention,
         local: author.domain.is_none(),
         author_silenced: author.silenced,
         author_domain: author.domain,
@@ -323,8 +349,9 @@ async fn try_distribute(
             }
         }
         // `return if @status.reply? && @status.in_reply_to_account_id != @account.id`
-        let reply_to_other = (s.status.reply || s.status.in_reply_to_id.is_some())
-            && s.status.in_reply_to_account_id != Some(s.status.account_id);
+        // A post opening with someone else's mention counts as a reply to
+        // them (`crate::leading_mention`).
+        let reply_to_other = s.addressed() && s.addressee() != Some(s.status.account_id);
         let mut media_channels = false;
         if !reply_to_other {
             channels.push("timeline:public".into());
@@ -478,12 +505,12 @@ async fn filter_from_list(
     list: &DistributingList,
 ) -> anyhow::Result<bool> {
     let st = &s.status;
-    let is_reply = st.reply || st.in_reply_to_id.is_some();
-    if is_reply && st.in_reply_to_account_id != Some(st.account_id) {
-        let mut should_filter = st.in_reply_to_account_id != Some(list.account_id);
+    let reply_to = s.addressee();
+    if s.addressed() && reply_to != Some(st.account_id) {
+        let mut should_filter = reply_to != Some(list.account_id);
         should_filter &= list.replies_policy != 1;
         if should_filter && list.replies_policy == 0 {
-            let listed = match st.in_reply_to_account_id {
+            let listed = match reply_to {
                 Some(target) => sqlx::query_scalar!(
                     r#"SELECT EXISTS (SELECT 1 FROM list_accounts WHERE list_id = $1 AND account_id = $2) AS "e!""#,
                     list.id,
@@ -614,7 +641,7 @@ async fn filter_from_home(
     if blocked_by(state, receiver, st.account_id).await? {
         return Ok(Some(Filtered::Filter));
     }
-    let should_filter = if let (true, Some(reply_to)) = (is_reply, st.in_reply_to_account_id) {
+    let should_filter = if let (true, Some(reply_to)) = (s.addressed(), s.addressee()) {
         // `crutches[:following]`.
         let following = match list {
             Some(list) if list.replies_policy == 0 => {

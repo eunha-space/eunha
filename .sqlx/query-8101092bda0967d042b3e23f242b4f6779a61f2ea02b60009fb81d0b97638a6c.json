@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO eunha.leading_mentions (status_id, account_id) VALUES ($1, $2)\n                 ON CONFLICT (status_id) DO UPDATE SET account_id = EXCLUDED.account_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8101092bda0967d042b3e23f242b4f6779a61f2ea02b60009fb81d0b97638a6c"
+}

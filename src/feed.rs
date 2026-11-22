@@ -402,6 +402,25 @@ struct Candidate {
     reblog_of_id: Option<i64>,
     /// The boosted status, when it is kept: its author and their domain.
     reblog: Option<(i64, Option<String>)>,
+    /// Whom the status opens by mentioning (`crate::leading_mention`).
+    leading_mention: Option<i64>,
+}
+
+impl Candidate {
+    /// Whether the status is a reply, or opens with someone else's mention,
+    /// which the feeds take for a reply to them.
+    fn addressed(&self) -> bool {
+        self.reply || self.leading_mention.is_some()
+    }
+
+    /// Whom it replies to, or whom it opens by mentioning.
+    fn addressee(&self) -> Option<i64> {
+        crate::leading_mention::addressed_to(
+            self.reply,
+            self.in_reply_to_account_id,
+            self.leading_mention,
+        )
+    }
 }
 
 /// Which feed a status is being filtered for: the home feed, or a list (its
@@ -424,10 +443,12 @@ async fn eligible_statuses(
     sqlx::query!(
         r#"SELECT s.id, s.account_id, s.reply, s.in_reply_to_id, s.in_reply_to_account_id,
                   s.language, s.reblog_of_id,
-                  r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?"
+                  r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?",
+                  lm.account_id AS "leading_mention?"
            FROM statuses s
            LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL
            LEFT JOIN accounts ra ON ra.id = r.account_id
+           LEFT JOIN eunha.leading_mentions lm ON lm.status_id = s.id
            WHERE s.account_id = $1
              AND s.deleted_at IS NULL
              AND s.visibility IN (0, 1, 2)
@@ -451,6 +472,7 @@ async fn eligible_statuses(
         language: s.language,
         reblog_of_id: s.reblog_of_id,
         reblog: s.reblog_account_id.map(|id| (id, s.reblog_domain)),
+        leading_mention: s.leading_mention,
     })
     .collect()
 }
@@ -515,10 +537,7 @@ impl Crutches {
             .filter(|s| s.reblog_of_id.is_some())
             .map(|s| s.account_id)
             .collect();
-        let in_reply_to_ids: Vec<i64> = statuses
-            .iter()
-            .filter_map(|s| s.in_reply_to_account_id)
-            .collect();
+        let in_reply_to_ids: Vec<i64> = statuses.iter().filter_map(Candidate::addressee).collect();
         let domains: Vec<String> = statuses
             .iter()
             .filter_map(|s| s.reblog.as_ref().and_then(|(_, d)| d.clone()))
@@ -742,8 +761,8 @@ fn filtered_after_lists(status: &Candidate, receiver_id: i64, crutches: &Crutche
         return true;
     }
 
-    match (status.in_reply_to_account_id, &status.reblog) {
-        (Some(in_reply_to), _) if status.reply => {
+    match (status.addressee(), &status.reblog) {
+        (Some(in_reply_to), _) if status.addressed() => {
             !crutches.following.contains(&in_reply_to)
                 && receiver_id != in_reply_to
                 && status.account_id != in_reply_to
@@ -1104,11 +1123,13 @@ async fn distributed(db: &PgPool, status_id: i64) -> Option<Distributed> {
                   a.domain AS author_domain, a.silenced_at IS NOT NULL AS "author_silenced!",
                   a.suspended_at IS NOT NULL AS "author_suspended!",
                   r.account_id AS "reblog_account_id?", ra.domain AS "reblog_domain?",
-                  ra.suspended_at IS NOT NULL AS "reblog_suspended?"
+                  ra.suspended_at IS NOT NULL AS "reblog_suspended?",
+                  lm.account_id AS "leading_mention?"
            FROM statuses s
            JOIN accounts a ON a.id = s.account_id
            LEFT JOIN statuses r ON r.id = s.reblog_of_id AND r.deleted_at IS NULL
            LEFT JOIN accounts ra ON ra.id = r.account_id
+           LEFT JOIN eunha.leading_mentions lm ON lm.status_id = s.id
            WHERE s.id = $1 AND s.deleted_at IS NULL"#,
         status_id,
     )
@@ -1133,6 +1154,7 @@ async fn distributed(db: &PgPool, status_id: i64) -> Option<Distributed> {
             language: row.language,
             reblog_of_id: row.reblog_of_id,
             reblog: row.reblog_account_id.map(|id| (id, row.reblog_domain)),
+            leading_mention: row.leading_mention,
         },
         visibility: row.visibility,
         author_domain: row.author_domain,
@@ -1193,7 +1215,7 @@ async fn crutches_for(
         .collect();
     let authors: Vec<i64> = std::iter::once(author).chain(reblog_author).collect();
 
-    if let Some(in_reply_to) = status.in_reply_to_account_id {
+    if let Some(in_reply_to) = status.addressee() {
         for receiver in sqlx::query_scalar!(
             "SELECT account_id FROM follows
              WHERE account_id = ANY($1) AND target_account_id = $2",
@@ -1422,7 +1444,7 @@ async fn fan_out_home(
     // someone else, no edit, and nothing `:filter`ed (an exclusive list's
     // `:skip_home` still notifies).
     let notifies = status.reblog_of_id.is_none()
-        && !(status.reply && status.in_reply_to_account_id != Some(author))
+        && !(status.addressed() && status.addressee() != Some(author))
         && !update;
     // Each `FeedInsertWorker` in turn: `push_to_home` where the filter lets
     // the status in; for an edit, `unpush_from_home` where it does not.
@@ -1648,7 +1670,7 @@ async fn fan_out_lists(
             }
         };
     // The lists that hold the account replied to, for `show_list?`.
-    let in_reply_to = status.in_reply_to_account_id;
+    let in_reply_to = status.addressee();
     let listing_reply_target: HashSet<i64> = match in_reply_to {
         Some(target) => {
             let list_ids: Vec<i64> = lists.iter().map(|l| l.0).collect();
@@ -1679,7 +1701,7 @@ async fn fan_out_lists(
         let timeline = Timeline::list(keys, list_id);
         let aggregate = !separate.contains(&owner_id);
         // `FeedManager#filter_from_list?`
-        let filtered_from_list = status.reply
+        let filtered_from_list = status.addressed()
             && in_reply_to != Some(author)
             && in_reply_to != Some(owner_id)
             && replies_policy != crate::db::models::replies::FOLLOWED
@@ -2661,6 +2683,7 @@ mod tests {
             language: None,
             reblog_of_id: None,
             reblog: None,
+            leading_mention: None,
         }
     }
 
@@ -2684,6 +2707,23 @@ mod tests {
         reply.in_reply_to_id = None;
         assert!(filter_from_home(&reply, 1, &crutches, Receiver::Home));
         assert!(!filter_from_home(&reply, 2, &crutches, Receiver::Home));
+    }
+
+    // `crate::leading_mention`: no Mastodon counterpart.
+    #[test]
+    fn a_post_opening_with_a_mention_goes_where_a_reply_would() {
+        let mut opening = post(10, 2);
+        opening.leading_mention = Some(3);
+        let crutches = Crutches::default();
+        assert!(filter_from_home(&opening, 1, &crutches, Receiver::Home));
+        let following = Crutches {
+            following: [3].into(),
+            ..Default::default()
+        };
+        assert!(!filter_from_home(&opening, 1, &following, Receiver::Home));
+        // The account it mentions, and its author, see it.
+        assert!(!filter_from_home(&opening, 3, &crutches, Receiver::Home));
+        assert!(!filter_from_home(&opening, 2, &crutches, Receiver::Home));
     }
 
     #[test]

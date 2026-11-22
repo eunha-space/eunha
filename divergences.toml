@@ -2394,3 +2394,22 @@ whole, not trimmed."""
 evidence = "tests/integration/federation/payload_limits.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "leading-mention-is-addressed"
+kind = "behaviour"
+summary = "A post that opens with a mention goes where a reply to that account would"
+mastodon = "Only `in_reply_to_id` makes a post a reply. A public post that replies to nothing but starts with `@someone` goes to all of its author's followers' home feeds and onto the local and federated timelines."
+eunha = """
+A post that replies to nothing and opens with a mention of someone other than \
+its author is treated as a reply to that account in the timelines: a follower's \
+home feed and lists take it only if they would take a reply to that account, \
+and the public timelines and their streams leave it out. Anything before the \
+`@`, such as `.@someone`, makes it an ordinary post again. The post itself is \
+unchanged: it is no reply in the API or in ActivityPub, so other servers show \
+it as Mastodon does. Only posts written, received or edited since the \
+`eunha.leading_mentions` migration are read this way."""
+why = "A post that starts by addressing someone is a reply in all but name. Twitter and X have shown such posts only to followers who also follow the account addressed, and people expect it to stay out of the public timelines."
+evidence = "tests/integration/c2s/leading_mentions.rs"
+since = "5.0.0-beta.1"
+reviewed_for = "5.0.0-beta.1"

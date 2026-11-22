@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.username, a.domain, a.url, a.uri, a.id_scheme\n           FROM mentions m JOIN accounts a ON a.id = m.account_id\n           WHERE m.status_id = $1 AND NOT m.silent",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "uri",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "id_scheme",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id_scheme"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "aad3387cb85eef21591fae8cb8c498d1c5c10c13b8ce5df1ae10d22ecdfd857a"
+}

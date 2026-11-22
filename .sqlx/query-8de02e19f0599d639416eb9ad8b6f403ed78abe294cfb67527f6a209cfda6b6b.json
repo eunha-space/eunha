@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.text, s.account_id, s.reply, a.domain IS NULL AS \"local!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "reply",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reply"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "local!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "8de02e19f0599d639416eb9ad8b6f403ed78abe294cfb67527f6a209cfda6b6b"
+}

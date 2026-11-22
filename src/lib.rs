@@ -38,6 +38,7 @@ pub mod import;
 pub mod ip_cleanup;
 pub mod jobs;
 pub mod languages;
+pub mod leading_mention;
 pub mod link_verification;
 pub mod locale;
 pub mod markdown;

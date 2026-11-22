@@ -26,6 +26,7 @@ mod gates;
 mod home_feed;
 mod instance;
 mod invites;
+mod leading_mentions;
 mod limited_federation;
 mod lists;
 mod markers;

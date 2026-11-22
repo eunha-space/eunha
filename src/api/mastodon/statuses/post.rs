@@ -593,6 +593,10 @@ pub(crate) async fn process_status(
     // Store tags and mentions
     store_statuses_tags(&state, status.id, account.id, &hashtags).await?;
     store_status_mentions(&state, status.id, &resolved).await?;
+    // Whom the post opens by mentioning, for the timelines.
+    if let Err(error) = crate::leading_mention::record(&state, status.id).await {
+        tracing::warn!(%error, "could not record whom a status opens by mentioning");
+    }
     // `status.quote.ensure_quoted_access`
     if let Some(quote) = &quote_row {
         crate::quotes::ensure_quoted_access(&state.db, quote).await;
