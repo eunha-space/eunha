@@ -2379,7 +2379,8 @@ fetches each tagged account it does not know, inline, and `process_tags` has no 
 limit on how many there are."""
 eunha = """
 ojak's payload limits refuse an activity, with a 422, whose objects hold more \
-than 500 `Mention`s or 1,000 tags, name more than 1,000 recipients in `to`, \
+than 100 `Mention`s (eunha's `MAX_MENTIONS`; ojak's default is 500) or 1,000 \
+tags, name more than 1,000 recipients in `to`, \
 `cc`, `bto`, `bcc` and `audience` together, or carry `content` over 512 KiB, \
 `summary` over 64 KiB or `name` over 16 KiB. Objects eunha fetches are held to \
 the same limits."""
@@ -2387,7 +2388,9 @@ why = """
 About 2,500 mentions of distinct actors fit in a megabyte, and posts made to \
 flood the fediverse come close: each would be a fetch from this server, and a \
 `MentionResolveWorker` with seven retries for each that fails. The limits are \
-far above what Mastodon, Misskey or Pleroma send."""
+far above what Mastodon, Misskey or Pleroma send in practice; Misskey allows 20 \
+mentions by default. A post that mentions more than 100 accounts is refused \
+whole, not trimmed."""
 evidence = "tests/integration/federation/payload_limits.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"

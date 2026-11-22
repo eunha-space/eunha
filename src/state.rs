@@ -162,7 +162,8 @@ impl AppState {
         let fetch = federation_client.clone();
         let fetcher = Arc::new(
             ojak::fetch::Fetcher::new(federation_client.clone(), ojak::sig::Scheme::DraftCavage)
-                .with_plain_http_webfinger(crate::federation::webfinger::plain_http()),
+                .with_plain_http_webfinger(crate::federation::webfinger::plain_http())
+                .with_payload_limits(crate::federation::payload_limits()),
         );
         let delivery_failures = crate::federation::delivery_failures::DeliveryFailureTracker::new(
             db.clone(),

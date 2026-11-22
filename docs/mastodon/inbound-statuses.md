@@ -69,7 +69,8 @@ keeps a silent mention.
 
 How many accounts that can be is bounded before any of this runs. ojak's
 payload limits refuse, with a 422, an activity whose objects hold more than
-500 `Mention`s or 1,000 tags, name more than 1,000 recipients in `to`, `cc`,
+100 `Mention`s (`federation::MAX_MENTIONS`, lower than ojak's default
+of 500) or 1,000 tags, name more than 1,000 recipients in `to`, `cc`,
 `bto`, `bcc` and `audience` together, or carry `content` over 512 KiB,
 `summary` over 64 KiB or `name` over 16 KiB; fetched objects are held to the
 same limits. Mastodon has no such limits, and resolves every tagged account

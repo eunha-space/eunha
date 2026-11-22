@@ -283,6 +283,7 @@ pub fn federation() -> Federation<AppState> {
             }
         })
         .shared_inbox("/inbox")
+        .payload_limits(crate::federation::payload_limits())
         // Every tenant fetches with its own fetcher (`fetcher_for`) and
         // caches in its own Redis namespace (`kv_for`); the fetcher and store
         // given here are only what the builder needs to be given. The keys
@@ -297,7 +298,8 @@ pub fn federation() -> Federation<AppState> {
                 ojak::client::Client::new(ojak::client::ClientConfig::default())
                     .expect("an HTTP client"),
                 ojak::sig::Scheme::DraftCavage,
-            )),
+            )
+            .with_payload_limits(crate::federation::payload_limits())),
             ojak::kv::MemoryKvStore::with_capacity(1),
             std::time::Duration::from_secs(60 * 60),
             // Signed as the instance actor, for peers in authorized-fetch mode.

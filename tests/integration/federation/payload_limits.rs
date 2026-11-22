@@ -73,3 +73,39 @@ async fn test_a_flood_of_mentions_is_refused_before_anything_is_done() {
         "nothing queued"
     );
 }
+
+/// eunha allows 100 mentions, fewer than ojak's own 500: one more is refused,
+/// and 100 go on to be authenticated (and, unsigned, refused for that).
+#[tokio::test]
+async fn test_more_than_a_hundred_mentions_are_refused() {
+    let ctx = TestContext::new("payload-limits-mentions").await;
+    let note = |mentions: usize| {
+        let tag: Vec<Value> = (0..mentions)
+            .map(|i| json!({"type": "Mention", "href": format!("https://s{i}.invalid/users/u{i}")}))
+            .collect();
+        json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("https://flood.invalid/notes/{mentions}/activity"),
+            "type": "Create",
+            "actor": "https://flood.invalid/users/troll",
+            "to": "https://www.w3.org/ns/activitystreams#Public",
+            "object": {
+                "id": format!("https://flood.invalid/notes/{mentions}"),
+                "type": "Note",
+                "attributedTo": "https://flood.invalid/users/troll",
+                "content": "<p>flood</p>",
+                "tag": tag,
+            },
+        })
+    };
+    assert_eq!(eunha::federation::MAX_MENTIONS, 100);
+
+    let resp = ctx.api.post_json("/inbox", None, &note(101)).await;
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        resp.text().await.unwrap(),
+        "refused: 101 mentions, more than 100"
+    );
+    let resp = ctx.api.post_json("/inbox", None, &note(100)).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "within the limits");
+}

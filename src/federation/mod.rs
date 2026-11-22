@@ -30,3 +30,20 @@ pub mod tag;
 pub mod tag_manager;
 pub mod tagged_collections;
 pub mod webfinger;
+
+/// The most `Mention`s an object eunha receives or fetches may hold: each
+/// unknown one is an inline fetch in `Create#process_mention`, and a
+/// `MentionResolveWorker` with seven retries when that fails. Mastodon has no
+/// such limit (the `inbound-payload-limits` divergence); ojak's own default is
+/// 500.
+pub const MAX_MENTIONS: usize = 100;
+
+/// What eunha holds an inbound activity, and an object it fetches, to:
+/// ojak's payload limits, with [`MAX_MENTIONS`].
+#[must_use]
+pub fn payload_limits() -> ojak::limits::PayloadLimits {
+    ojak::limits::PayloadLimits {
+        max_mentions: MAX_MENTIONS,
+        ..ojak::limits::PayloadLimits::default()
+    }
+}
