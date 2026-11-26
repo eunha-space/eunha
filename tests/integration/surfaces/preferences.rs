@@ -292,6 +292,8 @@ async fn test_mastodon_preferences_read_the_web_settings() {
     assert_eq!(prefs["reading:expand:media"], "default");
     assert_eq!(prefs["reading:expand:spoilers"], false);
     assert_eq!(prefs["reading:autoplay:gifs"], false);
+    // Mastodon 5.0 took `posting:default:spoiler_field` back out.
+    assert!(prefs.get("posting:default:spoiler_field").is_none());
     assert_eq!(prefs["posting:default:language"], "en", "the site's");
     assert_eq!(
         mastodon("?lang=ja", None).await["posting:default:language"],

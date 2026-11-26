@@ -221,13 +221,33 @@ pub const SUPPORTED_LOCALES: &[(&str, &str, &str)] = &[
     ("nan-TW", "Hokkien (Taiwan)", "臺語 (Hô-ló話)"),
 ];
 
+/// `LanguagesHelper::REGIONAL_LOCALE_NAMES`: the interface languages that
+/// are a region's, which `SUPPORTED_LOCALES` does not name.
+pub const REGIONAL_LOCALE_NAMES: &[(&str, &str)] = &[
+    ("en-GB", "English (British)"),
+    ("es-AR", "Español (Argentina)"),
+    ("es-MX", "Español (México)"),
+    ("fr-CA", "Français (Canadien)"),
+    ("pt-BR", "Português (Brasil)"),
+    ("pt-PT", "Português (Portugal)"),
+    ("sr-Latn", "Srpski (latinica)"),
+];
+
 /// `LanguagesHelper#standard_locale_name` of a locale that is not blank:
-/// its English name when it is supported, else the code as it is.
+/// its English name when it is supported, its regional name when it is one
+/// of [`REGIONAL_LOCALE_NAMES`], else the code as it is.
 pub fn standard_locale_name(locale: &str) -> String {
     SUPPORTED_LOCALES
         .iter()
         .find(|(code, _, _)| *code == locale)
-        .map_or_else(|| locale.to_owned(), |(_, name, _)| (*name).to_owned())
+        .map(|(_, name, _)| *name)
+        .or_else(|| {
+            REGIONAL_LOCALE_NAMES
+                .iter()
+                .find(|(code, _)| *code == locale)
+                .map(|(_, name)| *name)
+        })
+        .map_or_else(|| locale.to_owned(), str::to_owned)
 }
 
 /// `LanguagesHelper#valid_locale?`.
@@ -334,6 +354,14 @@ mod accept_language_tests {
 #[cfg(test)]
 mod locale_tests {
     use super::*;
+
+    #[test]
+    fn regional_locales_have_names() {
+        assert_eq!(standard_locale_name("ko"), "Korean");
+        assert_eq!(standard_locale_name("pt-BR"), "Português (Brasil)");
+        assert_eq!(standard_locale_name("sr-Latn"), "Srpski (latinica)");
+        assert_eq!(standard_locale_name("xx-YY"), "xx-YY");
+    }
 
     #[test]
     fn locales_cascade_as_mastodon_cascades_them() {

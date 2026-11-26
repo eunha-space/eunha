@@ -191,11 +191,8 @@ test('a minimised composer keeps its draft', async ({ page }) => {
   await expect(page.getByRole('textbox')).toHaveValue('a draft worth keeping')
 })
 
-test('the warning preference opens the field and the composer keeps its draft across navigation', async ({ page }) => {
+test('the composer keeps its draft and content warning across navigation', async ({ page }) => {
   await signedIn(page)
-  await page.route('**/api/eunha/v1/preferences', (route) =>
-    route.fulfill({ json: { default_spoiler_field: true } }),
-  )
   let posted: Record<string, unknown> | null = null
   await page.route('**/api/v1/statuses', async (route) => {
     posted = route.request().postDataJSON()
@@ -204,6 +201,9 @@ test('the warning preference opens the field and the composer keeps its draft ac
 
   await page.goto('/')
   await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.getByRole('button', { name: 'Post settings' }).click()
+  await page.getByRole('menuitemcheckbox', { name: 'Content warning' }).click()
+  await page.keyboard.press('Escape')
   await page.getByRole('textbox', { name: 'Content warning' }).fill('Plot details')
   await page.getByPlaceholder('What would you like to say?').fill('The ending')
   await page.getByRole('link', { name: 'Explore', exact: true }).first().click()
@@ -410,11 +410,11 @@ test('the composer suggests a language and publishes a poll with the selected la
 
 test('the character counter uses graphemes, the URL budget and the content warning', async ({ page }) => {
   await signedIn(page)
-  await page.route('**/api/eunha/v1/preferences', (route) =>
-    route.fulfill({ json: { default_spoiler_field: true } }),
-  )
   await page.goto('/')
   await page.getByRole('button', { name: 'New post', exact: true }).click()
+  await page.getByRole('button', { name: 'Post settings' }).click()
+  await page.getByRole('menuitemcheckbox', { name: 'Content warning' }).click()
+  await page.keyboard.press('Escape')
   await page.getByRole('textbox', { name: 'Content warning' }).fill('CW')
   await page.getByPlaceholder('What would you like to say?').fill('👩‍💻 https://example.com/long-path')
   await expect(page.getByLabel('Post character count')).toHaveText('27/500')

@@ -115,7 +115,6 @@ pub struct AccountSource {
     pub hide_collections: Option<bool>,
     pub attribution_domains: Vec<String>,
     pub quote_policy: String,
-    pub spoiler_field: bool,
 }
 
 /// `REST::CredentialAccountSerializer#state`: whether the user can use the
@@ -494,7 +493,6 @@ pub struct CredentialApplication {
     pub client_id: String,
     pub client_secret: String,
     pub client_secret_expires_at: i64,
-    pub vapid_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -666,8 +664,6 @@ pub struct Preferences {
     pub posting_default_language: Option<String>,
     #[serde(rename = "posting:default:quote_policy")]
     pub posting_default_quote_policy: String,
-    #[serde(rename = "posting:default:spoiler_field")]
-    pub posting_default_spoiler_field: bool,
     #[serde(rename = "displaying:own:boosts")]
     pub displaying_own_boosts: bool,
     #[serde(rename = "displaying:own:posts")]
@@ -1016,7 +1012,6 @@ pub struct AppCredentials {
     pub scopes: Vec<String>,
     pub redirect_uri: String,
     pub redirect_uris: Vec<String>,
-    pub vapid_key: Option<String>,
 }
 
 // ── Extended Description ────────────────────────────────────────────────────

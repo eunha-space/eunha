@@ -246,7 +246,6 @@ export interface Preferences {
   aggregate_reblogs: boolean
   display_own_posts: boolean
   display_own_boosts: boolean
-  default_spoiler_field: boolean
   display_media: 'default' | 'show_all' | 'hide_all'
   expand_content_warnings: boolean
   auto_play: boolean

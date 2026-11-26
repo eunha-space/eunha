@@ -1535,7 +1535,6 @@ pub struct UserDefaults {
     pub sensitive: bool,
     pub language: Option<String>,
     pub quote_policy: String,
-    pub spoiler_field: bool,
 }
 
 /// `setting_default_privacy`, `setting_default_sensitive`,
@@ -1577,10 +1576,6 @@ pub async fn user_defaults(state: &AppState, account_id: i64) -> UserDefaults {
             .and_then(|v| v.as_str())
             .unwrap_or("public")
             .to_string(),
-        spoiler_field: s
-            .get("default_spoiler_field")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
     }
 }
 

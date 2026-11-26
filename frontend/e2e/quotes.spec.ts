@@ -234,7 +234,6 @@ test('a post without a quote policy for the reader fetches one when the menu ope
 
 test('your own followers-only post can be quoted, and the quote stays with your followers', async ({ page }) => {
   await signedIn(page)
-  await page.route('**/api/eunha/v1/preferences', (r) => r.fulfill({ json: { default_spoiler_field: false } }))
   await openPost(page, status('10', alice, { visibility: 'private', quote_approval: approval('automatic', []) }))
   await page.getByRole('menuitem', { name: 'Quote' }).click()
   await expect(page.getByRole('heading', { name: 'Quote post' })).toBeVisible()

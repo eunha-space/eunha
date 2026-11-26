@@ -78,8 +78,6 @@ pub struct Preferences {
     pub display_own_posts: bool,
     /// Whether the user's own boosts appear in their home feed.
     pub display_own_boosts: bool,
-    /// Whether the composer shows the content warning field from the start.
-    pub default_spoiler_field: bool,
     /// Media marked sensitive hidden (`default`), or all media shown
     /// (`show_all`) or hidden (`hide_all`): `web.display_media`, which
     /// clients read as `reading:expand:media`.
@@ -140,10 +138,6 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         aggregate_reblogs: crate::feed::aggregates_reblogs(settings),
         display_own_posts: crate::feed::displays_own(&parsed, false),
         display_own_boosts: crate::feed::displays_own(&parsed, true),
-        default_spoiler_field: parsed
-            .get("default_spoiler_field")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
         display_media: string_of("web.display_media", "default"),
         expand_content_warnings: user_setting_bool(settings, "web.expand_content_warnings", false),
         auto_play: user_setting_bool(settings, "web.auto_play", false),
@@ -202,7 +196,6 @@ pub struct Update {
     pub aggregate_reblogs: Option<bool>,
     pub display_own_posts: Option<bool>,
     pub display_own_boosts: Option<bool>,
-    pub default_spoiler_field: Option<bool>,
     pub display_media: Option<String>,
     pub expand_content_warnings: Option<bool>,
     pub auto_play: Option<bool>,
@@ -262,9 +255,6 @@ pub async fn update(
     }
     if let Some(display) = form.display_own_boosts {
         set("display_own_boosts", display.into());
-    }
-    if let Some(spoiler_field) = form.default_spoiler_field {
-        set("default_spoiler_field", spoiler_field.into());
     }
     if let Some(display) = &form.display_media {
         // `in: %w(hide_all default show_all)`.
