@@ -122,9 +122,9 @@ impl Target {
         Self::new("Announcement", id, text)
     }
 
-    /// `Relay#to_log_human_identifier` is its `inbox_url`.
-    pub fn relay(id: i64, inbox_url: impl Into<String>) -> Self {
-        Self::new("Relay", id, inbox_url)
+    /// `Relay#to_log_human_identifier` is its `uri`.
+    pub fn relay(id: i64, uri: impl Into<String>) -> Self {
+        Self::new("Relay", id, uri)
     }
 
     /// `UnavailableDomain#to_log_human_identifier` is its `domain`.

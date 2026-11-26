@@ -337,18 +337,21 @@ pub(super) async fn kept_status(state: &AppState, uri: &str) -> AppResult<Option
     .await?)
 }
 
-/// Whether `actor` is an enabled relay's: its inbox is one (`Relay.find_by(
-/// inbox_url:)&.enabled?`).
+/// Whether `actor` is an enabled bidirectional relay's
+/// (`Relay.may_forward_to_mastodon.find_by(account:)&.enabled?`).
 async fn through_enabled_relay(state: &AppState, actor: &str) -> bool {
-    let inbox: Option<String> = sqlx::query_scalar!(
-        "SELECT inbox_url FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
+    let account: Option<i64> = sqlx::query_scalar!(
+        "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
         actor,
     )
     .fetch_optional(&state.db)
     .await
     .ok()
     .flatten();
-    crate::relays::is_enabled_relay_inbox(state, inbox.as_deref().unwrap_or("")).await
+    match account {
+        Some(id) => crate::relays::forwards_to_us(state, id).await,
+        None => false,
+    }
 }
 
 async fn received_now(state: &AppState, activity: Value) -> AppResult<()> {

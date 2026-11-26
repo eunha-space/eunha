@@ -504,8 +504,19 @@ Relays
 
 `/api/v1/admin/relays` lists and adds relays, and `…/:id/enable`,
 `…/:id/disable` and `DELETE …/:id` do the rest, for a role with
-`manage_federation`; each is logged. A relay's inbox URL must be an http or
-https URL no other relay has.
+`manage_federation`; each is logged, under the relay actor's id.
+
+A relay is added by its actor's handle, `acct` (`relay@relay.example`), as
+Mastodon's `ActivityPub::FetchRelayService` adds it: the handle is resolved
+to an account, which has to be an `Application` or a `Service`, and the relay
+takes its id, inbox and display name. No other relay may have the same actor.
+Two more choices go with it:
+
+ -  `direction`: `bidirectional`, the default, sends the relay this server's
+    public posts and takes the posts it passes on from others; `broadcast`
+    only sends.
+ -  `requires_opt_in`: when true, the relay is sent only the posts of members
+    who have opted in to it.
 
 Adding or enabling a relay sends it a `Follow` of the public collection from
 the instance actor, as Mastodon's `Relay#enable!` does, and the relay is
@@ -517,11 +528,26 @@ delivery failures afresh.
 An enabled relay gets the instance's public posts, its accounts' profile
 updates, deletions and moves, as Mastodon sends them, with their authors'
 [Linked Data signatures](../mastodon/http-signatures#linked-data-signatures)
-so that the servers the relay passes them to can tell who wrote them. An
-`Announce` from an enabled relay brings the post it names here without making
-it a boost. A post a relay passes on as its author wrote it is taken on its
-author's Linked Data signature, from an account nobody here follows too, as
-long as the relay is enabled. A relay needs unsigned fetches, and in
+so that the servers the relay passes them to can tell who wrote them; a relay
+that requires opt-in gets those of the members who opted in. An `Announce`
+from an enabled bidirectional relay brings the post it names here without
+making it a boost. A post such a relay passes on as its author wrote it is
+taken on its author's Linked Data signature, from an account nobody here
+follows too, as long as the relay is enabled. A broadcast relay's actor is
+treated as any other account.
+
+### Opting in to relays
+
+When there is an enabled relay that requires opt-in, a member's privacy
+settings list it, with its actor's name and bio, and a switch for each, as
+Mastodon's relay preferences page does. `GET /api/eunha/v1/relay_preferences`
+lists them with whether the member is opted in, and `PUT` with `relay_ids`
+opts in to those and out of every other; both take the `read:accounts` and
+`write:accounts` scopes. Opting out of a relay blocks its actor, opting in
+again unblocks it, and blocking a relay's actor anywhere else opts out of it.
+A relay that does not require opt-in is sent everyone's posts, a member who
+blocked it included, as Mastodon sends them.
+A relay needs unsigned fetches, and in
 authorized fetch mode posts go without their Linked Data signatures, as
 Mastodon sends them, so a relay does not work while authorized fetch is on.
 
@@ -699,18 +725,10 @@ The dashboard
 `GET /api/v1/admin/dashboard`, for a role with `view_dashboard`, is what
 Mastodon's dashboard shows above its charts: how many reports are unresolved,
 users await approval, hashtags await review and appeals await a decision, and
-the system checks the role may see, each with its message and where to act on
-it. The web client's dashboard shows each count to a role that may act on it.
-The checks are Mastodon's, less the two for services eunha does not use
-(Elasticsearch and Sidekiq):
-
- -  `software_version_check`, and its critical and patch variants, while the
-    update check has recorded a newer release, for `view_devops`;
- -  `upload_check_privacy_error_object_storage`, when asking the media
-    bucket's public address, or its S3 endpoint, for a listing gets one, for
-    `view_devops`. It is critical: anyone could list every upload;
- -  `database_schema_check`, while migrations are pending, for `view_devops`;
- -  `rules_check`, while the server has no rules, for `manage_rules`.
+in `pending_server_checks`, how many of the [server health](#server-health)
+checks the role may see want attention: pending, not ignored, and critical or
+a warning. The web client's dashboard shows each count to a role that may act
+on it, and the checks as a link to the server health page.
 
 
 Mail
@@ -752,6 +770,5 @@ sees the page with `view_dashboard`, and only the checks they may act on:
 
 A scheduler runs them every 15 minutes and keeps the results in
 `admin_server_checks`, except `sidekiq_process`, which is run for each reading
-of the page. The dashboard's own older checks are still shown there, as
-Mastodon still shows them. See also `server-checks-for-eunha` in
+of the page. See also `server-checks-for-eunha` in
 [the divergences](../mastodon/divergences.md).

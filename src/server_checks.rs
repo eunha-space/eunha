@@ -399,6 +399,33 @@ impl Check {
             },
         }
     }
+
+    /// `ServerCheck#important?`: not ignored, pending, and critical or a
+    /// warning.
+    pub fn important(&self) -> bool {
+        !self.ignored
+            && self.status == status::PENDING
+            && matches!(self.severity, severity::CRITICAL | severity::WARNING)
+    }
+}
+
+/// `ServerCheck.checks_for(user).count(&:important?)`, which the dashboard
+/// shows. A hosted instance runs no checks and has no server health page, so
+/// there it is the rules check alone, run now: its administrators are told only
+/// what they can act on.
+pub async fn important_count(state: &AppState, role: &Role) -> Result<usize> {
+    if state.instance.hosted {
+        if !authorized("rules", role) {
+            return Ok(0);
+        }
+        let outcome = run(state, "rules").await;
+        return Ok(usize::from(outcome.status == status::PENDING));
+    }
+    Ok(checks_for(state, role)
+        .await?
+        .iter()
+        .filter(|check| check.important())
+        .count())
 }
 
 /// `ServerCheck.checks_for(user)`: what this role may see, a check never run

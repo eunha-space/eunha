@@ -104,7 +104,7 @@ export function StatusesCleanupSettings({ token }: { token: string }) {
 
   return (
     <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="font-semibold">{t({ id: 'navigation_bar.automated_deletion', defaultMessage: 'Automated post deletion' })}</h2>
+      <h2 className="font-semibold">{t({ id: 'eunha.navigation_bar.automated_deletion', defaultMessage: 'Automated post deletion' })}</h2>
       <form className="space-y-4" onSubmit={(event) => void save(event)}>
         <div className="space-y-0.5">
           <Label className="text-sm font-normal">

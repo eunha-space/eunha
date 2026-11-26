@@ -54,7 +54,7 @@ export function RemoveQuoteHint({ canShow }: { canShow: boolean }) {
           values={{
             icon: (
               <MoreHorizontal
-                aria-label={t({ id: 'navigation_bar.more', defaultMessage: 'More' })}
+                aria-label={t({ id: 'eunha.navigation_bar.more', defaultMessage: 'More' })}
                 className="inline size-4 align-text-bottom"
               />
             ),

@@ -1,4 +1,4 @@
-# v5.0.0-beta.1
+# v5.0.0-rc.2
 app/chewy/accounts_index.rb
 app/chewy/concerns/datetime_clamping_concern.rb
 app/chewy/instances_index.rb
@@ -19,8 +19,8 @@ app/controllers/activitypub/outboxes_controller.rb
 app/controllers/activitypub/quote_authorizations_controller.rb
 app/controllers/activitypub/replies_controller.rb
 app/controllers/activitypub/shares_controller.rb
-app/controllers/admin/account_actions_controller.rb
 app/controllers/admin/account_moderation_notes_controller.rb
+app/controllers/admin/accounts/moderation_actions_controller.rb
 app/controllers/admin/accounts_controller.rb
 app/controllers/admin/action_logs_controller.rb
 app/controllers/admin/announcements/distributions_controller.rb
@@ -71,6 +71,7 @@ app/controllers/admin/settings/about_controller.rb
 app/controllers/admin/settings/appearance_controller.rb
 app/controllers/admin/settings/branding_controller.rb
 app/controllers/admin/settings/content_retention_controller.rb
+app/controllers/admin/settings/crawlers_controller.rb
 app/controllers/admin/settings/discovery_controller.rb
 app/controllers/admin/settings/external_controller.rb
 app/controllers/admin/settings/registrations_controller.rb
@@ -311,6 +312,7 @@ app/controllers/redirect/statuses_controller.rb
 app/controllers/relationships_controller.rb
 app/controllers/remote_accounts_controller.rb
 app/controllers/remote_interaction_helper_controller.rb
+app/controllers/robots_controller.rb
 app/controllers/settings/aliases_controller.rb
 app/controllers/settings/applications_controller.rb
 app/controllers/settings/base_controller.rb
@@ -336,6 +338,7 @@ app/controllers/settings/preferences/other_controller.rb
 app/controllers/settings/preferences/posting_defaults_controller.rb
 app/controllers/settings/privacy_controller.rb
 app/controllers/settings/profiles_controller.rb
+app/controllers/settings/relay_preferences_controller.rb
 app/controllers/settings/sessions_controller.rb
 app/controllers/settings/two_factor_authentication/base_controller.rb
 app/controllers/settings/two_factor_authentication/confirmations_controller.rb
@@ -369,6 +372,7 @@ app/helpers/admin/filter_helper.rb
 app/helpers/admin/ip_blocks_helper.rb
 app/helpers/admin/moderation_subscriptions_helper.rb
 app/helpers/admin/moderation_suggestions_helper.rb
+app/helpers/admin/relays_helper.rb
 app/helpers/admin/roles_helper.rb
 app/helpers/admin/server_checks_helper.rb
 app/helpers/admin/settings/discovery_helper.rb
@@ -468,15 +472,6 @@ app/lib/admin/metrics/measure/tag_accounts_measure.rb
 app/lib/admin/metrics/measure/tag_servers_measure.rb
 app/lib/admin/metrics/measure/tag_uses_measure.rb
 app/lib/admin/metrics/retention.rb
-app/lib/admin/system_check.rb
-app/lib/admin/system_check/base_check.rb
-app/lib/admin/system_check/database_schema_check.rb
-app/lib/admin/system_check/elasticsearch_check.rb
-app/lib/admin/system_check/media_privacy_check.rb
-app/lib/admin/system_check/message.rb
-app/lib/admin/system_check/rules_check.rb
-app/lib/admin/system_check/sidekiq_process_check.rb
-app/lib/admin/system_check/software_version_check.rb
 app/lib/annual_report.rb
 app/lib/annual_report/archetype.rb
 app/lib/annual_report/source.rb
@@ -734,6 +729,7 @@ app/models/form/email_subscriptions_confirmation.rb
 app/models/form/import.rb
 app/models/form/ip_block_batch.rb
 app/models/form/redirect.rb
+app/models/form/relay_preferences_batch.rb
 app/models/form/status_filter_batch_action.rb
 app/models/form/two_factor_confirmation.rb
 app/models/form/username_block_batch.rb
@@ -776,6 +772,7 @@ app/models/quote.rb
 app/models/relationship_filter.rb
 app/models/relationship_severance_event.rb
 app/models/relay.rb
+app/models/relay_preference.rb
 app/models/remote_follow.rb
 app/models/report.rb
 app/models/report_filter.rb
@@ -886,6 +883,7 @@ app/policies/user_role_policy.rb
 app/policies/username_block_policy.rb
 app/policies/webhook_policy.rb
 app/presenters/account_relationships_presenter.rb
+app/presenters/activitypub/activity_presenter.rb
 app/presenters/activitypub/collection_presenter.rb
 app/presenters/activitypub/context_presenter.rb
 app/presenters/annual_reports_presenter.rb
@@ -937,6 +935,8 @@ app/serializers/activitypub/quote_request_serializer.rb
 app/serializers/activitypub/reject_feature_request_serializer.rb
 app/serializers/activitypub/reject_follow_serializer.rb
 app/serializers/activitypub/reject_quote_request_serializer.rb
+app/serializers/activitypub/relay/follow_serializer.rb
+app/serializers/activitypub/relay/undo_follow_serializer.rb
 app/serializers/activitypub/remove_featured_collection_serializer.rb
 app/serializers/activitypub/remove_featured_item_serializer.rb
 app/serializers/activitypub/remove_hashtag_serializer.rb
@@ -1042,6 +1042,8 @@ app/serializers/rest/v1/filter_serializer.rb
 app/serializers/rest/v1/instance_serializer.rb
 app/serializers/rest/v1/notification_policy_serializer.rb
 app/serializers/rest/web_push_subscription_serializer.rb
+app/serializers/seo/person_serializer.rb
+app/serializers/seo/profile_page_serializer.rb
 app/serializers/seo/social_media_posting_serializer.rb
 app/serializers/web/notification_serializer.rb
 app/serializers/webfinger_serializer.rb
@@ -1052,6 +1054,7 @@ app/services/activitypub/fetch_all_replies_service.rb
 app/services/activitypub/fetch_featured_collection_service.rb
 app/services/activitypub/fetch_featured_collections_collection_service.rb
 app/services/activitypub/fetch_featured_tags_collection_service.rb
+app/services/activitypub/fetch_relay_service.rb
 app/services/activitypub/fetch_remote_account_service.rb
 app/services/activitypub/fetch_remote_actor_service.rb
 app/services/activitypub/fetch_remote_featured_collection_service.rb
@@ -1173,7 +1176,6 @@ app/views/about/show.html.haml
 app/views/accounts/_og.html.haml
 app/views/accounts/show.html.haml
 app/views/accounts/show.rss.ruby
-app/views/admin/account_actions/new.html.haml
 app/views/admin/account_warnings/_account_warning.html.haml
 app/views/admin/accounts/_account.html.haml
 app/views/admin/accounts/_buttons.html.haml
@@ -1183,6 +1185,9 @@ app/views/admin/accounts/_local_account.html.haml
 app/views/admin/accounts/_remote_account.html.haml
 app/views/admin/accounts/_user_ip.html.haml
 app/views/admin/accounts/index.html.haml
+app/views/admin/accounts/moderation_actions/_actions_text_box.html.haml
+app/views/admin/accounts/moderation_actions/new.html.haml
+app/views/admin/accounts/moderation_actions/preview.html.haml
 app/views/admin/accounts/show.html.haml
 app/views/admin/action_logs/_action_log.html.haml
 app/views/admin/action_logs/index.html.haml
@@ -1263,7 +1268,6 @@ app/views/admin/reports/_actions.html.haml
 app/views/admin/reports/_comment.html.haml
 app/views/admin/reports/_header_card.html.haml
 app/views/admin/reports/_header_details.html.haml
-app/views/admin/reports/actions/preview.html.haml
 app/views/admin/reports/index.html.haml
 app/views/admin/reports/show.html.haml
 app/views/admin/roles/_form.html.haml
@@ -1284,6 +1288,7 @@ app/views/admin/settings/about/show.html.haml
 app/views/admin/settings/appearance/show.html.haml
 app/views/admin/settings/branding/show.html.haml
 app/views/admin/settings/content_retention/show.html.haml
+app/views/admin/settings/crawlers/show.html.haml
 app/views/admin/settings/discovery/show.html.haml
 app/views/admin/settings/external/show.html.haml
 app/views/admin/settings/registrations/show.html.haml
@@ -1300,7 +1305,6 @@ app/views/admin/software_updates/index.html.haml
 app/views/admin/status_edits/_status_edit.html.haml
 app/views/admin/statuses/index.html.haml
 app/views/admin/statuses/show.html.haml
-app/views/admin/system_check/messages/_message.html.haml
 app/views/admin/tags/_tag.html.haml
 app/views/admin/tags/index.html.haml
 app/views/admin/tags/show.html.haml
@@ -1462,7 +1466,6 @@ app/views/settings/applications/new.html.haml
 app/views/settings/applications/show.html.haml
 app/views/settings/deletes/show.html.haml
 app/views/settings/exports/show.html.haml
-app/views/settings/featured_tags/_featured_tag.html.haml
 app/views/settings/featured_tags/index.html.haml
 app/views/settings/imports/index.html.haml
 app/views/settings/imports/show.html.haml
@@ -1476,6 +1479,7 @@ app/views/settings/preferences/other/show.html.haml
 app/views/settings/preferences/posting_defaults/show.html.haml
 app/views/settings/privacy/show.html.haml
 app/views/settings/profiles/show.html.haml
+app/views/settings/relay_preferences/show.html.haml
 app/views/settings/shared/_profile_navigation.html.haml
 app/views/settings/shared/_profile_new_notice.html.haml
 app/views/settings/two_factor_authentication/confirmations/new.html.haml

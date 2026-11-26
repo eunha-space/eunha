@@ -563,7 +563,9 @@ async fn delete_actor_inboxes(state: &AppState, account_id: i64) -> Result<Vec<S
             WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.suspended_at IS NULL
               AND a.requested_deletion_at IS NULL AND a.inbox_url <> ''
             UNION ALL
-            SELECT inbox_url, true FROM relays WHERE state = 2
+            -- `Relay.enabled.for_account(@account.id)`
+            SELECT r.inbox_url, true FROM relays r
+            WHERE r.state = 2 AND (NOT r.requires_opt_in OR EXISTS (SELECT 1 FROM relay_preferences p WHERE p.relay_id = r.id AND p.account_id = $1 AND p.enabled))
         ) reach
         WHERE inbox <> ''
         GROUP BY inbox",

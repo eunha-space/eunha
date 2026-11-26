@@ -191,7 +191,7 @@ rules, roles, announcements with their mail distribution, the federation \
 pages (`Admin::InstancesController`, instance moderation notes and delivery \
 controls), the domain block and allow CSV export and import, relays, the list \
 of every invite, webhooks, follow recommendation suppressions, software \
-updates, and the dashboard's pending counts and system checks."""
+updates, and the dashboard's pending counts."""
 eunha = """
 Serves them under `/api/v1/admin/`: `settings` (`PATCH` with only the keys \
 given, uploads as multipart files) and `site_uploads/:id`; `rules` with \
@@ -2220,15 +2220,15 @@ kind = "addition"
 summary = "Hide the server from the administrators of an instance a hosting service runs"
 mastodon = """
 Shows every administrator the software updates and server health pages, the \
-dashboard's system checks, software versions and space usage, and mails them \
-update and end-of-support notices; any operator with the configuration can \
-turn on self-destruct."""
+dashboard's count of server health checks that want attention, software \
+versions and space usage, and mails them update and end-of-support notices; \
+any operator with the configuration can turn on self-destruct."""
 eunha = """
 With `[instance] hosted = true`, runs no update check, answers 404 for the \
 software updates and server health endpoints and leaves them out of the \
-admin navigation, runs no scheduled health checks, keeps only the rules check \
-on the dashboard, leaves out its software and space usage, and ignores \
-`self_destruct`."""
+admin navigation, runs no scheduled health checks, counts only the rules check \
+on the dashboard, run as it is read and pointing to the rules, leaves out its \
+software and space usage, and ignores `self_destruct`."""
 why = """
 On a hosted instance the host keeps the software, the machines and the \
 instance's lifetime. Its administrators cannot act on notices about them, and \

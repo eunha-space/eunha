@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE relay_preferences SET enabled = false, updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b0ab7d6866b122942ada281ccd1f58f27a1f0579fa5ded2c3cf15623ba2c1f7"
+}

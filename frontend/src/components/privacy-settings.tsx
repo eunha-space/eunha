@@ -3,7 +3,15 @@ import { toast } from 'sonner'
 
 import { getCurrentAccount } from '../api.ts'
 import { restClient } from '../masto.ts'
-import { getPreferences, updatePreferences, type Preferences } from '../security-api.ts'
+import {
+  getPreferences,
+  getRelayPreferences,
+  updatePreferences,
+  updateRelayPreferences,
+  type OptInRelay,
+  type Preferences,
+} from '../security-api.ts'
+import { EmojiHtml } from '@/components/emoji.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { Switch } from '@/components/ui/switch.tsx'
 import { SectionSkeleton } from '@/components/skeletons.tsx'
@@ -40,12 +48,15 @@ function Toggle({
 
 /**
  * Mastodon's privacy settings page (`Settings::PrivacyController`): reach and
- * search on the account, through `update_credentials`, and the two user
- * settings it has no API for, through eunha's preferences.
+ * search on the account, through `update_credentials`, the two user settings
+ * it has no API for, through eunha's preferences, and the relays that need
+ * members to opt in (`Settings::RelayPreferencesController`), when there are
+ * any.
  */
 export function PrivacySettings({ token }: { token: string }) {
   const [account, setAccount] = useState<AccountPrivacy | null>(null)
   const [prefs, setPrefs] = useState<Preferences | null>(null)
+  const [relays, setRelays] = useState<OptInRelay[]>([])
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
@@ -64,6 +75,9 @@ export function PrivacySettings({ token }: { token: string }) {
     getPreferences(token)
       .then(setPrefs)
       .catch(() => setFailed(true))
+    getRelayPreferences(token)
+      .then(setRelays)
+      .catch(() => {})
   }, [token])
 
   if (!account || !prefs) return failed ? null : <SectionSkeleton rows={4} />
@@ -87,9 +101,20 @@ export function PrivacySettings({ token }: { token: string }) {
     }
   }
 
+  const saveRelay = async (relay: OptInRelay, on: boolean) => {
+    const ids = relays
+      .filter((r) => (r.id === relay.id ? on : r.enabled))
+      .map((r) => r.id)
+    try {
+      setRelays(await updateRelayPreferences(token, ids))
+    } catch {
+      toast.error(t({ id: 'eunha.privacy_settings.could_not_save_the_setting', defaultMessage: 'Could not save the setting' }))
+    }
+  }
+
   return (
     <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="font-semibold">{t({ id: 'navigation_bar.privacy_and_reach', defaultMessage: 'Privacy and reach' })}</h2>
+      <h2 className="font-semibold">{t({ id: 'eunha.navigation_bar.privacy_and_reach', defaultMessage: 'Privacy and reach' })}</h2>
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">{t({ id: 'mastodon.privacy.reach', defaultMessage: 'Reach' })}</h3>
         <Toggle
@@ -108,6 +133,25 @@ export function PrivacySettings({ token }: { token: string }) {
           onChange={(on) => void saveAccount({ hideCollections: !on })}
         />
       </div>
+      {relays.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">{t({ id: 'mastodon.relay_preferences.title', defaultMessage: 'Relay preferences' })}</h3>
+          <p className="text-muted-foreground text-xs">
+            {t({ id: 'eunha.privacy_settings.relays_hint', defaultMessage: 'Relays you opt in to are sent your public posts, which they share further to a wider audience. Other kinds of posts are never sent to relays.' })}
+          </p>
+          {relays.map((relay) => (
+            <div key={relay.id} className="space-y-0.5">
+              <Label className="text-sm font-normal">
+                <Switch checked={relay.enabled} onCheckedChange={(on) => void saveRelay(relay, on)} />
+                <bdi className="font-medium">{relay.display_name || relay.uri}</bdi>
+              </Label>
+              {relay.note && (
+                <EmojiHtml html={relay.note} emojis={[]} className="text-muted-foreground pl-10 text-xs" />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="space-y-2">
         <h3 className="text-sm font-semibold">{t({ id: 'navigation_bar.search', defaultMessage: 'Search' })}</h3>
         <Toggle

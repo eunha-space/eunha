@@ -424,7 +424,15 @@ export function importDomainAllows(token: string, file: File) {
 
 export interface AdminRelay {
   id: string
+  /** The relay actor's id. */
+  uri: string
   inbox_url: string
+  account_id: string
+  /** The relay actor's display name. */
+  display_name: string
+  direction: 'bidirectional' | 'broadcast'
+  /** Only members who opt in have their posts sent to it. */
+  requires_opt_in: boolean
   state: 'idle' | 'pending' | 'accepted' | 'rejected'
   enabled: boolean
   follow_activity_id: string | null
@@ -436,8 +444,11 @@ export function listRelays(token: string) {
   return json<AdminRelay[]>(token, 'GET', '/api/v1/admin/relays')
 }
 
-export function createRelay(token: string, inboxUrl: string) {
-  return json<AdminRelay>(token, 'POST', '/api/v1/admin/relays', { inbox_url: inboxUrl })
+export function createRelay(
+  token: string,
+  relay: { acct: string; direction: AdminRelay['direction']; requires_opt_in: boolean },
+) {
+  return json<AdminRelay>(token, 'POST', '/api/v1/admin/relays', relay)
 }
 
 export function setRelayEnabled(token: string, id: string, enabled: boolean) {
@@ -821,22 +832,13 @@ export function listSoftwareUpdates(token: string) {
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 
-/** `Admin::SystemCheck::Message`, with its text. */
-export interface SystemCheck {
-  key: string
-  value: string | null
-  action: string | null
-  action_label: string | null
-  critical: boolean
-  message: string
-}
-
 export interface AdminDashboard {
   pending_appeals_count: number
   pending_reports_count: number
   pending_tags_count: number
   pending_users_count: number
-  system_checks: SystemCheck[]
+  /** Server health checks that are pending and critical or a warning. */
+  pending_server_checks: number
 }
 
 export function getDashboard(token: string) {

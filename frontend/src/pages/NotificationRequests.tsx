@@ -19,7 +19,7 @@ const rules = {
   get forNotFollowing() { return t({ id: 'eunha.notification_requests.accounts_you_don_t_follow', defaultMessage: 'Accounts you don’t follow' }) },
   get forNotFollowers() { return t({ id: 'eunha.notification_requests.accounts_that_don_t_follow_you', defaultMessage: 'Accounts that don’t follow you' }) },
   get forNewAccounts() { return t({ id: 'notifications.policy.filter_new_accounts_title', defaultMessage: 'New accounts' }) },
-  get forPrivateMentions() { return t({ id: 'navigation_bar.direct', defaultMessage: 'Private mentions' }) },
+  get forPrivateMentions() { return t({ id: 'column.direct', defaultMessage: 'Private mentions' }) },
   get forLimitedAccounts() { return t({ id: 'eunha.notification_requests.moderation_limited_accounts', defaultMessage: 'Moderation-limited accounts' }) },
   get forBots() { return t({ id: 'notifications.policy.filter_bots_title', defaultMessage: 'Bots' }) },
 }

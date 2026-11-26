@@ -460,7 +460,7 @@ export function StatusCard({
             {t({ id: 'eunha.status_card.filtered', defaultMessage: 'Filtered: {filters}' }, { filters: warnedBy.map((r) => r.filter.title).join(', ') })}
           </span>
           <Button variant="outline" size="sm" onClick={() => setShowFiltered(true)}>
-            {t({ id: 'content_warning.show', defaultMessage: 'Show anyway' })}
+            {t({ id: 'eunha.content_warning.show', defaultMessage: 'Show anyway' })}
           </Button>
         </CardContent>
       </Card>
@@ -535,7 +535,7 @@ export function StatusCard({
             {hasMenu && (
               <DropdownMenu onOpenChange={onMenuOpenChange}>
                 <DropdownMenuTrigger
-                  aria-label={t({ id: 'navigation_bar.more', defaultMessage: 'More' })}
+                  aria-label={t({ id: 'eunha.navigation_bar.more', defaultMessage: 'More' })}
                   className="hover:text-foreground ml-1"
                 >
                   <MoreHorizontal className="size-4" />
@@ -637,7 +637,7 @@ export function StatusCard({
                   onClick={() => setExpanded((e) => !e)}
                   className="text-primary ml-2 text-xs font-medium underline"
                 >
-                  {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'content_warning.show_more', defaultMessage: 'Show more' })}
+                  {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'eunha.content_warning.show_more', defaultMessage: 'Show more' })}
                 </button>
               </AnimateEmoji>
             )}
@@ -821,7 +821,7 @@ export function StatusCard({
             active={status.bookmarked ?? false}
             activeClass="text-complement"
             disabled={busy || !token}
-            label={t({ id: 'status.bookmark', defaultMessage: 'Bookmark' })}
+            label={t({ id: 'eunha.status.bookmark', defaultMessage: 'Bookmark' })}
             onClick={() => act(() => setBookmark(token, status.id, !status.bookmarked))}
           />
         </div>

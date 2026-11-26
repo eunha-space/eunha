@@ -123,7 +123,7 @@ function QuotePlaceholder({
       {!message && quote?.state === 'pending' && <PendingInfo />}
       {onShow && (
         <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onShow}>
-          {t({ id: 'content_warning.show', defaultMessage: 'Show anyway' })}
+          {t({ id: 'eunha.content_warning.show', defaultMessage: 'Show anyway' })}
         </Button>
       )}
     </div>
@@ -202,7 +202,7 @@ export function QuotedStatus({
   if (filters.action === 'hide') {
     return (
       <QuotePlaceholder
-        message={detailed ? t({ id: 'status.quote_error.filtered', defaultMessage: 'Hidden due to one of your filters' }) : filteredMessage}
+        message={detailed ? t({ id: 'eunha.status.quote_error.filtered', defaultMessage: 'Hidden due to one of your filters' }) : filteredMessage}
       />
     )
   }
@@ -254,7 +254,7 @@ function NestedQuote({ quote, token }: { quote: Quote; token?: string }) {
   }
   return (
     <p className="text-muted-foreground mt-1 text-xs">
-      {t({ id: 'status.quote_post_author', defaultMessage: 'Quoted a post by @{name}' }, { name: quoted.account.acct })}
+      {t({ id: 'eunha.status.quote_post_author', defaultMessage: 'Quoted a post by @{name}' }, { name: quoted.account.acct })}
     </p>
   )
 }
@@ -487,7 +487,7 @@ export function QuotedPost({
             onClick={() => setShowDespiteFilter(!showDespiteFilter)}
             className="text-primary text-xs font-medium underline"
           >
-            {showDespiteFilter ? t({ id: 'content_warning.hide', defaultMessage: 'Hide post' }) : t({ id: 'content_warning.show', defaultMessage: 'Show anyway' })}
+            {showDespiteFilter ? t({ id: 'content_warning.hide_post', defaultMessage: 'Hide post' }) : t({ id: 'eunha.content_warning.show', defaultMessage: 'Show anyway' })}
           </button>
         </div>
       )}
@@ -504,7 +504,7 @@ export function QuotedPost({
             onClick={() => setOpened(!expanded)}
             className="text-primary ml-2 text-xs font-medium underline"
           >
-            {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'content_warning.show_more', defaultMessage: 'Show more' })}
+            {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'eunha.content_warning.show_more', defaultMessage: 'Show more' })}
           </button>
         </AnimateEmoji>
       )}

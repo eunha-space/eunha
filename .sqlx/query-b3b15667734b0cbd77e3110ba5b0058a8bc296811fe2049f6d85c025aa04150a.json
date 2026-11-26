@@ -1,16 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT inbox_url FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
+  "query": "SELECT id FROM accounts WHERE uri = $1 AND domain IS NOT NULL LIMIT 1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "inbox_url",
-        "type_info": "Varchar",
+        "name": "id",
+        "type_info": "Int8",
         "origin": {
           "Table": {
             "table": "accounts",
-            "name": "inbox_url"
+            "name": "id"
           }
         }
       }
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "11645cc0dd8d84e4f2ce2b9101d003adcd5b7d38b99a558c4832d543de9f1d93"
+  "hash": "b3b15667734b0cbd77e3110ba5b0058a8bc296811fe2049f6d85c025aa04150a"
 }

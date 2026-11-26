@@ -129,7 +129,7 @@ def main():
             'RAILS_SERVE_STATIC_FILES': 'true', 'ES_ENABLED': 'false',
             'SMTP_DELIVERY_METHOD': 'test', 'RAILS_LOG_LEVEL': 'warn',
         }
-        image = 'ghcr.io/mastodon/mastodon:v5.0.0-beta.1'
+        image = 'ghcr.io/mastodon/mastodon:v5.0.0-rc.2'
         spec = {'name': 'eunha-public-masto-' + secrets.token_hex(6), 'services': {
             'db': {'image': 'postgres:16-alpine', 'environment': {
                 'POSTGRES_USER': 'mastodon', 'POSTGRES_PASSWORD': password, 'POSTGRES_DB': 'mastodon'},

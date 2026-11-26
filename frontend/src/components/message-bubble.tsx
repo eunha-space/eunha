@@ -200,7 +200,7 @@ export function MessageBubble({
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" aria-label={t({ id: 'navigation_bar.more', defaultMessage: 'More' })} />}
+          render={<Button variant="ghost" size="icon-sm" aria-label={t({ id: 'eunha.navigation_bar.more', defaultMessage: 'More' })} />}
         >
           <MoreHorizontal />
         </DropdownMenuTrigger>
@@ -286,7 +286,7 @@ export function MessageBubble({
               onClick={() => setExpanded((e) => !e)}
               className="ml-2 font-medium underline"
             >
-              {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'content_warning.show_more', defaultMessage: 'Show more' })}
+              {expanded ? t({ id: 'block_modal.show_less', defaultMessage: 'Show less' }) : t({ id: 'eunha.content_warning.show_more', defaultMessage: 'Show more' })}
             </button>
           </AnimateEmoji>
         )}

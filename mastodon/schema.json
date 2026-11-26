@@ -1,5 +1,5 @@
 {
-  "version": "20261016161747",
+  "version": "20261123145826",
   "tables": {
     "account_aliases": {
       "columns": {
@@ -761,6 +761,12 @@
           "sql_type": "bigint",
           "nullable": false,
           "default": "nextval('account_warnings_id_seq'::regclass)"
+        },
+        "include_rule_violations": {
+          "name": "include_rule_violations",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "true"
         },
         "overruled_at": {
           "name": "overruled_at",
@@ -3046,11 +3052,6 @@
           "name": "idx_on_fasp_provider_id_name_version_68e2668987",
           "unique": true,
           "definition": "CREATE UNIQUE INDEX idx_on_fasp_provider_id_name_version_68e2668987 ON <table> USING btree (fasp_provider_id, name, version)"
-        },
-        "index_fasp_capabilities_on_fasp_provider_id": {
-          "name": "index_fasp_capabilities_on_fasp_provider_id",
-          "unique": false,
-          "definition": "CREATE INDEX index_fasp_capabilities_on_fasp_provider_id ON <table> USING btree (fasp_provider_id)"
         }
       }
     },
@@ -6018,13 +6019,77 @@
         }
       }
     },
-    "relays": {
+    "relay_preferences": {
       "columns": {
+        "account_id": {
+          "name": "account_id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": null
+        },
         "created_at": {
           "name": "created_at",
           "sql_type": "timestamp without time zone",
           "nullable": false,
           "default": null
+        },
+        "enabled": {
+          "name": "enabled",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
+        "id": {
+          "name": "id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": "nextval('relay_preferences_id_seq'::regclass)"
+        },
+        "relay_id": {
+          "name": "relay_id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        }
+      },
+      "indexes": {
+        "index_relay_preferences_on_account_id_and_relay_id": {
+          "name": "index_relay_preferences_on_account_id_and_relay_id",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX index_relay_preferences_on_account_id_and_relay_id ON <table> USING btree (account_id, relay_id)"
+        },
+        "index_relay_preferences_on_relay_id": {
+          "name": "index_relay_preferences_on_relay_id",
+          "unique": false,
+          "definition": "CREATE INDEX index_relay_preferences_on_relay_id ON <table> USING btree (relay_id)"
+        }
+      }
+    },
+    "relays": {
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "sql_type": "bigint",
+          "nullable": false,
+          "default": null
+        },
+        "created_at": {
+          "name": "created_at",
+          "sql_type": "timestamp without time zone",
+          "nullable": false,
+          "default": null
+        },
+        "direction": {
+          "name": "direction",
+          "sql_type": "integer",
+          "nullable": false,
+          "default": "0"
         },
         "follow_activity_id": {
           "name": "follow_activity_id",
@@ -6044,6 +6109,12 @@
           "nullable": false,
           "default": "''::character varying"
         },
+        "requires_opt_in": {
+          "name": "requires_opt_in",
+          "sql_type": "boolean",
+          "nullable": false,
+          "default": "false"
+        },
         "state": {
           "name": "state",
           "sql_type": "integer",
@@ -6055,9 +6126,21 @@
           "sql_type": "timestamp without time zone",
           "nullable": false,
           "default": null
+        },
+        "uri": {
+          "name": "uri",
+          "sql_type": "character varying",
+          "nullable": false,
+          "default": "''::character varying"
         }
       },
-      "indexes": {}
+      "indexes": {
+        "index_relays_on_uri": {
+          "name": "index_relays_on_uri",
+          "unique": true,
+          "definition": "CREATE UNIQUE INDEX index_relays_on_uri ON <table> USING btree (uri)"
+        }
+      }
     },
     "report_notes": {
       "columns": {
@@ -9023,6 +9106,12 @@
       "name": "account_warnings_id_not_null",
       "kind": "n",
       "definition": "NOT NULL id"
+    },
+    {
+      "table": "account_warnings",
+      "name": "account_warnings_include_rule_violations_not_null",
+      "kind": "n",
+      "definition": "NOT NULL include_rule_violations"
     },
     {
       "table": "account_warnings",
@@ -12847,10 +12936,82 @@
       "definition": "NOT NULL updated_at"
     },
     {
+      "table": "relay_preferences",
+      "name": "fk_rails_5f785ca5e2",
+      "kind": "f",
+      "definition": "FOREIGN KEY (relay_id) REFERENCES relays(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "fk_rails_e71924b6bf",
+      "kind": "f",
+      "definition": "FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_account_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL account_id"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_created_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_enabled_not_null",
+      "kind": "n",
+      "definition": "NOT NULL enabled"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL id"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_pkey",
+      "kind": "p",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_relay_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL relay_id"
+    },
+    {
+      "table": "relay_preferences",
+      "name": "relay_preferences_updated_at_not_null",
+      "kind": "n",
+      "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "relays",
+      "name": "fk_rails_e2475c1454",
+      "kind": "f",
+      "definition": "FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "relays",
+      "name": "relays_account_id_not_null",
+      "kind": "n",
+      "definition": "NOT NULL account_id"
+    },
+    {
       "table": "relays",
       "name": "relays_created_at_not_null",
       "kind": "n",
       "definition": "NOT NULL created_at"
+    },
+    {
+      "table": "relays",
+      "name": "relays_direction_not_null",
+      "kind": "n",
+      "definition": "NOT NULL direction"
     },
     {
       "table": "relays",
@@ -12872,6 +13033,12 @@
     },
     {
       "table": "relays",
+      "name": "relays_requires_opt_in_not_null",
+      "kind": "n",
+      "definition": "NOT NULL requires_opt_in"
+    },
+    {
+      "table": "relays",
       "name": "relays_state_not_null",
       "kind": "n",
       "definition": "NOT NULL state"
@@ -12881,6 +13048,12 @@
       "name": "relays_updated_at_not_null",
       "kind": "n",
       "definition": "NOT NULL updated_at"
+    },
+    {
+      "table": "relays",
+      "name": "relays_uri_not_null",
+      "kind": "n",
+      "definition": "NOT NULL uri"
     },
     {
       "table": "report_notes",
@@ -14912,6 +15085,11 @@
     },
     "relationship_severance_events_id_seq": {
       "name": "relationship_severance_events_id_seq",
+      "data_type": "bigint",
+      "increment": 1
+    },
+    "relay_preferences_id_seq": {
+      "name": "relay_preferences_id_seq",
       "data_type": "bigint",
       "increment": 1
     },

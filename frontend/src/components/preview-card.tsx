@@ -71,7 +71,7 @@ function MoreFromAuthor({ account }: { account: mastodon.v1.Account }) {
   return (
     <p className="text-muted-foreground flex items-center gap-1 px-1 pt-1.5 text-xs">
       <FormattedMessage
-        id="link_preview.more_from_author"
+        id="eunha.link_preview.more_from_author"
         defaultMessage="More from {name}"
         values={{
           name: (

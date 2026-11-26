@@ -13,6 +13,7 @@ pub mod invite_tree;
 pub mod link_card;
 pub mod portability;
 pub mod preferences;
+pub mod relay_preferences;
 pub mod sessions;
 pub mod statuses_cleanup;
 pub mod terms_of_service;
@@ -39,6 +40,7 @@ pub fn router() -> Router {
         .merge(two_factor::routes())
         .merge(sessions::routes())
         .merge(preferences::routes())
+        .merge(relay_preferences::routes())
         .merge(statuses_cleanup::routes())
         .merge(account_email::routes())
         .merge(link_card::routes())

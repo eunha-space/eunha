@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT inbox AS \"inbox!\" FROM (\n             SELECT CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url ELSE a.inbox_url END AS inbox\n             FROM accounts a\n             WHERE a.domain IS NOT NULL AND a.protocol = 1 AND a.inbox_url <> ''\n               AND a.suspended_at IS NULL AND a.requested_deletion_at IS NULL\n               AND (EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id AND f.target_account_id = $1)\n                    OR EXISTS (SELECT 1 FROM blocks b WHERE b.account_id = a.id AND b.target_account_id = $1))\n             UNION\n             -- `Relay.enabled.for_account(@account.id)`\n             SELECT r.inbox_url FROM relays r\n             WHERE r.inbox_url <> '' AND r.state = 2 AND (NOT r.requires_opt_in OR EXISTS (SELECT 1 FROM relay_preferences p WHERE p.relay_id = r.id AND p.account_id = $1 AND p.enabled))\n           ) reach\n           WHERE inbox <> ''",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Varchar",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7885ddec73cc80b086a965212dbaa957999512207cedd658133f3b579e002c09"
+}

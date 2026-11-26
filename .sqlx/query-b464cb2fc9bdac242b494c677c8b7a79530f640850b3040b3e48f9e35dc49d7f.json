@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS (SELECT 1 FROM relays WHERE inbox_url = $1) AS \"e!\"",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM relays WHERE account_id = $1 AND direction = $2 AND state = $3\n           ) AS \"e!\"",
   "describe": {
     "columns": [
       {
@@ -12,12 +12,14 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Int8",
+        "Int4",
+        "Int4"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "e4a5ae82d393ee818437fc89ce7576d96f5f34f7c409d2be2beff3b1af311372"
+  "hash": "b464cb2fc9bdac242b494c677c8b7a79530f640850b3040b3e48f9e35dc49d7f"
 }

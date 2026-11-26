@@ -557,7 +557,8 @@ CREATE TABLE public.account_warnings (
     status_ids character varying[],
     target_account_id bigint,
     text text DEFAULT ''::text NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    updated_at timestamp without time zone NOT NULL,
+    include_rule_violations boolean DEFAULT true NOT NULL
 );
 
 
@@ -3210,6 +3211,39 @@ ALTER SEQUENCE public.relationship_severance_events_id_seq OWNED BY public.relat
 
 
 --
+-- Name: relay_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.relay_preferences (
+    id bigint NOT NULL,
+    account_id bigint NOT NULL,
+    relay_id bigint NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL
+);
+
+
+--
+-- Name: relay_preferences_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.relay_preferences_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: relay_preferences_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.relay_preferences_id_seq OWNED BY public.relay_preferences.id;
+
+
+--
 -- Name: relays; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3219,7 +3253,11 @@ CREATE TABLE public.relays (
     follow_activity_id character varying,
     inbox_url character varying DEFAULT ''::character varying NOT NULL,
     state integer DEFAULT 0 NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    updated_at timestamp without time zone NOT NULL,
+    uri character varying DEFAULT ''::character varying NOT NULL,
+    direction integer DEFAULT 0 NOT NULL,
+    requires_opt_in boolean DEFAULT false NOT NULL,
+    account_id bigint NOT NULL
 );
 
 
@@ -4971,6 +5009,13 @@ ALTER TABLE ONLY public.relationship_severance_events ALTER COLUMN id SET DEFAUL
 
 
 --
+-- Name: relay_preferences id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.relay_preferences ALTER COLUMN id SET DEFAULT nextval('public.relay_preferences_id_seq'::regclass);
+
+
+--
 -- Name: relays id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -5908,6 +5953,14 @@ ALTER TABLE ONLY public.relationship_severance_events
 
 
 --
+-- Name: relay_preferences relay_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.relay_preferences
+    ADD CONSTRAINT relay_preferences_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: relays relays_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6761,13 +6814,6 @@ CREATE INDEX index_fasp_backfill_requests_on_fasp_provider_id ON public.fasp_bac
 
 
 --
--- Name: index_fasp_capabilities_on_fasp_provider_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_fasp_capabilities_on_fasp_provider_id ON public.fasp_capabilities USING btree (fasp_provider_id);
-
-
---
 -- Name: index_fasp_debug_callbacks_on_fasp_provider_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7332,6 +7378,27 @@ CREATE UNIQUE INDEX index_quotes_on_status_id ON public.quotes USING btree (stat
 --
 
 CREATE INDEX index_relationship_severance_events_on_type_and_target_name ON public.relationship_severance_events USING btree (type, target_name);
+
+
+--
+-- Name: index_relay_preferences_on_account_id_and_relay_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_relay_preferences_on_account_id_and_relay_id ON public.relay_preferences USING btree (account_id, relay_id);
+
+
+--
+-- Name: index_relay_preferences_on_relay_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_relay_preferences_on_relay_id ON public.relay_preferences USING btree (relay_id);
+
+
+--
+-- Name: index_relays_on_uri; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_relays_on_uri ON public.relays USING btree (uri);
 
 
 --
@@ -8502,6 +8569,14 @@ ALTER TABLE ONLY public.fasp_follow_recommendations
 
 
 --
+-- Name: relay_preferences fk_rails_5f785ca5e2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.relay_preferences
+    ADD CONSTRAINT fk_rails_5f785ca5e2 FOREIGN KEY (relay_id) REFERENCES public.relays(id) ON DELETE CASCADE;
+
+
+--
 -- Name: notification_requests fk_rails_61c7aa9c1f; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8974,6 +9049,14 @@ ALTER TABLE ONLY public.follow_recommendation_suppressions
 
 
 --
+-- Name: relays fk_rails_e2475c1454; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.relays
+    ADD CONSTRAINT fk_rails_e2475c1454 FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: custom_filter_statuses fk_rails_e2ddaf5b14; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9011,6 +9094,14 @@ ALTER TABLE ONLY public.login_activities
 
 ALTER TABLE ONLY public.list_accounts
     ADD CONSTRAINT fk_rails_e54e356c88 FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
+
+
+--
+-- Name: relay_preferences fk_rails_e71924b6bf; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.relay_preferences
+    ADD CONSTRAINT fk_rails_e71924b6bf FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --

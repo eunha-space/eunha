@@ -27,13 +27,13 @@ export const SETTINGS_PAGES: {
   {
     to: '/settings/account',
     icon: KeyRound,
-    label: () => t({ id: 'navigation_bar.account_settings', defaultMessage: 'Password and security' }),
+    label: () => t({ id: 'eunha.navigation_bar.account_settings', defaultMessage: 'Password and security' }),
     summary: () => t({ id: 'eunha.settings_layout.account_summary', defaultMessage: 'Email, password, two-factor, sessions' }),
   },
   {
     to: '/settings/privacy',
     icon: EyeOff,
-    label: () => t({ id: 'navigation_bar.privacy_and_reach', defaultMessage: 'Privacy and reach' }),
+    label: () => t({ id: 'eunha.navigation_bar.privacy_and_reach', defaultMessage: 'Privacy and reach' }),
     summary: () => t({ id: 'eunha.settings_layout.privacy_summary', defaultMessage: 'Discovery, blocks, filters' }),
   },
   {
@@ -57,13 +57,13 @@ export const SETTINGS_PAGES: {
   {
     to: '/settings/statuses_cleanup',
     icon: History,
-    label: () => t({ id: 'navigation_bar.automated_deletion', defaultMessage: 'Automated post deletion' }),
+    label: () => t({ id: 'eunha.navigation_bar.automated_deletion', defaultMessage: 'Automated post deletion' }),
     summary: () => t({ id: 'eunha.settings_layout.statuses_cleanup_summary', defaultMessage: 'Delete old posts on a schedule' }),
   },
   {
     to: '/settings/export',
     icon: ArrowLeftRight,
-    label: () => t({ id: 'navigation_bar.import_export', defaultMessage: 'Import and export' }),
+    label: () => t({ id: 'eunha.navigation_bar.import_export', defaultMessage: 'Import and export' }),
     summary: () => t({ id: 'eunha.settings_layout.import_export_summary', defaultMessage: 'Download your data, bring lists in' }),
   },
 ]

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO relay_preferences (account_id, relay_id, enabled, created_at, updated_at)\n           SELECT $1, id, false, now(), now() FROM relays WHERE account_id = $2\n           ORDER BY id LIMIT 1\n           ON CONFLICT (account_id, relay_id)\n           DO UPDATE SET enabled = false, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9031e07714e186f60d73e9e7a038d5da9393fe6ce9d77c384429ad47dfeaedb8"
+}

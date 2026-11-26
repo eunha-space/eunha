@@ -368,7 +368,9 @@ async fn distribute_move(state: &AppState, migration_id: i64, source_id: i64, ta
                AND (EXISTS (SELECT 1 FROM follows f WHERE f.account_id = a.id AND f.target_account_id = $1)
                     OR EXISTS (SELECT 1 FROM blocks b WHERE b.account_id = a.id AND b.target_account_id = $1))
              UNION
-             SELECT inbox_url FROM relays WHERE state = 2 AND inbox_url <> ''
+             -- `Relay.enabled.for_account(@account.id)`
+             SELECT r.inbox_url FROM relays r
+             WHERE r.inbox_url <> '' AND r.state = 2 AND (NOT r.requires_opt_in OR EXISTS (SELECT 1 FROM relay_preferences p WHERE p.relay_id = r.id AND p.account_id = $1 AND p.enabled))
            ) reach
            WHERE inbox <> ''"#,
         source_id,

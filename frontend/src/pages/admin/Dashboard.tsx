@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { FormattedMessage } from 'react-intl'
 import { Link } from 'react-router-dom'
 
 import {
@@ -11,7 +12,7 @@ import {
   type Measure,
   type Permission,
 } from '../../admin-api.ts'
-import { getDashboard, type SystemCheck } from '../../admin-server-api.ts'
+import { getDashboard } from '../../admin-server-api.ts'
 import { getToken } from '../../auth.ts'
 import { AdminError, AdminLayout, useHosted, useRolePermissions } from '@/components/admin/admin-layout.tsx'
 import { Card, CardContent } from '@/components/ui/card.tsx'
@@ -259,7 +260,7 @@ export default function Dashboard() {
   const [dimensions, setDimensions] = useState<Dimension[]>([])
   const [cohorts, setCohorts] = useState<Cohort[]>([])
   const [pending, setPending] = useState<{ label: string; count: string; href: string }[]>([])
-  const [checks, setChecks] = useState<SystemCheck[]>([])
+  const [pendingChecks, setPendingChecks] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loadingMeasures, setLoadingMeasures] = useState(true)
   const [loadingDimensions, setLoadingDimensions] = useState(true)
@@ -283,7 +284,8 @@ export default function Dashboard() {
   }, [token])
 
   // `Admin::DashboardController#index`: what waits for a moderator, each
-  // shown to a role that may act on it, and the system checks.
+  // shown to a role that may act on it, and the server health checks that
+  // want attention.
   useEffect(() => {
     if (!token) return
     getDashboard(token)
@@ -315,7 +317,7 @@ export default function Dashboard() {
           },
         ]
         setPending(rows.filter((r) => can(permissions, r.permission)))
-        setChecks(d.system_checks)
+        setPendingChecks(d.pending_server_checks)
       })
       .catch(() => {})
   }, [token, permissions])
@@ -327,27 +329,28 @@ export default function Dashboard() {
     <AdminLayout title={t({ id: 'mastodon.admin.dashboard.title', defaultMessage: 'Dashboard' })} permission="view_dashboard">
       <AdminError error={error} />
       <div className="space-y-4">
-        {checks.length > 0 && (
-          <ul className="space-y-2">
-            {checks.map((c) => (
-              <li
-                key={c.key}
-                className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                  c.critical ? 'border-destructive text-destructive' : ''
-                }`}
-              >
-                <span className="min-w-0 flex-1">{c.message}</span>
-                {c.action &&
-                  (c.action.startsWith('/') ? (
-                    <Link to={c.action}>{c.action_label}</Link>
-                  ) : (
-                    <a href={c.action} target="_blank" rel="noreferrer">
-                      {c.action_label}
-                    </a>
-                  ))}
-              </li>
-            ))}
-          </ul>
+        {pendingChecks > 0 && (
+          <p className="rounded-lg border border-amber-500/50 px-3 py-2 text-sm">
+            {hosted ? (
+              // A hosted instance has no server health page; the one check it
+              // runs is that there are rules.
+              <FormattedMessage
+                id="eunha.admin.dashboard.no_rules"
+                defaultMessage="You haven't defined any server rules. <link>Manage server rules</link>"
+                values={{ link: (chunks) => <Link to="/admin/rules">{chunks}</Link> }}
+              />
+            ) : (
+              <FormattedMessage
+                id="eunha.admin.dashboard.pending_server_checks"
+                defaultMessage="{count, plural, one {There is <strong>#</strong> pending issue with the server.} other {There are <strong>#</strong> pending issues with the server.}} Go to the <link>Server health page</link> to see more details."
+                values={{
+                  count: pendingChecks,
+                  strong: (chunks) => <strong>{chunks}</strong>,
+                  link: (chunks) => <Link to="/admin/server_checks">{chunks}</Link>,
+                }}
+              />
+            )}
+          </p>
         )}
         {pending.length > 0 && (
           <div className="grid gap-2 sm:grid-cols-3">

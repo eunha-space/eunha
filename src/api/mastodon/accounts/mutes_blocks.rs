@@ -219,7 +219,7 @@ pub async fn block_account(
 /// between them end through `UnfollowService` and the target's request to
 /// follow is rejected (`RejectFollowService`), each telling a remote
 /// account; then the block is made, with an id of its own (`set_uri`), and
-/// a remote target is sent it.
+/// a remote target is sent it. Blocking a relay's actor opts out of the relay.
 pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResult<()> {
     // Mastodon BlockService: blocking yourself is a no-op.
     if account_id == target_id {
@@ -258,7 +258,9 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
     .execute(&state.db)
     .await?;
 
-    // `account.block!(target_account)`, which finds a block already made.
+    // `account.block!(target_account)`, which finds a block already made, and
+    // in the same transaction, a relay's actor blocked is a relay opted out of.
+    let mut tx = state.db.begin().await?;
     sqlx::query!(
         r#"INSERT INTO blocks (account_id, target_account_id, uri, created_at, updated_at)
            VALUES ($1, $2, $3, now(), now())
@@ -267,8 +269,10 @@ pub async fn block(state: &AppState, account_id: i64, target_id: i64) -> AppResu
         target_id,
         crate::federation::relationships::generate_uri(&state.instance.web_domain()),
     )
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+    crate::relays::opt_out_on_block(&mut tx, account_id, target_id).await?;
+    tx.commit().await?;
     let block = sqlx::query!(
         "SELECT id, uri FROM blocks WHERE account_id = $1 AND target_account_id = $2",
         account_id,

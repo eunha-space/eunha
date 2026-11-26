@@ -50,13 +50,8 @@ async fn test_hosted_instance_hides_the_server() {
             .await,
     )
     .await;
-    let keys: Vec<&str> = dashboard["system_checks"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| c["key"].as_str().unwrap())
-        .collect();
-    assert_eq!(keys, ["rules_check"]);
+    // That is the rules check alone, run now, since no checks are scheduled.
+    assert_eq!(dashboard["pending_server_checks"], 1);
 
     // Nor does it show the software or the space the server uses.
     let dims = json_ok(

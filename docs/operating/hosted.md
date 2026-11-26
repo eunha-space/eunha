@@ -21,10 +21,11 @@ could not act on:
     endpoints answer 404, and the web client leaves both out of the admin
     navigation. The scheduled health checks are not run.
  -  The dashboard warns only of what the administrators can fix, that the
-    instance has no server rules yet; not of the database schema, the media
-    bucket's privacy or a pending release. Its *Software* and *Space usage*
-    cards, the PostgreSQL, Redis, Elasticsearch and FFmpeg versions and the
-    sizes of the database, Redis and media, are left out.
+    instance has no server rules yet, which it checks as it is read; not of
+    the database schema, the media bucket's privacy or a pending release. Its
+    *Software* and *Space usage* cards, the PostgreSQL, Redis, Elasticsearch
+    and FFmpeg versions and the sizes of the database, Redis and media, are
+    left out.
  -  A `self_destruct` value is ignored, and `eunha self-destruct` refuses the
     instance: closing it is the host's to do, with its own deprovisioning
     (see [Self-destruct](./self-destruct.md)).

@@ -14,7 +14,7 @@ import { RowsSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
 const contexts = { get home() { return t({ id: 'mastodon.filters.contexts.home', defaultMessage: 'Home and lists' }) }, get notifications() { return t({ id: 'column.notifications', defaultMessage: 'Notifications' }) }, get public() { return t({ id: 'mastodon.filters.contexts.public', defaultMessage: 'Public timelines' }) }, get thread() { return t({ id: 'eunha.filters.threads', defaultMessage: 'Threads' }) }, get account() { return t({ id: 'search_results.accounts', defaultMessage: 'Profiles' }) } }
-const actions = { get warn() { return t({ id: 'eunha.filters.show_a_warning', defaultMessage: 'Show a warning' }) }, get hide() { return t({ id: 'mastodon.simple_form.labels.filters.actions.hide', defaultMessage: 'Hide completely' }) }, get blur() { return t({ id: 'compose.blur_media', defaultMessage: 'Blur media' }) } }
+const actions = { get warn() { return t({ id: 'eunha.filters.show_a_warning', defaultMessage: 'Show a warning' }) }, get hide() { return t({ id: 'mastodon.simple_form.labels.filters.actions.hide', defaultMessage: 'Hide completely' }) }, get blur() { return t({ id: 'eunha.compose.blur_media', defaultMessage: 'Blur media' }) } }
 const expirations = { get keep() { return t({ id: 'eunha.filters.keep_current_expiry', defaultMessage: 'Keep current expiry' }) }, get '0'() { return t({ id: 'mastodon.invites.expires_in_prompt', defaultMessage: 'Never' }) }, '1800': '30 minutes', '3600': '1 hour', '86400': '1 day', '604800': '7 days' }
 type Keyword = { id?: string; keyword: string; wholeWord: boolean }
 

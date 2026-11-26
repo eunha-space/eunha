@@ -260,16 +260,11 @@ pub(super) async fn handle_announce(
     };
 
     // `Announce#requested_through_relay?`: relayed to us by an enabled
-    // relay, or sent by one.
-    let booster_inbox: Option<String> =
-        sqlx::query_scalar!("SELECT inbox_url FROM accounts WHERE id = $1", booster_id)
-            .fetch_optional(&state.db)
-            .await?;
+    // bidirectional relay, or sent by one.
     let requested_through_relay = activity
         .get(super::THROUGH_RELAY)
         .is_some_and(|flag| flag == &Value::Bool(true))
-        || crate::relays::is_enabled_relay_inbox(state, booster_inbox.as_deref().unwrap_or(""))
-            .await;
+        || crate::relays::forwards_to_us(state, booster_id).await;
 
     // Find the boosted status in our database.
     let original_id = sqlx::query_scalar!(

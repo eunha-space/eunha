@@ -265,6 +265,24 @@ export const getTimeZones = (token: string) =>
 export const getPreferences = (token: string) =>
   call<Preferences>('/api/eunha/v1/preferences', token)
 
+/** A relay a member may opt in to (`Settings::RelayPreferencesController`). */
+export interface OptInRelay {
+  id: string
+  uri: string
+  display_name: string
+  /** The relay actor's bio, as sanitized HTML. */
+  note: string
+  /** Whether this member has opted in. */
+  enabled: boolean
+}
+
+export const getRelayPreferences = (token: string) =>
+  call<OptInRelay[]>('/api/eunha/v1/relay_preferences', token)
+
+/** Opts in to `relayIds`, and out of every other relay. */
+export const updateRelayPreferences = (token: string, relayIds: string[]) =>
+  call<OptInRelay[]>('/api/eunha/v1/relay_preferences', token, 'PUT', { relay_ids: relayIds })
+
 export const updatePreferences = (
   token: string,
   changes: Partial<Omit<Preferences, 'notification_emails'>> & {

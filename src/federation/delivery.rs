@@ -576,8 +576,9 @@ pub async fn account_reach_inboxes(
                AND a.domain IS NOT NULL AND a.protocol = 1
              LIMIT 2000)
             UNION
-            -- enabled relays
-            (SELECT inbox_url FROM relays WHERE state = 2)
+            -- `Relay.enabled.for_account(@account.id)`
+            (SELECT r.inbox_url FROM relays r
+             WHERE r.state = 2 AND (NOT r.requires_opt_in OR EXISTS (SELECT 1 FROM relay_preferences p WHERE p.relay_id = r.id AND p.account_id = $1 AND p.enabled)))
         ) reach
         WHERE inbox <> ''
         "#,
@@ -685,8 +686,10 @@ pub async fn status_reach_inboxes(
             FROM accounts a
             WHERE a.id = ANY($9::bigint[]) AND a.domain IS NOT NULL AND a.protocol = 1 AND ($5::bool OR (a.suspended_at IS NULL AND a.requested_deletion_at IS NULL))
             UNION
-            -- relays (public only)
-            SELECT inbox_url FROM relays WHERE $6::bool AND state = 2 AND inbox_url <> ''
+            -- `Relay.enabled.for_account(@status.account_id)`, public only
+            SELECT r.inbox_url FROM relays r
+            WHERE $6::bool AND r.inbox_url <> ''
+              AND r.state = 2 AND (NOT r.requires_opt_in OR EXISTS (SELECT 1 FROM relay_preferences p WHERE p.relay_id = r.id AND p.account_id = $2 AND p.enabled))
         ) reach
         WHERE inbox <> ''
         "#,
