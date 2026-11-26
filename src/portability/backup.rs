@@ -972,6 +972,7 @@ async fn mastodon_actor(state: &AppState, account: &Account) -> AppResult<Value>
         "attribution_domains",
         "profile_settings",
         "interaction_policies",
+        "actor_featured_collections",
     ];
     if !emojis.is_empty() {
         extensions.extend(["emoji", "focal_point"]);

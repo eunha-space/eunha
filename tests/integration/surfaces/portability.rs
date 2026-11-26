@@ -1247,6 +1247,10 @@ fn mastodon_full_context() -> Value {
             "featureAuthorization": {
                 "@id": "https://w3id.org/fep/7aa9#featureAuthorization",
                 "@type": "@id"
+            },
+            "featuredCollections": {
+                "@id": "https://w3id.org/fep/7aa9#featuredCollections",
+                "@type": "@id"
             }
         }
     ]
@@ -1546,7 +1550,8 @@ async fn archive_takeout_zips_posts_media_and_actor() {
             "discoverable": 0, "suspended": 0, "memorial": 0, "indexable": 0,
             "attributionDomains": 0, "showFeatured": 0, "showMedia": 0,
             "showRepliesInMedia": 0, "gts": 0, "interactionPolicy": 0, "canFeature": 0,
-            "canQuote": 0, "automaticApproval": 0, "manualApproval": 0, "focalPoint": 0,
+            "canQuote": 0, "automaticApproval": 0, "manualApproval": 0,
+            "featuredCollections": 0, "focalPoint": 0,
         }))
     );
     assert_eq!(actor["webfinger"], format!("alice@{d}"));

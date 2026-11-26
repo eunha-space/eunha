@@ -111,12 +111,18 @@ pub fn extension(name: &str) -> Option<Value> {
             "interactingObject": { "@id": "gts:interactingObject", "@type": "@id" },
             "interactionTarget": { "@id": "gts:interactionTarget", "@type": "@id" },
         }),
+        "actor_featured_collections" => json!({
+            "featuredCollections": {
+                "@id": "https://w3id.org/fep/7aa9#featuredCollections",
+                "@type": "@id",
+            },
+        }),
         _ => return None,
     })
 }
 
 /// Every key of `CONTEXT_EXTENSION_MAP`, in its order.
-pub const EXTENSIONS: [&str; 26] = [
+pub const EXTENSIONS: [&str; 27] = [
     "manually_approves_followers",
     "sensitive",
     "hashtag",
@@ -143,6 +149,7 @@ pub const EXTENSIONS: [&str; 26] = [
     "feature_requests",
     "featured_collections",
     "feature_authorizations",
+    "actor_featured_collections",
 ];
 
 /// `ContextHelper#serialized_context`: the named contexts in the order
@@ -194,7 +201,10 @@ mod tests {
         assert_eq!(array[3], "https://purl.archive.org/socialweb/webfinger");
         let terms = array[4].as_object().unwrap();
         assert_eq!(terms["toot"], "http://joinmastodon.org/ns#");
-        assert!(!terms.contains_key("featuredCollections"));
+        assert_eq!(
+            terms["featuredCollections"],
+            json!({ "@id": "https://w3id.org/fep/7aa9#featuredCollections", "@type": "@id" })
+        );
         assert!(terms.contains_key("FeatureAuthorization"));
         assert!(terms.contains_key("atomUri"));
     }
