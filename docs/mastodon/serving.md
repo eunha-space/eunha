@@ -306,7 +306,10 @@ These are for people and crawlers rather than other servers. They live in
     `/@user/media.rss`, `/@user/tagged/:tag.rss` and `/tags/:name.rss`
     (`?local=true`). `?limit=` goes up to 200. An account's carries public and
     unlisted posts, without boosts, and a tag's only public ones, unless the
-    feed settings keep that tag's posts from visitors.
+    feed settings keep that tag's posts from visitors. In an account's feed
+    every attachment has a `media:thumbnail`, its own thumbnail or else its
+    small version; a tag's names only a thumbnail of its own, as Mastodon's
+    still does.
  -  **`/@user/:id/embed`** draws a public or unlisted post without the web app,
     for any site to frame. `/api/oembed` names it, with `/embed.js`, which sets
     the frame's height.

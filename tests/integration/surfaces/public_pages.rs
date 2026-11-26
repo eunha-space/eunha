@@ -211,6 +211,63 @@ async fn account_feed_carries_public_posts_and_leaves_the_rest_out() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+/// An image without a thumbnail of its own gets its small version as the
+/// account feed's `media:thumbnail`, as Mastodon 5.0's does; a tag's feed
+/// still names only a thumbnail of its own.
+#[tokio::test]
+async fn account_feed_gives_every_attachment_a_thumbnail() {
+    let ctx = TestContext::new("web-rss-thumbnail").await;
+    let media: Value = ctx
+        .api
+        .post_multipart_file(
+            "/api/v1/media",
+            &ctx.alice_token,
+            "test.png",
+            "image/png",
+            crate::helpers::tiny_png(),
+            &[],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let status: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &serde_json::json!({
+                "status": "A picture #pictured",
+                "visibility": "public",
+                "media_ids": [media["id"]],
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let small = status["media_attachments"][0]["preview_url"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let feed = ctx.api.get("/@alice.rss", None).await.text().await.unwrap();
+    roxmltree::Document::parse(&feed).expect("a feed is well-formed XML");
+    assert!(
+        feed.contains(&format!(r#"<media:thumbnail url="{small}"/>"#)),
+        "{feed}"
+    );
+    let feed = ctx
+        .api
+        .get("/tags/pictured.rss", None)
+        .await
+        .text()
+        .await
+        .unwrap();
+    assert!(feed.contains("A picture"), "{feed}");
+    assert!(!feed.contains("media:thumbnail"), "{feed}");
+}
+
 #[tokio::test]
 async fn account_feed_leaves_out_replies_to_others_until_asked() {
     let ctx = TestContext::new("web-rss-replies").await;
