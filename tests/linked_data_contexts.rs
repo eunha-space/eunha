@@ -145,9 +145,10 @@ async fn test_a_relayed_post_is_checked_over_a_fetched_context() {
     let (bob, bob_key) = seed_remote(&ctx, "bob", "bob.invalid").await;
     let (relay, relay_key) = seed_remote(&ctx, "relay", "relay.invalid").await;
     sqlx::query(
-        "INSERT INTO relays (inbox_url, state, created_at, updated_at) VALUES ($1, 2, now(), now())",
+        "INSERT INTO relays (uri, inbox_url, account_id, state, created_at, updated_at)
+         SELECT uri, inbox_url, id, 2, now(), now() FROM accounts WHERE uri = $1",
     )
-    .bind(format!("{relay}/inbox"))
+    .bind(&relay)
     .execute(&ctx.db)
     .await
     .unwrap();
