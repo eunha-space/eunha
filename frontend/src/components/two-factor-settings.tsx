@@ -9,6 +9,7 @@ import {
   disableTwoFactor,
   getTwoFactor,
   regenerateRecoveryCodes,
+  removeOtp,
   removeSecurityKey,
   securityKeysSupported,
   SecurityError,
@@ -48,8 +49,9 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 }
 
 /**
- * Mastodon's two-factor authentication settings: an authenticator app with
- * its recovery codes, and security keys on top of it.
+ * Mastodon's two-factor authentication settings: an authenticator app and
+ * security keys, each a second factor on its own, and the recovery codes the
+ * first of them brings.
  */
 export function TwoFactorSettings({ token }: { token: string }) {
   const [status, setStatus] = useState<TwoFactorStatus | null>(null)
@@ -70,6 +72,7 @@ export function TwoFactorSettings({ token }: { token: string }) {
   useEffect(reload, [reload])
 
   if (!status) return failed ? null : <SectionSkeleton rows={2} />
+  const enabled = status.otp_enabled || status.webauthn_enabled
 
   const run = async (work: () => Promise<void>, fallback: string) => {
     setBusy(true)
@@ -99,7 +102,7 @@ export function TwoFactorSettings({ token }: { token: string }) {
     <section className="space-y-3 rounded-lg border p-4">
       <div>
         <h2 className="font-semibold">{t({ id: 'eunha.two_factor_settings.two_factor_authentication', defaultMessage: 'Two-factor authentication' })}</h2>
-        {status.required && !status.otp_enabled && !status.webauthn_enabled && (
+        {status.required && !enabled && (
           <p className="text-destructive text-sm">
             {t(
               { id: 'mastodon.two_factor_authentication.role_requirement', defaultMessage: '{domain} requires you to set up Two-Factor Authentication before you can use Mastodon.' },
@@ -127,7 +130,9 @@ export function TwoFactorSettings({ token }: { token: string }) {
               toast.success(t({ id: 'mastodon.two_factor_authentication.enabled_success', defaultMessage: 'Two-factor authentication successfully enabled' }))
               setSetup(null)
               setCode('')
-              setCodes(result.recovery_codes)
+              // Recovery codes a security key made already stand.
+              if (result.recovery_codes) setCodes(result.recovery_codes)
+              else reload()
             }, t({ id: 'mastodon.otp_authentication.wrong_code', defaultMessage: 'The entered code was invalid! Are server time and device time correct?' }))
           }}
         >
@@ -169,73 +174,57 @@ export function TwoFactorSettings({ token }: { token: string }) {
             </Button>
           </div>
         </form>
-      ) : !status.otp_enabled ? (
-        <div className="space-y-3">
-          <p className="text-muted-foreground text-sm">
-            {t({ id: 'eunha.two_factor_settings.if_you_enable_two_factor_authentication', defaultMessage: 'If you enable two-factor authentication using an authenticator app, logging in will require you to be in possession of your phone, which will generate tokens for you to enter.' })}
-          </p>
-          {status.available ? (
-            <>
-              {passwordField}
-              <Button
-                size="sm"
-                disabled={busy || !password}
-                onClick={() =>
-                  void run(async () => {
-                    setSetup(await beginOtpSetup(token, password))
-                    setPassword('')
-                  }, t({ id: 'eunha.two_factor_settings.could_not_start_the_setup', defaultMessage: 'Could not start the setup' }))
-                }
-              >
-                <ShieldCheck /> {t({ id: 'mastodon.otp_authentication.setup', defaultMessage: 'Set up' })}
-              </Button>
-            </>
-          ) : (
-            <p className="text-sm">{t({ id: 'eunha.two_factor_settings.two_factor_authentication_is_not_available', defaultMessage: 'Two-factor authentication is not available on this server.' })}</p>
-          )}
-        </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm">
-            {t(
-              { id: 'eunha.two_factor_settings.enabled_with_codes_left', defaultMessage: 'Two-factor authentication is enabled · {count, plural, one {# recovery code} other {# recovery codes}} left' },
-              { count: status.recovery_codes_remaining },
-            )}
-          </p>
-          <p className="text-muted-foreground text-sm">
-            {t({ id: 'mastodon.two_factor_authentication.lost_recovery_codes', defaultMessage: 'Recovery codes allow you to regain access to your account if you lose your phone. If you\'\'ve lost your recovery codes, you can regenerate them here. Your old recovery codes will be invalidated.' })}
-          </p>
+          {enabled && (
+            <p className="text-sm">
+              {t({ id: 'mastodon.two_factor_authentication.enabled', defaultMessage: 'Two-factor authentication is enabled' })}
+            </p>
+          )}
           {passwordField}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={busy || !password}
-              onClick={() =>
-                void run(async () => {
-                  const result = await regenerateRecoveryCodes(token, password)
-                  toast.success(t({ id: 'mastodon.two_factor_authentication.recovery_codes_regenerated', defaultMessage: 'Recovery codes successfully regenerated' }))
-                  setPassword('')
-                  setCodes(result.recovery_codes)
-                }, t({ id: 'eunha.two_factor_settings.could_not_generate_recovery_codes', defaultMessage: 'Could not generate recovery codes' }))
-              }
-            >
-              {t({ id: 'mastodon.two_factor_authentication.generate_recovery_codes', defaultMessage: 'Generate recovery codes' })}
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={busy || !password}
-              onClick={() =>
-                void run(async () => {
-                  setStatus(await disableTwoFactor(token, password))
-                  setPassword('')
-                  toast.success(t({ id: 'mastodon.two_factor_authentication.disabled_success', defaultMessage: 'Two-factor authentication successfully disabled' }))
-                }, t({ id: 'eunha.two_factor_settings.could_not_disable_two_factor_authentication', defaultMessage: 'Could not disable two-factor authentication' }))
-              }
-            >
-              {t({ id: 'mastodon.two_factor_authentication.disable', defaultMessage: 'Disable 2FA' })}
-            </Button>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">{t({ id: 'mastodon.two_factor_authentication.otp', defaultMessage: 'Authenticator app' })}</h3>
+            {status.otp_enabled ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy || !password}
+                onClick={() => {
+                  if (!window.confirm(t({ id: 'mastodon.otp_authentication.delete_confirmation', defaultMessage: 'Are you sure you want to delete your authenticator app from your two-factor authentication methods?' }))) return
+                  void run(async () => {
+                    const next = await removeOtp(token, password)
+                    setStatus(next)
+                    setPassword('')
+                    if (!next.webauthn_enabled) {
+                      toast.success(t({ id: 'mastodon.two_factor_authentication.disabled_success', defaultMessage: 'Two-factor authentication successfully disabled' }))
+                    }
+                  }, t({ id: 'eunha.two_factor_settings.could_not_remove_the_authenticator_app', defaultMessage: 'Could not remove the authenticator app' }))
+                }}
+              >
+                <Trash2 /> {t({ id: 'mastodon.otp_authentication.delete', defaultMessage: 'Delete' })}
+              </Button>
+            ) : status.available ? (
+              <>
+                <p className="text-muted-foreground text-sm">
+                  {t({ id: 'eunha.two_factor_settings.if_you_enable_two_factor_authentication', defaultMessage: 'If you enable two-factor authentication using an authenticator app, logging in will require you to be in possession of your phone, which will generate tokens for you to enter.' })}
+                </p>
+                <Button
+                  size="sm"
+                  disabled={busy || !password}
+                  onClick={() =>
+                    void run(async () => {
+                      setSetup(await beginOtpSetup(token, password))
+                      setPassword('')
+                    }, t({ id: 'eunha.two_factor_settings.could_not_start_the_setup', defaultMessage: 'Could not start the setup' }))
+                  }
+                >
+                  <ShieldCheck /> {t({ id: 'mastodon.otp_authentication.setup', defaultMessage: 'Set up' })}
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm">{t({ id: 'eunha.two_factor_settings.two_factor_authentication_is_not_available', defaultMessage: 'Two-factor authentication is not available on this server.' })}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -280,10 +269,12 @@ export function TwoFactorSettings({ token }: { token: string }) {
                 onSubmit={(e) => {
                   e.preventDefault()
                   void run(async () => {
-                    await addSecurityKey(token, password, nickname.trim())
+                    const added = await addSecurityKey(token, password, nickname.trim())
                     toast.success(t({ id: 'mastodon.webauthn_credentials.create.success', defaultMessage: 'Your security key was successfully added.' }))
                     setNickname('')
-                    reload()
+                    // The first second factor brings the recovery codes.
+                    if (added.recovery_codes) setCodes(added.recovery_codes)
+                    else reload()
                   }, t({ id: 'mastodon.webauthn_credentials.create.error', defaultMessage: 'There was a problem adding your security key. Please try again.' }))
                 }}
               >
@@ -307,6 +298,53 @@ export function TwoFactorSettings({ token }: { token: string }) {
               </p>
             )}
           </div>
+
+          {status.recovery_codes_remaining > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">{t({ id: 'mastodon.two_factor_authentication.recovery_codes', defaultMessage: 'Backup recovery codes' })}</h3>
+              <p className="text-sm">
+                {t(
+                  { id: 'eunha.two_factor_settings.recovery_codes_left', defaultMessage: '{count, plural, one {# recovery code} other {# recovery codes}} left' },
+                  { count: status.recovery_codes_remaining },
+                )}
+              </p>
+              <p className="text-muted-foreground text-sm">
+                {t({ id: 'mastodon.two_factor_authentication.lost_recovery_codes', defaultMessage: 'Recovery codes allow you to regain access to your account if you lose your phone. If you\'\'ve lost your recovery codes, you can regenerate them here. Your old recovery codes will be invalidated.' })}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy || !password}
+                onClick={() =>
+                  void run(async () => {
+                    const result = await regenerateRecoveryCodes(token, password)
+                    toast.success(t({ id: 'mastodon.two_factor_authentication.recovery_codes_regenerated', defaultMessage: 'Recovery codes successfully regenerated' }))
+                    setPassword('')
+                    setCodes(result.recovery_codes)
+                  }, t({ id: 'eunha.two_factor_settings.could_not_generate_recovery_codes', defaultMessage: 'Could not generate recovery codes' }))
+                }
+              >
+                {t({ id: 'mastodon.two_factor_authentication.generate_recovery_codes', defaultMessage: 'Generate recovery codes' })}
+              </Button>
+            </div>
+          )}
+
+          {enabled && !status.required && (
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={busy || !password}
+              onClick={() =>
+                void run(async () => {
+                  setStatus(await disableTwoFactor(token, password))
+                  setPassword('')
+                  toast.success(t({ id: 'mastodon.two_factor_authentication.disabled_success', defaultMessage: 'Two-factor authentication successfully disabled' }))
+                }, t({ id: 'eunha.two_factor_settings.could_not_disable_two_factor_authentication', defaultMessage: 'Could not disable two-factor authentication' }))
+              }
+            >
+              {t({ id: 'mastodon.two_factor_authentication.disable', defaultMessage: 'Disable 2FA' })}
+            </Button>
+          )}
         </div>
       )}
     </section>

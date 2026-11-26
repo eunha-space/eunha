@@ -5,9 +5,14 @@
 //! Mastodon has these only as web forms behind a session; eunha's settings
 //! page is a single-page app holding a token, so they are served here. What
 //! Mastodon guards with `ChallengableConcern` — starting setup, new recovery
-//! codes, turning it off — asks for the password with the request, as do the
-//! security key changes, which a session-less API would otherwise leave to
-//! any token with `write:accounts`.
+//! codes, turning it off, removing the authenticator app, adding a security
+//! key — asks for the password with the request, as does removing a security
+//! key, which a session-less API would otherwise leave to any token with
+//! `write:accounts`.
+//!
+//! As in Mastodon 5.0, an authenticator app and security keys are each a
+//! second factor on their own: either can be added without the other, and
+//! taking away the last of them turns two-factor authentication off.
 //!
 //! Mastodon: app/controllers/settings/two_factor_authentication_methods_controller.rb
 //! Mastodon: app/controllers/settings/two_factor_authentication/
@@ -39,7 +44,7 @@ pub fn routes() -> Router {
         )
         .route(
             "/api/eunha/v1/two_factor_authentication/otp",
-            post(begin_otp),
+            post(begin_otp).delete(remove_otp),
         )
         .route(
             "/api/eunha/v1/two_factor_authentication/otp/confirm",
@@ -78,7 +83,8 @@ pub struct Status {
     pub webauthn_enabled: bool,
     /// The role requires two-factor authentication (`UserRole#require_2fa`).
     pub required: bool,
-    /// Recovery codes not yet used.
+    /// Recovery codes not yet used. The settings page offers new ones only
+    /// when there are some, as Mastodon's does (`otp_backup_codes.present?`).
     pub recovery_codes_remaining: usize,
     pub webauthn_credentials: Vec<WebauthnCredential>,
     /// Whether TOTP can be set up here at all: the instance has its
@@ -124,11 +130,7 @@ async fn status(state: &AppState, user_id: i64) -> AppResult<Status> {
         otp_enabled: user.otp_enabled(),
         webauthn_enabled: user.webauthn_enabled(),
         required: user.role_requires,
-        recovery_codes_remaining: if user.otp_enabled() {
-            user.otp_backup_codes.len()
-        } else {
-            0
-        },
+        recovery_codes_remaining: user.otp_backup_codes.len(),
         webauthn_credentials: keys
             .into_iter()
             .map(|k| WebauthnCredential {
@@ -241,15 +243,22 @@ pub struct RecoveryCodes {
     pub recovery_codes: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Confirmed {
+    /// The new recovery codes, shown this once; `null` when the user had
+    /// some already, which stand.
+    pub recovery_codes: Option<Vec<String>>,
+}
+
 /// POST /api/eunha/v1/two_factor_authentication/otp/confirm
 ///
 /// `ConfirmationsController#create`: the first code from the authenticator,
-/// then TOTP on and the recovery codes, shown this once.
+/// then TOTP on, and recovery codes if the user has none.
 pub async fn confirm_otp(
     state: AppState,
     auth: Option<Extension<AuthenticatedUser>>,
     Params(form): Params<Confirmation>,
-) -> AppResult<Json<RecoveryCodes>> {
+) -> AppResult<Json<Confirmed>> {
     let (_, user_id) = signed_in(auth, "write:accounts")?;
     let key = setup_key(&state, user_id);
     let mut redis = state.redis_coordination.clone();
@@ -276,9 +285,40 @@ pub async fn confirm_otp(
         &user,
         NoticeKind::Security(OwnedNotice::TwoFactorEnabled),
     );
-    Ok(Json(RecoveryCodes {
+    Ok(Json(Confirmed {
         recovery_codes: codes,
     }))
+}
+
+/// DELETE /api/eunha/v1/two_factor_authentication/otp
+///
+/// `OtpAuthenticationController#destroy`: the authenticator app removed.
+/// With security keys left, `disable_otp_login!` keeps them and the recovery
+/// codes, and mails nothing; without, two-factor authentication goes, as
+/// `disable` takes it.
+pub async fn remove_otp(
+    state: AppState,
+    auth: Option<Extension<AuthenticatedUser>>,
+    Params(form): Params<Challenge>,
+) -> AppResult<Json<Status>> {
+    let (_, user_id) = signed_in(auth, "write:accounts")?;
+    require_challenge(&state, user_id, form.password.as_deref()).await?;
+    let user = user(&state, user_id).await?;
+    // `verify_otp_enabled`.
+    if !user.otp_enabled() {
+        return Err(AppError::Unprocessable(
+            "The authenticator app is not enabled".into(),
+        ));
+    }
+    if user.webauthn_enabled() {
+        two_factor::disable_otp_login(&state.db, user_id).await?;
+    } else {
+        let mut tx = state.db.begin().await?;
+        two_factor::disable(&mut tx, user_id).await?;
+        tx.commit().await?;
+        two_factor::notify(&state, &user, NoticeKind::TwoFactorDisabled);
+    }
+    Ok(Json(status(&state, user_id).await?))
 }
 
 /// POST /api/eunha/v1/two_factor_authentication/recovery_codes
@@ -292,7 +332,9 @@ pub async fn regenerate_recovery_codes(
     let (_, user_id) = signed_in(auth, "write:accounts")?;
     require_challenge(&state, user_id, form.password.as_deref()).await?;
     let user = user(&state, user_id).await?;
-    if !user.otp_enabled() {
+    // Mastodon offers this only on the methods page, to a user with two-factor
+    // authentication (`require_two_factor_enabled` guards the rest of it).
+    if !user.enabled() {
         return Err(AppError::Unprocessable(
             "Two-factor authentication is not enabled".into(),
         ));
@@ -320,8 +362,8 @@ pub async fn disable(
     let (_, user_id) = signed_in(auth, "write:accounts")?;
     require_challenge(&state, user_id, form.password.as_deref()).await?;
     let user = user(&state, user_id).await?;
-    // `require_otp_enabled`.
-    if !user.otp_enabled() {
+    // `require_two_factor_enabled`.
+    if !user.enabled() {
         return Err(AppError::Unprocessable(
             "Two-factor authentication is not enabled".into(),
         ));
@@ -339,21 +381,11 @@ fn webauthn_challenge_key(state: &AppState, user_id: i64) -> String {
         .key(format!("webauthn_registration:{user_id}"))
 }
 
-/// `redirect_invalid_otp`: security keys come after an authenticator app.
-fn require_otp(user: &UserTwoFactor) -> AppResult<()> {
-    if user.otp_enabled() {
-        Ok(())
-    } else {
-        Err(AppError::Unprocessable(
-            "To use security keys please enable two-factor authentication first.".into(),
-        ))
-    }
-}
-
 /// POST /api/eunha/v1/two_factor_authentication/webauthn_credentials/options
 ///
 /// `WebauthnCredentialsController#options`: what the browser needs to make a
-/// key, with `users.webauthn_id` assigned on first use.
+/// key, with `users.webauthn_id` assigned on first use. The password it asks
+/// for is the challenge Mastodon puts in front of `new`.
 pub async fn webauthn_options(
     state: AppState,
     auth: Option<Extension<AuthenticatedUser>>,
@@ -361,7 +393,6 @@ pub async fn webauthn_options(
 ) -> AppResult<Json<serde_json::Value>> {
     let (account_id, user_id) = signed_in(auth, "write:accounts")?;
     require_challenge(&state, user_id, form.password.as_deref()).await?;
-    require_otp(&user(&state, user_id).await?)?;
     let handle = sqlx::query_scalar!(
         r#"UPDATE users SET webauthn_id = COALESCE(webauthn_id, $1)
            WHERE id = $2 RETURNING webauthn_id AS "webauthn_id!""#,
@@ -400,17 +431,26 @@ pub struct NewKey {
     pub nickname: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AddedKey {
+    #[serde(flatten)]
+    pub credential: WebauthnCredential,
+    /// Recovery codes made because the user had none, shown this once.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_codes: Option<Vec<String>>,
+}
+
 /// POST /api/eunha/v1/two_factor_authentication/webauthn_credentials
 ///
-/// `WebauthnCredentialsController#create`.
+/// `WebauthnCredentialsController#create`: the key, and recovery codes if
+/// the user has none, which a first second factor needs.
 pub async fn add_webauthn_credential(
     state: AppState,
     auth: Option<Extension<AuthenticatedUser>>,
     Params(form): Params<NewKey>,
-) -> AppResult<Json<WebauthnCredential>> {
+) -> AppResult<Json<AddedKey>> {
     let (_, user_id) = signed_in(auth, "write:accounts")?;
     let user = user(&state, user_id).await?;
-    require_otp(&user)?;
     let key = webauthn_challenge_key(&state, user_id);
     let mut redis = state.redis_coordination.clone();
     let challenge: Option<String> = redis::cmd("GET")
@@ -440,6 +480,7 @@ pub async fn add_webauthn_credential(
     if nickname.is_empty() {
         return Err(refused());
     }
+    let mut tx = state.db.begin().await?;
     let row = sqlx::query!(
         r#"INSERT INTO webauthn_credentials
              (external_id, public_key, nickname, sign_count, user_id, created_at, updated_at)
@@ -452,9 +493,11 @@ pub async fn add_webauthn_credential(
         new.sign_count,
         user_id,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(refused)?;
+    let recovery_codes = two_factor::ensure_backup_codes(&mut tx, user_id).await?;
+    tx.commit().await?;
 
     // The first key is `webauthn_enabled`; the rest are each announced.
     let notice = if user.webauthn_credentials == 0 {
@@ -463,16 +506,21 @@ pub async fn add_webauthn_credential(
         OwnedNotice::WebauthnCredentialAdded(row.nickname.clone())
     };
     two_factor::notify(&state, &user, NoticeKind::Security(notice));
-    Ok(Json(WebauthnCredential {
-        id: row.id.to_string(),
-        nickname: row.nickname,
-        created_at: timestamp(row.created_at),
+    Ok(Json(AddedKey {
+        credential: WebauthnCredential {
+            id: row.id.to_string(),
+            nickname: row.nickname,
+            created_at: timestamp(row.created_at),
+        },
+        recovery_codes,
     }))
 }
 
 /// DELETE /api/eunha/v1/two_factor_authentication/webauthn_credentials/:id
 ///
-/// `WebauthnCredentialsController#destroy`.
+/// `WebauthnCredentialsController#destroy`. The last key going with no
+/// authenticator app takes two-factor authentication with it
+/// (`disable_two_factor!`, and the `two_factor_disabled` mail).
 pub async fn remove_webauthn_credential(
     state: AppState,
     auth: Option<Extension<AuthenticatedUser>>,
@@ -482,20 +530,30 @@ pub async fn remove_webauthn_credential(
     let (_, user_id) = signed_in(auth, "write:accounts")?;
     require_challenge(&state, user_id, form.password.as_deref()).await?;
     let user = user(&state, user_id).await?;
-    require_otp(&user)?;
+    let mut tx = state.db.begin().await?;
     let nickname = sqlx::query_scalar!(
         "DELETE FROM webauthn_credentials WHERE id = $1 AND user_id = $2 RETURNING nickname",
         id,
         user_id,
     )
-    .fetch_optional(&state.db)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or(AppError::NotFound)?;
-    let notice = if user.webauthn_credentials <= 1 {
-        OwnedNotice::WebauthnDisabled
+    let left = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "n!" FROM webauthn_credentials WHERE user_id = $1"#,
+        user_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let notice = if left > 0 {
+        NoticeKind::Security(OwnedNotice::WebauthnCredentialDeleted(nickname))
+    } else if user.otp_enabled() {
+        NoticeKind::Security(OwnedNotice::WebauthnDisabled)
     } else {
-        OwnedNotice::WebauthnCredentialDeleted(nickname)
+        two_factor::disable(&mut tx, user_id).await?;
+        NoticeKind::TwoFactorDisabled
     };
-    two_factor::notify(&state, &user, NoticeKind::Security(notice));
+    tx.commit().await?;
+    two_factor::notify(&state, &user, notice);
     Ok(Json(status(&state, user_id).await?))
 }

@@ -563,16 +563,16 @@ id = "two-factor-rest-api"
 kind = "addition"
 summary = "Serves two-factor authentication and security key settings over a REST API"
 mastodon = """
-Sets up an authenticator app, regenerates recovery codes, turns two-factor \
-authentication off, and adds or removes security keys only through \
-`/settings/two_factor_authentication*` and `/settings/security_keys` web \
-forms behind a session, asking for the password once an hour \
-(`ChallengableConcern`)."""
+Sets up or removes an authenticator app, regenerates recovery codes, turns \
+two-factor authentication off, and adds or removes security keys only \
+through `/settings/two_factor_authentication*`, `/settings/otp_authentication` \
+and `/settings/security_keys` web forms behind a session, asking for the \
+password once an hour (`ChallengableConcern`)."""
 eunha = """
 Serves them under `/api/eunha/v1/two_factor_authentication`, to a token with \
-`read:accounts` or `write:accounts`. Starting setup, new recovery codes, \
-turning it off, and asking for security key options or removing a key each \
-take the password in the request. The secret, recovery codes and keys are \
+`read:accounts` or `write:accounts`. Starting setup, removing the \
+authenticator app, new recovery codes, turning it off, and asking for \
+security key options or removing a key each take the password in the request. The secret, recovery codes and keys are \
 stored as Mastodon stores them."""
 why = """
 eunha's settings page is a single-page app holding a token, not a session. \

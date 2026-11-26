@@ -13,6 +13,10 @@
 //!  -  `otp_backup_codes` holds bcrypt digests (`Devise::Encryptor`, ten
 //!     stretches) of ten 16-character hex codes.
 //!
+//! TOTP and security keys are each a second factor on their own: a security
+//! key can be added without TOTP, and the first of either makes the recovery
+//! codes if the user has none.
+//!
 //! Mastodon: app/models/user.rb
 //! Mastodon: app/controllers/concerns/auth/two_factor_authentication_concern.rb
 
@@ -366,21 +370,68 @@ pub async fn invalidate_backup_code(state: &AppState, user: &UserTwoFactor, code
 // ── Changing it ─────────────────────────────────────────────────────────────
 
 /// `Settings::TwoFactorAuthentication::ConfirmationsController#create`, past
-/// the code check: TOTP on with `secret`, and fresh recovery codes returned.
-pub async fn enable(state: &AppState, user_id: i64, secret: &str) -> AppResult<Vec<String>> {
+/// the code check: TOTP on with `secret`. Recovery codes are made only when
+/// the user has none, as a security key may already have made them
+/// (`generate_otp_backup_codes! if otp_backup_codes.blank?`); the new ones
+/// are returned, `None` when the old ones stand.
+pub async fn enable(
+    state: &AppState,
+    user_id: i64,
+    secret: &str,
+) -> AppResult<Option<Vec<String>>> {
     let sealed = seal_secret(state, secret)?;
+    let mut tx = state.db.begin().await?;
+    let codes = ensure_backup_codes(&mut tx, user_id).await?;
+    sqlx::query!(
+        r#"UPDATE users SET otp_required_for_login = true, otp_secret = $1, updated_at = now()
+           WHERE id = $2"#,
+        sealed,
+        user_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(codes)
+}
+
+/// `generate_otp_backup_codes! if otp_backup_codes.blank?`: fresh recovery
+/// codes for a user who has none, returned; `None` when they have some.
+/// The row is locked, so two requests cannot both make a set.
+pub async fn ensure_backup_codes(
+    conn: &mut sqlx::PgConnection,
+    user_id: i64,
+) -> AppResult<Option<Vec<String>>> {
+    let existing = sqlx::query_scalar!(
+        "SELECT otp_backup_codes FROM users WHERE id = $1 FOR UPDATE",
+        user_id
+    )
+    .fetch_one(&mut *conn)
+    .await?;
+    if existing.is_some_and(|codes| !codes.is_empty()) {
+        return Ok(None);
+    }
     let (codes, digests) = generate_backup_codes().await?;
     sqlx::query!(
-        r#"UPDATE users SET otp_required_for_login = true, otp_secret = $1,
-                  otp_backup_codes = $2, updated_at = now()
-           WHERE id = $3"#,
-        sealed,
+        "UPDATE users SET otp_backup_codes = $1, updated_at = now() WHERE id = $2",
         &digests,
         user_id,
     )
-    .execute(&state.db)
+    .execute(&mut *conn)
     .await?;
-    Ok(codes)
+    Ok(Some(codes))
+}
+
+/// `User#disable_otp_login!`: TOTP off and its secret gone, keeping the
+/// security keys and the recovery codes. Nothing happens when TOTP is off.
+pub async fn disable_otp_login(db: &PgPool, user_id: i64) -> sqlx::Result<()> {
+    sqlx::query!(
+        r#"UPDATE users SET otp_required_for_login = false, otp_secret = NULL, updated_at = now()
+           WHERE id = $1 AND otp_required_for_login"#,
+        user_id
+    )
+    .execute(db)
+    .await?;
+    Ok(())
 }
 
 /// `Settings::TwoFactorAuthentication::RecoveryCodesController#create`.

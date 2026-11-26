@@ -9,6 +9,12 @@
 //! expires after an hour. As in Mastodon, a change to the user in between
 //! (`users.updated_at`) sends the person back to the password.
 //!
+//! Every pending sign-in is made by [`after_password`], which its callers
+//! reach only past the password check, so holding the token proves the first
+//! step as `ensure_first_authentication_step` does; whether a second factor
+//! or a security code is wanted is decided only after that check, so the
+//! answer says nothing about an account to someone without its password.
+//!
 //! Mastodon: app/controllers/concerns/auth/two_factor_authentication_concern.rb
 //! Mastodon: app/controllers/concerns/auth/sign_in_token_authentication_concern.rb
 //! Mastodon: app/controllers/auth/sessions_controller.rb
@@ -470,6 +476,12 @@ pub async fn continue_attempt(
                 &user,
                 NoticeKind::Security(OwnedNotice::TwoFactorEnabled),
             );
+            // Recovery codes the user already had stand, and there is
+            // nothing to show: `ConfirmationsController` redirects on.
+            let Some(codes) = codes else {
+                discard(state, &token).await;
+                return Step::SignedIn(user.user_id, continuation);
+            };
             attempt.stage = Stage::RecoveryCodes;
             store(state, &token, &attempt).await;
             Step::Render(Box::new(Page {
