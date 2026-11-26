@@ -1241,8 +1241,10 @@ async fn test_a_signed_delete_is_forwarded_to_the_boosters_followers() {
     );
 }
 
-/// A remote author's `Delete` of a quote stamp is passed on, signed or not,
-/// to the followers of local accounts that boosted the quoting post.
+/// A remote author's `Delete` of a quote stamp is passed on to the followers
+/// of local accounts that boosted the quoting post when it carries a Linked
+/// Data signature or an FEP-8b32 proof (`forwardable_json`), and not when it
+/// carries neither, where Mastodon would send `null`.
 #[tokio::test]
 async fn test_a_stamp_delete_is_forwarded_to_the_boosters_followers() {
     let ctx = TestContext::new("forward-stamp").await;
@@ -1252,61 +1254,88 @@ async fn test_a_stamp_delete_is_forwarded_to_the_boosters_followers() {
     let (dave_id, dave_uri, dave_key) = seed_remote_with_key(&ctx, "dave", "dave.invalid").await;
     let (nina_id, nina_uri, _) = seed_remote_with_key(&ctx, "nina", "nina.invalid").await;
     follow(&ctx, nina_id, bob_id).await;
-
     let daves = seed_remote_status(&ctx.db, dave_id, &format!("{dave_uri}/statuses/7")).await;
-    let carols = seed_remote_status(&ctx.db, carol_id, &format!("{carol_uri}/statuses/1")).await;
-    let stamp = format!("{dave_uri}/quote_authorizations/1");
-    sqlx::query(
-        r#"INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id, state, approval_uri, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 1, $6, now(), now())"#,
-    )
-    .bind(eunha::snowflake::next_id())
-    .bind(carols)
-    .bind(daves)
-    .bind(carol_id)
-    .bind(dave_id)
-    .bind(&stamp)
-    .execute(&ctx.db)
-    .await
-    .unwrap();
-    let resp = ctx
-        .api
-        .post_json(
-            &format!("/api/v1/statuses/{carols}/reblog"),
-            Some(&ctx.bob_token),
-            &json!({}),
-        )
-        .await;
-    assert_eq!(resp.status(), StatusCode::OK);
 
-    let delete = json!({
-        "@context": "https://www.w3.org/ns/activitystreams",
-        "id": format!("{stamp}#delete"),
-        "type": "Delete",
-        "actor": dave_uri,
-        "to": ["https://www.w3.org/ns/activitystreams#Public"],
-        "object": {
-            "id": stamp,
-            "type": "QuoteAuthorization",
-            "attributedTo": dave_uri,
-            "interactingObject": format!("{carol_uri}/statuses/1"),
-            "interactionTarget": format!("{dave_uri}/statuses/7"),
-        },
-    });
-    let resp = ctx
-        .api
-        .post_signed(
-            "/inbox",
-            &delete,
-            &format!("{dave_uri}#main-key"),
-            &dave_key,
+    // Unsigned, then with a proof.
+    for (n, proof) in [
+        (1, None),
+        (
+            2,
+            Some(json!({
+                "type": "DataIntegrityProof",
+                "cryptosuite": "eddsa-jcs-2022",
+                "verificationMethod": format!("{dave_uri}#ed25519-key"),
+                "proofPurpose": "assertionMethod",
+                "proofValue": "z5x",
+                "created": "2026-11-01T00:00:00Z",
+            })),
+        ),
+    ] {
+        let carols =
+            seed_remote_status(&ctx.db, carol_id, &format!("{carol_uri}/statuses/{n}")).await;
+        let stamp = format!("{dave_uri}/quote_authorizations/{n}");
+        sqlx::query(
+            r#"INSERT INTO quotes (id, status_id, quoted_status_id, account_id, quoted_account_id, state, approval_uri, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, 1, $6, now(), now())"#,
         )
-        .await;
-    assert!(resp.status().is_success(), "{}", resp.status());
-    assert_eq!(quote_state(&ctx, carols).await, 3);
-    let forwarded = queued_for(&ctx, "Delete", &format!("{nina_uri}/inbox")).await;
-    assert_eq!(forwarded.len(), 1, "{forwarded:?}");
-    assert_eq!(forwarded[0]["id"], delete["id"]);
+        .bind(eunha::snowflake::next_id())
+        .bind(carols)
+        .bind(daves)
+        .bind(carol_id)
+        .bind(dave_id)
+        .bind(&stamp)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+        let resp = ctx
+            .api
+            .post_json(
+                &format!("/api/v1/statuses/{carols}/reblog"),
+                Some(&ctx.bob_token),
+                &json!({}),
+            )
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let mut delete = json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{stamp}#delete"),
+            "type": "Delete",
+            "actor": dave_uri,
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "object": {
+                "id": stamp,
+                "type": "QuoteAuthorization",
+                "attributedTo": dave_uri,
+                "interactingObject": format!("{carol_uri}/statuses/{n}"),
+                "interactionTarget": format!("{dave_uri}/statuses/7"),
+            },
+        });
+        if let Some(proof) = &proof {
+            delete["proof"] = proof.clone();
+        }
+        let resp = ctx
+            .api
+            .post_signed(
+                "/inbox",
+                &delete,
+                &format!("{dave_uri}#main-key"),
+                &dave_key,
+            )
+            .await;
+        assert!(resp.status().is_success(), "{}", resp.status());
+        assert_eq!(quote_state(&ctx, carols).await, 3);
+        let forwarded: Vec<Value> = queued_for(&ctx, "Delete", &format!("{nina_uri}/inbox"))
+            .await
+            .into_iter()
+            .filter(|d| d["id"] == delete["id"])
+            .collect();
+        if proof.is_some() {
+            assert_eq!(forwarded, vec![delete], "forwarded as it arrived");
+        } else {
+            assert!(forwarded.is_empty(), "{forwarded:?}");
+        }
+    }
 }
 
 /// A local quote of a local post names it as `TagManager#uri_for` does: by

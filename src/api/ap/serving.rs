@@ -333,8 +333,8 @@ pub fn federation() -> Federation<AppState> {
         })
         // A relayed activity is taken on its Linked Data Signature before its
         // FEP-8b32 proof, as `ActivityPub::ProcessActivityService` checks
-        // them, so that one carrying both can be passed on (`forwardable`):
-        // Mastodon forwards only what it took on the signature.
+        // them, so that one carrying both is passed on with its signature
+        // (`forwardable`).
         .linked_data_before_proof()
         // A domain this instance does not federate with (`domain_not_allowed?`:
         // suspended, or off the allow list in limited federation mode): a
@@ -411,7 +411,7 @@ pub fn federation() -> Federation<AppState> {
     // No `forward` hook: ojak would pass on an activity by whom it is
     // addressed to (ActivityPub §7.1.2). Mastodon forwards by what the
     // activity is about instead, whoever it is addressed to, and only one
-    // that carries its Linked Data signature: a reply to a local post
+    // that carries its Linked Data signature or FEP-8b32 proof: a reply to a local post
     // (`Create#forward_for_reply`), and a `Delete` or `Update` of a post
     // local accounts shared (`ActivityPub::Forwarder`). Their handlers pass
     // those on.
@@ -711,34 +711,38 @@ pub fn federation() -> Federation<AppState> {
     builder.build().expect("eunha's federation is well formed")
 }
 
-/// Whether what `received` carries of its Linked Data signature is kept for
-/// passing it on (`ActivityPub::ProcessActivityService`). Delivered by its
-/// own server, the signature is kept unchecked, as Mastodon keeps it, while
-/// the activity reads as it arrived (`safe_for_forwarding?`): anything
-/// embedded that its sender could not vouch for was reduced to its id, and
-/// the signature no longer covers that. Passed on by another server, it is
-/// kept when it is what the activity was taken on, and what was signed is
-/// then the activity as it arrived rather than the JSON-LD reading of it the
-/// listener reads, kept only for the activities eunha may pass on: a `Create`
-/// of a reply to something here, and a `Delete` or `Update`. Taken on its
-/// proof, or as its origin serves it, Mastodon would not have kept it.
+/// What of `received` is kept for passing it on (`ActivityPub::
+/// ProcessActivityService`'s `forwardable_json`). Delivered by its own
+/// server, the activity as it arrived, when it carries a Linked Data
+/// signature or an FEP-8b32 proof, neither checked, as Mastodon keeps it.
+/// Passed on by another server, the activity as it arrived when it was taken
+/// on its signature, which covers that and not the JSON-LD reading of it the
+/// listener reads, and as it arrived without its signature when it was taken
+/// on its proof (the signature did not verify, and leaving it out does not
+/// break the proof). Kept apart from what is read only for the activities
+/// eunha may pass on: a `Create` of a reply to something here, and a
+/// `Delete` or `Update`. Taken as its origin serves it, nothing is kept.
 fn forwardable(
     state: &AppState,
     received: &ojak::federation::Received<ojak_vocab::generated::AnyObject>,
 ) -> super::inbox::Forwardable {
     use super::inbox::Forwardable;
     use ojak::federation::VouchedBy;
-    if !received
-        .document
-        .get("signature")
-        .is_some_and(Value::is_object)
-    {
+    let document = &received.document;
+    if !super::inbox::signed_in_itself(document) {
         return Forwardable::No;
     }
     match received.vouched_by {
-        VouchedBy::Signature if received.vouched == received.document => Forwardable::AsGiven,
-        VouchedBy::LinkedData if may_be_passed_on(state, &received.document) => {
-            Forwardable::AsSent(received.document.clone())
+        VouchedBy::Signature if received.vouched == *document => Forwardable::AsGiven,
+        VouchedBy::Signature | VouchedBy::LinkedData if may_be_passed_on(state, document) => {
+            Forwardable::AsSent(document.clone())
+        }
+        VouchedBy::Proof if may_be_passed_on(state, document) => {
+            let mut sent = document.clone();
+            if let Some(members) = sent.as_object_mut() {
+                members.remove("signature");
+            }
+            Forwardable::AsSent(sent)
         }
         _ => Forwardable::No,
     }

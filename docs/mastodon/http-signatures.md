@@ -36,9 +36,11 @@ FEP-8b32 proof is attached first and the signature covers it, the order
 Fedify uses; a verifier of either leaves the other out.
 
 For forwarded activities, eunha checks the Linked Data signature before an
-FEP-8b32 proof, matching Mastodon's forwarding behavior. If neither verifies,
-Ojak tries the original at the activity's origin. An enabled relay can
-deliver posts from accounts nobody on the instance follows.
+FEP-8b32 proof, as Mastodon does. Either one lets eunha pass the activity on
+in turn: with its signature when that verified, and without it when only the
+proof did ([inbound statuses](./inbound-statuses.md#replies-passed-on)). If
+neither verifies, Ojak tries the original at the activity's origin. An enabled
+relay can deliver posts from accounts nobody on the instance follows.
 
 eunha enables bounded remote context loading for Linked Data verification
 and caches those contexts in Redis. An activity accepted on its Linked Data

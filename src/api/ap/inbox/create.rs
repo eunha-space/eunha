@@ -848,8 +848,8 @@ async fn create_locked(
 
     // `forward_for_reply`: a public or unlisted reply to a local post goes on
     // to its author's followers, however it is addressed, when it carries
-    // its Linked Data signature, so that they can tell who wrote it. What we
-    // fetched carries none.
+    // its Linked Data signature or FEP-8b32 proof (`forwardable_json`), so
+    // that they can tell who wrote it. What we fetched carries neither.
     if let Some(replied_to) = replied_to.as_ref().filter(|r| r.is_local) {
         if !create_options.fetched
             && matches!(
@@ -870,10 +870,11 @@ async fn create_locked(
     Ok(())
 }
 
-/// `ActivityPub::RawDistributionWorker.perform_async(JSON.generate(@json),
-/// replied_to_status.account_id, [@account.preferred_inbox_url])`: the
-/// activity as its sender signed it, to the followers of the local author
-/// `author_id` it replies to, signed by them, but for the sender's own inbox.
+/// `ActivityPub::RawDistributionWorker.perform_async(JSON.generate(
+/// @options[:forwardable_json]), replied_to_status.account_id,
+/// [@account.preferred_inbox_url])`: the activity as its sender signed or
+/// proved it, to the followers of the local author `author_id` it replies
+/// to, signed by them, but for the sender's own inbox.
 async fn forward_for_reply(state: &AppState, activity: &Value, author_id: i64, sender_id: i64) {
     let Some(activity) = super::signed_as_sent(activity) else {
         return;

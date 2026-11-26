@@ -1121,8 +1121,10 @@ pub(super) async fn revoke_by_stamp(
     let Some(quote) = crate::quotes::find(&state.db, quote_id).await? else {
         return Ok(false);
     };
-    // `ActivityPub::Forwarder.new(@account, @json, @quote.status).forward!
-    // if @quote.status.present?`, whether or not the Delete is signed.
+    // `ActivityPub::Forwarder.new(@account, @options[:forwardable_json],
+    // @quote.status).forward! if @quote.status.present?`, whatever the
+    // quoting post's visibility; `forward` sends nothing when nothing was
+    // kept to be forwarded.
     let quoting_live = sqlx::query_scalar!(
         "SELECT id FROM statuses WHERE id = $1 AND deleted_at IS NULL",
         quote.status_id,

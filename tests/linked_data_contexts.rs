@@ -145,9 +145,11 @@ async fn test_a_relayed_post_is_checked_over_a_fetched_context() {
     let (bob, bob_key) = seed_remote(&ctx, "bob", "bob.invalid").await;
     let (relay, relay_key) = seed_remote(&ctx, "relay", "relay.invalid").await;
     sqlx::query(
-        "INSERT INTO relays (inbox_url, state, created_at, updated_at) VALUES ($1, 2, now(), now())",
+        "INSERT INTO relays (inbox_url, account_id, state, created_at, updated_at)
+         SELECT $1, id, 2, now(), now() FROM accounts WHERE uri = $2",
     )
     .bind(format!("{relay}/inbox"))
+    .bind(&relay)
     .execute(&ctx.db)
     .await
     .unwrap();
@@ -228,10 +230,11 @@ async fn test_a_relayed_post_is_checked_over_a_fetched_context() {
 
 /// Relayed with both its author's Linked Data signature and an FEP-8b32
 /// proof, a reply to a local post is taken on the signature, as
-/// `ActivityPub::ProcessActivityService` checks it before the proof, and so
-/// is passed on to the local author's followers (`forward_for_reply`). The
-/// same reply with only its proof is taken on it, and not passed on: what
-/// Mastodon forwards is what it took on a Linked Data signature.
+/// `ActivityPub::ProcessActivityService` checks it before the proof, and is
+/// passed on to the local author's followers (`forward_for_reply`) as it
+/// arrived. The same reply with only its proof is taken on it, and passed on
+/// as it arrived too; with its proof and a signature that does not verify,
+/// it is passed on without the signature (`forwardable_json`).
 #[tokio::test]
 async fn test_a_relayed_reply_is_taken_on_its_signature_before_its_proof() {
     use ojak::sig::integrity;
@@ -391,12 +394,43 @@ async fn test_a_relayed_reply_is_taken_on_its_signature_before_its_proof() {
     assert_eq!(queued.len(), before + 1, "forwarded to alice's follower");
     assert_eq!(queued.last().unwrap(), &both, "as bob signed it");
 
-    // Proved only: taken on the proof, and passed on to nobody.
+    // Proved only: taken on the proof, and passed on as it arrived.
+    let proved = prove(&reply(2));
     let resp = ctx
         .api
-        .post_signed("/inbox", &prove(&reply(2)), &relay_key_id, &relay_key)
+        .post_signed("/inbox", &proved, &relay_key_id, &relay_key)
         .await;
     assert_eq!(resp.status(), 202);
     assert!(stored(&ctx, &bob, 2).await, "taken on bob's proof");
-    assert_eq!(forwarded().await.len(), before + 1, "not forwarded");
+    let queued = forwarded().await;
+    assert_eq!(queued.len(), before + 2, "forwarded on its proof");
+    assert_eq!(queued.last().unwrap(), &proved, "as bob proved it");
+
+    // Proved, then signed by a key that is not bob's: the signature does not
+    // verify, the proof does, and what is passed on is the activity without
+    // the signature, which the proof never covered.
+    let proved = prove(&reply(3));
+    let (forged, _) = ojak::sig::signature::generate_rsa_keypair(&mut rand::rand_core::UnwrapErr(
+        rand::rngs::SysRng,
+    ))
+    .unwrap();
+    let missigned = ojak::sig::linked_data::sign(
+        &ojak_jsonld::Registry::bundled(),
+        &proved,
+        &format!("{bob}#main-key"),
+        &ojak::sig::PrivateKey::from_pem(&forged).unwrap(),
+        now,
+        now + ojak::sig::linked_data::DEFAULT_LIFETIME_SECONDS,
+    )
+    .unwrap();
+    assert!(missigned.get("signature").is_some());
+    let resp = ctx
+        .api
+        .post_signed("/inbox", &missigned, &relay_key_id, &relay_key)
+        .await;
+    assert_eq!(resp.status(), 202);
+    assert!(stored(&ctx, &bob, 3).await, "taken on bob's proof");
+    let queued = forwarded().await;
+    assert_eq!(queued.len(), before + 3, "forwarded on its proof");
+    assert_eq!(queued.last().unwrap(), &proved, "without the signature");
 }

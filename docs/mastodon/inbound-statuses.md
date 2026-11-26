@@ -105,9 +105,10 @@ Replies passed on
 A new public or unlisted reply to a local post goes on to the local
 author's remote followers, signed by the author, whoever it is addressed to
 (`Create#forward_for_reply`, sent as `ActivityPub::RawDistributionWorker`
-sends it). It goes only when it carries its author's Linked Data signature,
-so that the followers can tell who wrote it, and as it arrived, so that the
-signature still verifies; the inbox of the server that sent it is left out.
+sends it). It goes only when it carries its author's Linked Data signature
+or FEP-8b32 proof, so that the followers can tell who wrote it, and as it
+arrived, so that it still verifies; the inbox of the server that sent it is
+left out.
 The followers are all of the author's remote ActivityPub followers
 (`followers.inboxes`), those suspended by their own server and those whose
 deletion was requested among them, as for `ActivityPub::Forwarder`; only a
@@ -116,19 +117,23 @@ for its `Delete`. It is passed on once, as the status is created: delivered
 again, the status is known and nothing is sent. A reply that is followers-only
 or direct, unsigned, fetched, or to a post that is not local, is not passed on.
 
-Whether an activity keeps its signature is decided as it arrives, as
-`ActivityPub::ProcessActivityService` decides it. Delivered by its own
-server, its signature is kept unchecked, and the receivers check it; but
-not when the inbox reduced anything it embeds that its sender could not
-vouch for, since the signature does not cover what is left
-(`safe_for_forwarding?`). Passed on by another server, it keeps its
-signature only when that is what it was taken on, and then what is passed on
-is the activity as it arrived, not the JSON-LD reading of it the handlers
-read. Its Linked Data signature is checked before an FEP-8b32 proof, as
-Mastodon checks them, so one that carries both is taken on the signature
-and can be passed on. Taken on its proof, or as its origin serves it, it
-keeps none. The same rule decides the `Delete` and `Update` that
-`ActivityPub::Forwarder` passes on (*docs/mastodon/quotes.md*).
+What of an activity may be passed on is decided as it arrives, as
+`ActivityPub::ProcessActivityService` decides its `forwardable_json`.
+Delivered by its own server, it is the activity as it arrived, when it
+carries a Linked Data signature or an FEP-8b32 proof, neither checked: the
+receivers check them. Passed on by another server, its Linked Data signature
+is checked before its proof. Taken on the signature, it is the activity as it
+arrived, signature and any proof, rather than the JSON-LD reading of it the
+handlers read. Taken on its proof, it is the activity as it arrived without
+the signature that did not verify, which the proof does not cover. Taken as
+its origin serves it, nothing is passed on. The same rule decides the
+`Delete` and `Update` that `ActivityPub::Forwarder` passes on
+(*docs/mastodon/quotes.md*).
+
+Mastodon passes on the compacted JSON-LD reading of an activity it took on
+its Linked Data signature alone; eunha passes on the activity as it arrived,
+which the signature verifies just the same (*divergences.toml*,
+`forwarded-as-it-arrived`).
 
 ActivityPub's own rule (§7.1.2), forwarding what is addressed to a local
 followers collection, is not followed: Mastodon forwards by what a reply
