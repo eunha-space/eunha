@@ -460,12 +460,20 @@ export function deleteAccount(token: string, id: string) {
 
 export type AccountActionType = 'none' | 'disable' | 'sensitive' | 'silence' | 'suspend'
 
-export interface AccountActionParams {
-  type: AccountActionType
-  report_id?: string
+/** What the strike and its email carry, for an action taken from a report. */
+export interface StrikeOptions {
   warning_preset_id?: string
   text?: string
   send_email_notification?: boolean
+  /** Whether the strike cites the reported posts. */
+  include_statuses?: boolean
+  /** Whether the strike's email names the report's category and rules. */
+  include_rule_violations?: boolean
+}
+
+export interface AccountActionParams extends StrikeOptions {
+  type: AccountActionType
+  report_id?: string
 }
 
 export function accountAction(token: string, id: string, params: AccountActionParams) {
@@ -999,19 +1007,23 @@ export function getActionLogFilters(token: string) {
   )
 }
 
+/** `Admin::ModerationAction::TYPES`: acting on what a report cites. */
+export type ModerationActionType = 'delete' | 'mark_as_sensitive'
+
 /**
- * `Admin::Reports::ActionsController`: remove or mark sensitive what the
- * report cites, or limit or suspend its account. Answers with the report.
+ * Mastodon's moderation action form given a report: remove or mark sensitive
+ * what the report cites, or limit or suspend its account. Answers with the
+ * report.
  */
 export function reportModerationAction(
   token: string,
   reportId: string,
-  action: 'delete' | 'mark_as_sensitive' | 'silence' | 'suspend',
-  text?: string,
+  action: ModerationActionType | 'silence' | 'suspend',
+  options: StrikeOptions = {},
 ) {
   return json<AdminReport>(token, 'POST', `/api/v1/admin/reports/${reportId}/actions`, {
     moderation_action: action,
-    text,
+    ...options,
   })
 }
 

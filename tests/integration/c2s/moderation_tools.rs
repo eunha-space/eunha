@@ -1206,3 +1206,149 @@ async fn test_report_moderation_actions() {
     .await;
     assert_eq!(entries[0]["text"], "alice removed post by bob");
 }
+
+/// The newest strike against bob: its text, the posts it cites, and
+/// whether its email names the report's rules.
+async fn last_strike(ctx: &TestContext) -> (String, Option<Vec<String>>, bool) {
+    sqlx::query_as(
+        "SELECT text, status_ids, include_rule_violations FROM account_warnings
+         WHERE target_account_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(id(&ctx.bob_id))
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap()
+}
+
+/// The mails sent to bob once there are more than `before` of them.
+async fn bob_mails_after(ctx: &TestContext, before: usize) -> Vec<eunha::email::SentMail> {
+    for _ in 0..50 {
+        let mails = ctx.sent_to("bob@test.invalid");
+        if mails.len() > before {
+            return mails;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("no new mail to bob");
+}
+
+/// Mastodon 5.0's moderation action form, given a report: a preset leads the
+/// strike's text; `include_statuses` decides whether the strike cites the
+/// reported posts (which are removed either way); `include_rule_violations`,
+/// kept on the strike, whether its email names the report's category and
+/// rules.
+#[tokio::test]
+async fn test_moderation_action_form_options() {
+    let ctx = TestContext::new("tools-action-form").await;
+    make_admin(&ctx).await;
+    let (_, carol_token) =
+        crate::helpers::seed_user(&ctx.db, &ctx.domain, "carol", "carol@test.invalid").await;
+    let rule: i64 = sqlx::query_scalar(
+        "INSERT INTO rules (text, hint, priority, created_at, updated_at)
+         VALUES ('No shouting', '', 0, now(), now()) RETURNING id",
+    )
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    let preset = json_ok(
+        ctx.api
+            .post_json(
+                "/api/v1/admin/warning_presets",
+                Some(&ctx.alice_token),
+                &json!({"title": "Loud", "text": "Please keep it down."}),
+            )
+            .await,
+    )
+    .await;
+    let report_on = async |status: &Value| -> String {
+        let report = file_report(
+            &ctx,
+            &carol_token,
+            json!({"account_id": ctx.bob_id, "status_ids": [status["id"]],
+                   "rule_ids": [rule.to_string()]}),
+        )
+        .await;
+        report["id"].as_str().unwrap().to_owned()
+    };
+
+    // Removing the reported post without citing it or the rules.
+    let loud = ctx.api.post_status(&ctx.bob_token, "LOUD", "public").await;
+    let rid = report_on(&loud).await;
+    json_ok(
+        ctx.api
+            .post_json(
+                &format!("/api/v1/admin/reports/{rid}/actions"),
+                Some(&ctx.alice_token),
+                &json!({"moderation_action": "delete", "text": "Thanks.",
+                        "warning_preset_id": preset["id"], "include_statuses": false,
+                        "include_rule_violations": "0"}),
+            )
+            .await,
+    )
+    .await;
+    assert_eq!(
+        last_strike(&ctx).await,
+        ("Please keep it down.\n\nThanks.".to_string(), None, false)
+    );
+    let removed: bool =
+        sqlx::query_scalar("SELECT deleted_at IS NOT NULL FROM statuses WHERE id = $1")
+            .bind(id(loud["id"].as_str().unwrap()))
+            .fetch_one(&ctx.db)
+            .await
+            .unwrap();
+    assert!(removed, "the reported post is removed all the same");
+    let mail = ctx
+        .mail_to("bob@test.invalid", "have been removed")
+        .await
+        .expect("the strike's mail");
+    assert!(mail.html.contains("Please keep it down."), "{}", mail.html);
+    assert!(!mail.html.contains("Reason:"), "{}", mail.html);
+    assert!(!mail.html.contains("No shouting"), "{}", mail.html);
+
+    // A warning from a report names the rules and cites the post by default.
+    let louder = ctx
+        .api
+        .post_status(&ctx.bob_token, "LOUDER", "public")
+        .await;
+    let rid = report_on(&louder).await;
+    let warn = async |include: bool| {
+        json_ok(
+            ctx.api
+                .post_json(
+                    &format!("/api/v1/admin/accounts/{}/action", ctx.bob_id),
+                    Some(&ctx.alice_token),
+                    &if include {
+                        json!({"type": "none", "report_id": rid, "text": "Last warning."})
+                    } else {
+                        json!({"type": "none", "report_id": rid, "text": "Last warning.",
+                               "include_statuses": false, "include_rule_violations": false})
+                    },
+                )
+                .await,
+        )
+        .await;
+    };
+    let before = ctx.sent_to("bob@test.invalid").len();
+    warn(true).await;
+    let (_, status_ids, rules) = last_strike(&ctx).await;
+    assert_eq!(
+        status_ids,
+        Some(vec![louder["id"].as_str().unwrap().to_owned()])
+    );
+    assert!(rules);
+    let mail = bob_mails_after(&ctx, before).await.pop().unwrap();
+    assert!(mail.subject.contains("Warning for"), "{}", mail.subject);
+    assert!(mail.html.contains("Reason:"), "{}", mail.html);
+    assert!(mail.html.contains("No shouting"), "{}", mail.html);
+
+    // And without them, neither.
+    let before = ctx.sent_to("bob@test.invalid").len();
+    warn(false).await;
+    let (_, status_ids, rules) = last_strike(&ctx).await;
+    assert_eq!(status_ids, None);
+    assert!(!rules);
+    let mail = bob_mails_after(&ctx, before).await.pop().unwrap();
+    assert!(mail.subject.contains("Warning for"), "{}", mail.subject);
+    assert!(!mail.html.contains("Reason:"), "{}", mail.html);
+    assert!(!mail.html.contains("No shouting"), "{}", mail.html);
+}

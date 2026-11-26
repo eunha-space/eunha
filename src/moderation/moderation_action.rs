@@ -24,15 +24,52 @@ struct CollectionRow {
     local: bool,
 }
 
+/// What `Admin::ModerationAction` is given besides the report and the
+/// moderator.
+#[derive(Debug, Clone)]
+pub struct ModerationAction {
+    /// `delete` or `mark_as_sensitive`.
+    pub kind: String,
+    pub text: Option<String>,
+    /// A preset whose text leads the strike's (`text_for_warning`).
+    pub warning_preset_id: Option<i64>,
+    /// `attribute :send_email_notification, :boolean, default: true`.
+    pub send_email_notification: bool,
+    /// `attribute :include_statuses, :boolean, default: true`: whether the
+    /// strike cites the report's posts.
+    pub include_statuses: bool,
+    /// `attribute :include_rule_violations, :boolean, default: true`: whether
+    /// the strike's email names the report's category and rules.
+    pub include_rule_violations: bool,
+}
+
+impl ModerationAction {
+    /// `kind`, with every other attribute at its default.
+    pub fn new(kind: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            text: None,
+            warning_preset_id: None,
+            send_email_notification: true,
+            include_statuses: true,
+            include_rule_violations: true,
+        }
+    }
+}
+
 /// `Admin::ModerationAction#save!` on report `report_id`, by `actor_id`.
+///
+/// Without `include_statuses` the strike cites no posts, but the reported
+/// posts are still the ones removed or marked: upstream reads the posts to
+/// act on from the same `status_ids`, and so acts on none
+/// (`moderation-action-without-cited-posts`).
 pub async fn save(
     state: &AppState,
     actor_id: i64,
     report_id: i64,
-    kind: &str,
-    text: Option<String>,
-    send_email_notification: bool,
+    action: ModerationAction,
 ) -> AppResult<()> {
+    let kind = action.kind.as_str();
     // `validates :type, presence: true, inclusion: { in: TYPES }`.
     if kind.is_empty() {
         return Err(AppError::Unprocessable(
@@ -97,12 +134,30 @@ pub async fn save(
             )
         })
     };
+    // `text_for_warning`: `AccountWarningPreset.find(warning_preset_id)`,
+    // whose text leads the moderator's, a blank line between.
+    let preset_text = match action.warning_preset_id {
+        Some(id) => Some(
+            sqlx::query_scalar!("SELECT text FROM account_warning_presets WHERE id = $1", id)
+                .fetch_optional(&state.db)
+                .await?
+                .ok_or(AppError::NotFound)?,
+        ),
+        None => None,
+    };
+    let text = [preset_text, action.text.clone()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let acting = role::acting(&state.db, actor_id).await?;
     // `Admin::StatusPolicy#destroy?` / `#update?` and the collection policy's:
     // `manage_reports`, asked once per post and collection.
     let may = acting.can(&[flag::MANAGE_REPORTS]);
-    let text = text.unwrap_or_default();
-    let status_ids: Vec<String> = report.status_ids.iter().map(i64::to_string).collect();
+    // `report.status_ids if include_statuses?`.
+    let status_ids: Option<Vec<String>> = action
+        .include_statuses
+        .then(|| report.status_ids.iter().map(i64::to_string).collect());
 
     let strike_action = if kind == "delete" {
         warning_action::DELETE_STATUSES
@@ -263,15 +318,16 @@ pub async fn save(
     let warning_id = sqlx::query_scalar!(
         r#"INSERT INTO account_warnings
              (account_id, target_account_id, report_id, action, text, status_ids,
-              created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+              include_rule_violations, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
            RETURNING id"#,
         actor_id,
         target.id,
         report_id,
         strike_action,
         text,
-        &status_ids,
+        status_ids.as_deref(),
+        action.include_rule_violations,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -320,7 +376,7 @@ pub async fn save(
     .await;
 
     // `process_notification!`.
-    if send_email_notification && target.is_local() {
+    if action.send_email_notification && target.is_local() {
         let user = sqlx::query_as!(
             super::account_action::UserRow,
             "SELECT id, email FROM users WHERE account_id = $1",
@@ -335,7 +391,9 @@ pub async fn save(
             warning_id,
             warning_action::to_str(strike_action),
             &text,
-            Some((report.category, report.rule_ids.clone().unwrap_or_default())),
+            action
+                .include_rule_violations
+                .then(|| (report.category, report.rule_ids.clone().unwrap_or_default())),
         )
         .await;
     }

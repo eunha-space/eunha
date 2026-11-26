@@ -2414,3 +2414,48 @@ why = "A post that starts by addressing someone is a reply in all but name. Twit
 evidence = "tests/integration/c2s/leading_mentions.rs"
 since = "5.0.0-beta.1"
 reviewed_for = "5.0.0-beta.1"
+
+[[divergence]]
+id = "moderation-action-without-cited-posts"
+kind = "behaviour"
+summary = "Removes or marks the reported posts even when the strike does not cite them"
+mastodon = """
+`Admin::ModerationAction` reads the posts to delete or mark sensitive from \
+`status_ids`, which is `report.status_ids if include_statuses?`. With the \
+moderation action form's `include_statuses` unchecked, which the form also \
+does when the email is turned off or the account is remote, it resolves the \
+report and records a `delete_statuses` or `mark_statuses_as_sensitive` \
+strike, but leaves every reported post as it was."""
+eunha = """
+Without `include_statuses` the strike cites no posts, and the reported posts \
+are removed or marked sensitive all the same."""
+why = """
+The form labels `include_statuses` as including the reported posts in the \
+email. A strike saying posts were removed, over posts that were not, is a \
+bug, not a choice."""
+evidence = "tests/integration/c2s/moderation_tools.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"
+
+[[divergence]]
+id = "account-action-form-options"
+kind = "addition"
+summary = "Takes the action form's include_statuses and include_rule_violations over the REST API"
+mastodon = """
+`POST /api/v1/admin/accounts/:id/action` permits neither `include_statuses` \
+nor `include_rule_violations`, so both stay true. Only the server-rendered \
+moderation action form sets them, and a checkbox it does not render (no \
+report, a remote account, a report that cites no rules) is left unset, which \
+`!!include_rule_violations` and `include_statuses?` read as false: a strike \
+from a spam report made there mails no reason."""
+eunha = """
+`POST /api/v1/admin/accounts/:id/action` and `POST \
+/api/v1/admin/reports/:id/actions` take both, true unless given, and the \
+web client's action dialog sends only what it shows."""
+why = """
+eunha's web client stands in for the server-rendered form and needs an API \
+to send the form's choices. A choice the moderator was never offered should \
+not take something out of the email."""
+evidence = "tests/integration/c2s/moderation_tools.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"

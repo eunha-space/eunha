@@ -2,6 +2,7 @@
 //!
 //! Mastodon: app/controllers/api/v1/admin/reports_controller.rb
 //! Mastodon: app/controllers/admin/reports/actions_controller.rb
+//! Mastodon: app/controllers/admin/accounts/moderation_actions_controller.rb
 //! Mastodon: app/serializers/rest/admin/report_serializer.rb
 //! Mastodon: app/models/report_filter.rb, app/policies/report_policy.rb
 
@@ -431,12 +432,23 @@ pub struct ReportActionForm {
     /// `delete`, `mark_as_sensitive`, `silence` or `suspend`.
     pub moderation_action: Option<String>,
     pub text: Option<String>,
+    pub warning_preset_id: Option<FlexId>,
+    /// Defaults to whether the report is not spam, as the buttons on
+    /// upstream's report page did before 5.0.
+    pub send_email_notification: Option<FlexBool>,
+    pub include_statuses: Option<FlexBool>,
+    pub include_rule_violations: Option<FlexBool>,
 }
 
-/// `Admin::Reports::ActionsController#create`: removing or marking sensitive
-/// what the report cites (`Admin::ModerationAction`), or limiting or
-/// suspending its account (`Admin::AccountAction`). A spam report's account
-/// is not notified. eunha's own endpoint; see `moderation-tools-rest-api`.
+/// Mastodon 5.0's moderation action form given a report
+/// (`Admin::Accounts::ModerationActionsController#create` with a `report_id`):
+/// removing or marking sensitive what the report cites
+/// (`Admin::ModerationAction`), or limiting or suspending its account
+/// (`Admin::AccountAction`). Each takes the form's warning preset, text and
+/// email switch, and whether the strike cites the reported posts
+/// (`include_statuses`) and its email the report's category and rules
+/// (`include_rule_violations`). eunha's own endpoint; see
+/// `moderation-tools-rest-api`.
 pub async fn report_moderation_action(
     state: AppState,
     Extension(auth): Extension<AuthenticatedUser>,
@@ -448,16 +460,26 @@ pub async fn report_moderation_action(
     // `authorize @report, :show?`
     super::require_permission(&state, auth.account_id, flag::MANAGE_REPORTS).await?;
     let kind = form.moderation_action.unwrap_or_default();
-    let send_email_notification = report.category != report_category::SPAM;
+    let send_email_notification = form
+        .send_email_notification
+        .map_or(report.category != report_category::SPAM, |b| b.0);
+    let include_statuses = form.include_statuses.is_none_or(|b| b.0);
+    let include_rule_violations = form.include_rule_violations.is_none_or(|b| b.0);
+    let warning_preset_id = form.warning_preset_id.map(|id| id.0);
     match kind.as_str() {
         "delete" | "mark_as_sensitive" => {
             crate::moderation::moderation_action::save(
                 &state,
                 auth.account_id,
                 id,
-                &kind,
-                form.text,
-                send_email_notification,
+                crate::moderation::moderation_action::ModerationAction {
+                    kind,
+                    text: form.text,
+                    warning_preset_id,
+                    send_email_notification,
+                    include_statuses,
+                    include_rule_violations,
+                },
             )
             .await?;
         }
@@ -476,9 +498,11 @@ pub async fn report_moderation_action(
                 crate::moderation::account_action::AccountAction {
                     kind: Some(kind),
                     report_id: Some(id),
+                    warning_preset_id,
                     text: form.text,
                     send_email_notification,
-                    ..Default::default()
+                    include_statuses,
+                    include_rule_violations,
                 },
             )
             .await?;

@@ -46,16 +46,34 @@ Account actions
 `POST /api/v1/admin/accounts/:id/action` does what Mastodon's
 `Admin::AccountAction` does. It takes a `type`: `none` (a warning),
 `disable`, `sensitive`, `silence` or `suspend`. Optional fields are a
-`report_id`, a `warning_preset_id`, a `text`, and `send_email_notification`.
-Each action:
+`report_id`, a `warning_preset_id`, a `text`, and `send_email_notification`,
+and, as Mastodon's admin form has them but not its API, `include_statuses` and
+`include_rule_violations`, both true unless given. Each action:
 
- -  records a strike in `account_warnings`, citing the report's posts;
+ -  records a strike in `account_warnings`, citing the report's posts unless
+    `include_statuses` is false;
  -  writes an `admin_action_logs` entry for the action, and one for each
     report it resolves;
  -  resolves the report it came from, if it is a warning, and otherwise every
     open report about the account;
  -  for a local account, sends a `moderation_warning` notification, and an
     email unless `send_email_notification` is false.
+
+The email gives the strike's text, and, when the strike came from a report
+that is not `other`, its category as the reason, with the rules it cites if
+it is a `violation`. With `include_rule_violations` false the reason and the
+rules are left out; the strike keeps the choice
+(`account_warnings.include_rule_violations`). Neither the strike's REST
+entity nor the account's strike page shows it, as in Mastodon.
+
+The web client's action dialog is Mastodon 5.0's one moderation action form.
+Opened from a report it also offers deleting the reported posts or marking
+them sensitive (below), and, for a local account, whether the strike cites
+the reported posts and, for a report of broken rules, whether the email names
+them. Turning the email off hides the preset and text and leaves the posts
+out of the strike, as Mastodon's form does. A checkbox the dialog does not
+show is sent as true, where Mastodon's form leaves it unset and so false
+(`account-action-form-options`).
 
 Every action, a plain warning and `disable` included, needs a role that may
 manage users or reports and is positioned above the account's, because the
@@ -420,8 +438,9 @@ outranks the author's. Notes themselves are not logged.
 
 ### Acting on what a report cites
 
-`POST /api/v1/admin/reports/:id/actions` is Mastodon's report action buttons,
-for a role with `manage_reports`. Its `moderation_action` is one of:
+`POST /api/v1/admin/reports/:id/actions` is Mastodon's moderation action form
+given a report (before 5.0, the report's action buttons), for a role with
+`manage_reports`. Its `moderation_action` is one of:
 
  -  `delete`, which removes the reported posts and collections, logging each,
     and keeps a remote server from sending them again; a local account's
@@ -439,9 +458,14 @@ for a role with `manage_reports`. Its `moderation_action` is one of:
 The first two resolve the report and strike the account citing the posts,
 so they too need a role above the account's; refused, they change nothing,
 where Mastodon keeps what `mark_as_sensitive` did before the strike was
-refused. A
-`text` goes with the strike. The account is notified unless the report is
-spam.
+refused. Each takes the account action's `warning_preset_id`, `text`,
+`send_email_notification`, `include_statuses` and `include_rule_violations`:
+a preset leads the strike's text, a blank line before the moderator's.
+`send_email_notification` defaults to whether the report is not spam, as the
+buttons did. Without `include_statuses` the strike cites no posts, but the
+reported posts are still removed or marked; Mastodon 5.0 takes the posts to
+act on from the same list and so acts on none
+(`moderation-action-without-cited-posts`).
 
 ### The audit log
 

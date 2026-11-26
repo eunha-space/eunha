@@ -28,6 +28,9 @@ pub struct AccountAction {
     pub send_email_notification: bool,
     /// `attribute :include_statuses, :boolean, default: true`.
     pub include_statuses: bool,
+    /// `attribute :include_rule_violations, :boolean, default: true`: whether
+    /// the strike's email names the report's category and rules.
+    pub include_rule_violations: bool,
 }
 
 impl Default for AccountAction {
@@ -39,6 +42,7 @@ impl Default for AccountAction {
             text: None,
             send_email_notification: true,
             include_statuses: true,
+            include_rule_violations: true,
         }
     }
 }
@@ -194,8 +198,9 @@ pub async fn save(
     let strike_action = warning_action::parse(&kind).unwrap_or(warning_action::NONE);
     let warning_id = sqlx::query_scalar!(
         r#"INSERT INTO account_warnings
-             (account_id, target_account_id, report_id, action, text, status_ids, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, now(), now())
+             (account_id, target_account_id, report_id, action, text, status_ids,
+              include_rule_violations, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())
            RETURNING id"#,
         actor_id,
         target.id,
@@ -203,6 +208,7 @@ pub async fn save(
         strike_action,
         text,
         status_ids.as_deref(),
+        action.include_rule_violations,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -295,6 +301,7 @@ pub async fn save(
             &text,
             report
                 .as_ref()
+                .filter(|_| action.include_rule_violations)
                 .map(|r| (r.category, r.rule_ids.clone().unwrap_or_default())),
         )
         .await;
@@ -313,7 +320,10 @@ pub fn warn_policy(acting: &Role, target: Option<&Role>) -> bool {
     acting.can(&[flag::MANAGE_USERS, flag::MANAGE_REPORTS]) && acting.overrides(target)
 }
 
-/// `UserMailer.warning` and the `moderation_warning` notification.
+/// `UserMailer.warning` and the `moderation_warning` notification. `report`
+/// is the category and rules the mail gives as its reason: `None` when the
+/// strike has no report, or when it was made without
+/// `include_rule_violations`.
 pub(super) async fn notify(
     state: &AppState,
     target: &Account,
