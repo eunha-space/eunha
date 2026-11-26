@@ -269,10 +269,6 @@ pub fn router() -> Router {
             "/api/v1/accounts/{id}/in_collections",
             get(collections::account_in_collections),
         )
-        .route(
-            "/api/v1_alpha/accounts/{id}/in_collections",
-            get(collections::account_in_collections),
-        )
         // Collections (authenticated writes)
         .route("/api/v1/collections", post(collections::create_collection))
         .route(
@@ -291,30 +287,6 @@ pub fn router() -> Router {
         )
         .route(
             "/api/v1/collections/{collection_id}/items/{item_id}/revoke",
-            post(collections::revoke_collection_item),
-        )
-        // Mastodon routes collections under `/api/v1_alpha` too, to the same
-        // controllers.
-        .route(
-            "/api/v1_alpha/collections",
-            post(collections::create_collection),
-        )
-        .route(
-            "/api/v1_alpha/collections/{id}",
-            put(collections::update_collection)
-                .patch(collections::update_collection)
-                .delete(collections::delete_collection),
-        )
-        .route(
-            "/api/v1_alpha/collections/{id}/items",
-            post(collections::add_collection_item),
-        )
-        .route(
-            "/api/v1_alpha/collections/{collection_id}/items/{item_id}",
-            delete(collections::delete_collection_item),
-        )
-        .route(
-            "/api/v1_alpha/collections/{collection_id}/items/{item_id}/revoke",
             post(collections::revoke_collection_item),
         )
         // Preferences
@@ -1409,15 +1381,7 @@ pub fn router() -> Router {
             get(collections::account_collections),
         )
         .route(
-            "/api/v1_alpha/accounts/{id}/collections",
-            get(collections::account_collections),
-        )
-        .route(
             "/api/v1/collections/{id}",
-            get(collections::show_collection),
-        )
-        .route(
-            "/api/v1_alpha/collections/{id}",
             get(collections::show_collection),
         )
         // Statuses (public read)

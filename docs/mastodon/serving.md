@@ -153,6 +153,16 @@ An account's collections
     account consented to being in one at
     `/ap/users/{id}/feature_authorizations/{i}`.
 
+A collection and its items are not served while their owner is suspended
+or has asked to be deleted, nor to a signer the owner blocks
+(`CollectionPolicy#show?`). The REST API follows the same policy:
+`GET /api/v1/collections/:id` is a 403 then, and
+`GET /api/v1/accounts/:id/collections` a 404 for a suspended account
+(`Account.without_suspended`). Collections are served under `/api/v1` only:
+5.0.0-rc.2 dropped the `/api/v1_alpha` routes. The v2 instance states the
+local limits under `configuration.collections`: 25 items, a name of 40
+characters and a description of 100.
+
 eunha issues stamps at the `/ap/users/{id}` address, as Mastodon does, and
 still answers at `/users/{username}/collections` and
 `/users/{username}/feature_authorizations/{i}`, where it named these before;

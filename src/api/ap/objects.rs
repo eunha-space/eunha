@@ -21,7 +21,7 @@ pub const PUBLIC_COLLECTION: &str = "https://www.w3.org/ns/activitystreams#Publi
 
 /// The context extensions `ActivityPub::ActorSerializer` declares, in its
 /// order; the ones its nested serializers add follow them when they are used.
-const ACTOR_EXTENSIONS: [&str; 12] = [
+const ACTOR_EXTENSIONS: [&str; 13] = [
     "manually_approves_followers",
     "featured",
     "also_known_as",
@@ -34,6 +34,7 @@ const ACTOR_EXTENSIONS: [&str; 12] = [
     "attribution_domains",
     "profile_settings",
     "interaction_policies",
+    "actor_featured_collections",
 ];
 
 /// The `@context` of an actor document, as `ActivityPub::Adapter` folds it

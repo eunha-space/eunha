@@ -200,48 +200,64 @@ pub(crate) const DELIVERED_TO: &str = "eunha:deliveredToAccountId";
 /// `relayed_through_actor`.
 pub(crate) const RELAYED_THROUGH: &str = "eunha:relayedThroughActor";
 
-/// Set on an activity by eunha, and never taken from its sender, when it was
-/// taken on its Linked Data signature and may be passed on: the activity as
-/// it arrived, which is what the signature covers. The listener reads it as
-/// JSON-LD gave it, which no longer verifies.
+/// Set on an activity by eunha, and never taken from its sender: what of it
+/// may be passed on to other servers (Mastodon's `forwardable_json`), when
+/// that is not the activity itself. The activity as it arrived, when it was
+/// taken on its Linked Data signature, which covers that and not the
+/// JSON-LD reading the listener reads, or taken on its FEP-8b32 proof
+/// (without a signature that did not verify); `null` when nothing of it may
+/// be.
 pub(crate) const SIGNED_AS_SENT: &str = "eunha:signedAsSent";
 
 /// Whether, and as what, an activity that arrived can be passed on to other
-/// servers: Mastodon forwards an activity only while it keeps its Linked
-/// Data signature (`@json['signature'].present?`), which
-/// `ActivityPub::ProcessActivityService` throws away when the activity was
-/// passed on by another server and the signature does not verify, or when
-/// what is read of it is no longer what was signed (`safe_for_forwarding?`).
+/// servers: Mastodon forwards an activity only as `ActivityPub::
+/// ProcessActivityService` keeps it in `forwardable_json`. Delivered by its
+/// own server, that is the activity as it arrived when it carries a Linked
+/// Data signature or an FEP-8b32 proof, neither checked. Passed on by
+/// another server, it is the activity as it arrived when its proof verified,
+/// without its signature unless that verified too, or else what was read of
+/// it when its signature verified; nothing otherwise.
 pub enum Forwardable {
-    /// Its signature, if it has one, is not to be trusted to verify, and is
-    /// taken off.
+    /// Nothing of it is passed on, and a signature it has, not to be trusted
+    /// to verify, is taken off.
     No,
-    /// As it is given: what was signed, signature and all.
+    /// As it is given, signature or proof and all.
     AsGiven,
-    /// What was signed is this, the activity as it arrived.
+    /// This, the activity as it arrived or near it, and not what is read.
     AsSent(Value),
 }
 
-/// `activity` as it is passed on: as its sender signed it, when it was
-/// taken on its Linked Data signature, and otherwise without what eunha
-/// noted on it on arrival.
-pub(crate) fn as_sent(activity: &Value) -> Value {
-    if let Some(sent) = activity.get(SIGNED_AS_SENT) {
-        return sent.clone();
-    }
-    let mut activity = activity.clone();
-    if let Some(members) = activity.as_object_mut() {
-        members.remove(THROUGH_RELAY);
-        members.remove(DELIVERED_TO);
-        members.remove(RELAYED_THROUGH);
-    }
-    activity
+/// Whether `activity` carries a Linked Data signature or an FEP-8b32 proof,
+/// either of which lets a server it is passed on to tell who wrote it
+/// (`ActivityPub::Forwarder#forwardable?`: `@json['signature'].present? ||
+/// @json['proof'].present?`).
+pub(crate) fn signed_in_itself(activity: &Value) -> bool {
+    activity.get("signature").is_some_and(Value::is_object)
+        || activity.get("proof").is_some_and(|proof| match proof {
+            Value::Object(proof) => !proof.is_empty(),
+            Value::Array(proofs) => !proofs.is_empty(),
+            _ => false,
+        })
 }
 
-/// [`as_sent`], when `activity` carries a Linked Data signature that still
-/// holds (`@json['signature'].present?`).
+/// `activity` as it is passed on (`forwardable_json`), when it may be and
+/// carries a signature or proof of its own: what [`Forwardable`] kept, or
+/// the activity without what eunha noted on it on arrival.
 pub(crate) fn signed_as_sent(activity: &Value) -> Option<Value> {
-    Some(as_sent(activity)).filter(|sent| sent.get("signature").is_some_and(Value::is_object))
+    let sent = match activity.get(SIGNED_AS_SENT) {
+        Some(Value::Null) => return None,
+        Some(sent) => sent.clone(),
+        None => {
+            let mut activity = activity.clone();
+            if let Some(members) = activity.as_object_mut() {
+                members.remove(THROUGH_RELAY);
+                members.remove(DELIVERED_TO);
+                members.remove(RELAYED_THROUGH);
+            }
+            activity
+        }
+    };
+    Some(sent).filter(signed_in_itself)
 }
 
 /// `followed_by_local_accounts?`: someone here follows `account_id`, or the
@@ -287,6 +303,10 @@ pub async fn received_at(
         match forwardable {
             Forwardable::No => {
                 members.remove("signature");
+                // A proof stays, for what reads it, but is not passed on.
+                if members.contains_key("proof") {
+                    members.insert(SIGNED_AS_SENT.to_owned(), Value::Null);
+                }
             }
             Forwardable::AsGiven => {}
             Forwardable::AsSent(sent) => {

@@ -575,14 +575,24 @@ async fn test_discoverable_visibility() {
     );
 }
 
-/// Mastodon serves collections under `/api/v1_alpha` as well.
+/// The `/api/v1_alpha` collection routes are gone: only `/api/v1` serves
+/// collections.
 #[tokio::test]
-async fn test_collections_under_v1_alpha() {
+async fn test_collections_are_not_under_v1_alpha() {
     let ctx = TestContext::new("coll-alpha").await;
-    let body: Value = ctx
+    let resp = ctx
         .api
         .post_json(
             "/api/v1_alpha/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Alpha", "discoverable": true}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
             Some(&ctx.alice_token),
             &json!({"name": "Alpha", "discoverable": true}),
         )
@@ -591,19 +601,14 @@ async fn test_collections_under_v1_alpha() {
         .await
         .unwrap();
     let id = body["collection"]["id"].as_str().unwrap().to_owned();
-    let shown = ctx
-        .api
-        .get(&format!("/api/v1_alpha/collections/{id}"), None)
-        .await;
-    assert_eq!(shown.status(), StatusCode::OK);
-    let listed = ctx
-        .api
-        .get(
-            &format!("/api/v1_alpha/accounts/{}/collections", ctx.alice_id),
-            None,
-        )
-        .await;
-    assert_eq!(listed.status(), StatusCode::OK);
+    for path in [
+        format!("/api/v1_alpha/collections/{id}"),
+        format!("/api/v1_alpha/accounts/{}/collections", ctx.alice_id),
+        format!("/api/v1_alpha/accounts/{}/in_collections", ctx.alice_id),
+    ] {
+        let resp = ctx.api.get(&path, Some(&ctx.alice_token)).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "{path}");
+    }
 }
 
 /// `NotifyService` drops a notification when its recipient blocks the
@@ -884,4 +889,104 @@ async fn test_add_item_finds_the_account_as_mastodon_does() {
     )
     .await;
     assert_eq!(deleted.status(), StatusCode::NOT_FOUND);
+}
+
+/// `CollectionPolicy#show?` refuses a collection whose owner is suspended,
+/// or has asked to be deleted, to everyone, the owner included, and to a
+/// viewer the owner blocks; `CollectionsController#set_account` finds no
+/// suspended account (`Account.without_suspended`). The ActivityPub
+/// documents are not there either.
+#[tokio::test]
+async fn test_a_suspended_owners_collections_are_not_shown() {
+    let ctx = TestContext::new("coll-suspended").await;
+    let body: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/collections",
+            Some(&ctx.alice_token),
+            &json!({"name": "Mine", "discoverable": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = body["collection"]["id"].as_str().unwrap().to_owned();
+    let show = format!("/api/v1/collections/{id}");
+    let index = format!("/api/v1/accounts/{}/collections", ctx.alice_id);
+    let document = format!("/ap/users/{}/collections/{id}", ctx.alice_id);
+    assert_eq!(ctx.api.get(&show, None).await.status(), StatusCode::OK);
+    assert_eq!(
+        ctx.api.ap_get(&document, None).await.status(),
+        StatusCode::OK
+    );
+
+    // Blocked by the owner: refused to that viewer alone.
+    let resp = ctx
+        .api
+        .post_json(
+            &format!("/api/v1/accounts/{}/block", ctx.bob_id),
+            Some(&ctx.alice_token),
+            &json!({}),
+        )
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let resp = ctx.api.get(&show, Some(&ctx.bob_token)).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        ctx.api.get(&show, Some(&ctx.alice_token)).await.status(),
+        StatusCode::OK
+    );
+
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(ctx.alice_id.parse::<i64>().unwrap())
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let resp = ctx.api.get(&show, None).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body, json!({"error": "This action is not allowed"}));
+    assert_eq!(
+        ctx.api.get(&index, None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        ctx.api.ap_get(&document, None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+
+    // Unsuspended, but asked to be deleted: still not shown.
+    sqlx::query(
+        "UPDATE accounts SET suspended_at = NULL, requested_deletion_at = now() WHERE id = $1",
+    )
+    .bind(ctx.alice_id.parse::<i64>().unwrap())
+    .execute(&ctx.db)
+    .await
+    .unwrap();
+    assert_eq!(
+        ctx.api.get(&show, None).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        ctx.api.get(&index, None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+/// `configuration.collections` in the v2 instance: Mastodon's
+/// `Collection::MAX_ITEMS` and local name and description limits.
+#[tokio::test]
+async fn test_the_instance_states_the_collection_limits() {
+    let ctx = TestContext::new("coll-instance").await;
+    let instance: Value = ctx
+        .api
+        .get("/api/v2/instance", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        instance["configuration"]["collections"],
+        json!({"max_items": 25, "max_name_length": 40, "max_description_length": 100})
+    );
 }

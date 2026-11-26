@@ -1,8 +1,10 @@
 //! `ActivityPub::Forwarder`: another server's activity about a status that
 //! local accounts shared is passed on to their followers, who may have the
 //! status only through them. Mastodon forwards a remote status's `Delete` and
-//! edit (`Update`) when the activity carries a Linked Data Signature
-//! (`forwardable?`), and a quote stamp's `Delete` always.
+//! edit (`Update`), and a quote stamp's `Delete`, as `ActivityPub::
+//! ProcessActivityService` kept it to be forwarded (`forwardable_json`):
+//! when it carries a Linked Data signature or an FEP-8b32 proof
+//! (`forwardable?`).
 //!
 //! Mastodon: app/lib/activitypub/forwarder.rb
 
@@ -11,8 +13,9 @@ use serde_json::Value;
 use crate::db::models::vis;
 use crate::state::AppState;
 
-/// `forwardable?`: the activity is signed in itself, so the followers it is
-/// passed on to can tell who wrote it, and the status is public or unlisted.
+/// `forwardable?`: the activity is signed or proved in itself, so the
+/// followers it is passed on to can tell who wrote it, and the status is
+/// public or unlisted.
 pub async fn forwardable(state: &AppState, activity: &Value, status_id: i64) -> bool {
     if crate::api::ap::inbox::signed_as_sent(activity).is_none() {
         return false;
@@ -29,7 +32,9 @@ pub async fn forwardable(state: &AppState, activity: &Value, status_id: i64) -> 
 /// the local accounts that boosted or quoted the status `status_id`, and of
 /// the local author it replies to; signed by that author, or else by the
 /// first of those accounts. The sender's own inbox is left out. Suspended
-/// followers are not: `Account.inboxes` does not ask.
+/// followers are not: `Account.inboxes` does not ask. What goes is what
+/// was kept to be forwarded, and nothing does when nothing was: Mastodon's
+/// quote stamp `Delete` would then send `null`.
 pub async fn forward(state: &AppState, sender_id: i64, activity: &Value, status_id: i64) {
     if let Err(error) = try_forward(state, sender_id, activity, status_id).await {
         tracing::warn!(status_id, %error, "could not forward an activity");
@@ -42,6 +47,9 @@ async fn try_forward(
     activity: &Value,
     status_id: i64,
 ) -> anyhow::Result<()> {
+    let Some(activity) = crate::api::ap::inbox::signed_as_sent(activity) else {
+        return Ok(());
+    };
     // `shared_by_account_ids`: local boosters, then local quoters.
     let mut shared_by: Vec<i64> = sqlx::query_scalar!(
         r#"SELECT s.account_id FROM statuses s JOIN accounts a ON a.id = s.account_id
@@ -114,8 +122,6 @@ async fn try_forward(
         account.id_scheme,
         &account.username,
     );
-    // As its sender signed it: without what eunha noted on it on arrival.
-    let activity = crate::api::ap::inbox::as_sent(activity);
     crate::federation::delivery::forward_to_inboxes(state, activity, inboxes, key_id).await?;
     Ok(())
 }

@@ -2438,6 +2438,29 @@ since = "5.0.0-rc.2"
 reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
+id = "forwarded-as-it-arrived"
+kind = "behaviour"
+summary = "Passes on a relayed activity taken on its Linked Data signature as it arrived"
+mastodon = """
+`ActivityPub::ProcessActivityService` keeps the compacted JSON-LD reading of \
+an activity another server passed on, when its Linked Data signature verified \
+and no FEP-8b32 proof did, as the `forwardable_json` that a reply to a local \
+post, a `Delete` and an `Update` are forwarded as."""
+eunha = """
+Forwards the activity as it arrived, signature and all, as Mastodon forwards \
+one taken on its proof."""
+why = """
+The signature covers the activity's RDF, which both verify to. What arrived is \
+what its author wrote, which servers that read it as plain JSON take as meant, \
+where compaction can turn the public collection into `as:Public` and \
+one-element arrays into values, what `patch_for_forwarding!` patched until \
+5.0.0-rc.2. eunha reads activities as written and keeps no compaction of its \
+own to send."""
+evidence = "tests/integration/federation/forwarding.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"
+
+[[divergence]]
 id = "account-action-form-options"
 kind = "addition"
 summary = "Takes the action form's include_statuses and include_rule_violations over the REST API"
@@ -2457,5 +2480,20 @@ eunha's web client stands in for the server-rendered form and needs an API \
 to send the form's choices. A choice the moderator was never offered should \
 not take something out of the email."""
 evidence = "tests/integration/c2s/moderation_tools.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"
+
+[[divergence]]
+id = "unforwardable-stamp-delete-not-sent"
+kind = "behaviour"
+summary = "Sends nothing for a quote stamp's Delete that cannot be forwarded"
+mastodon = """
+`ActivityPub::Activity::Delete#revoke_quote` forwards \
+`@options[:forwardable_json]` without asking `forwardable?`, so a `Delete` \
+that carries neither a Linked Data signature nor an FEP-8b32 proof is \
+delivered to the boosters' followers as the body `null`."""
+eunha = "Forwards such a `Delete` only when it carries a signature or proof, and otherwise sends nothing."
+why = "A `null` body is not an activity; every receiver drops it, and each delivery costs a request."
+evidence = "tests/integration/federation/quote.rs"
 since = "5.0.0-rc.2"
 reviewed_for = "5.0.0-rc.2"

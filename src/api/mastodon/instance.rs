@@ -522,6 +522,11 @@ pub async fn get_instance_v2(
                 },
             },
             limited_federation: state.instance.limited_federation_mode,
+            collections: CollectionsConfiguration {
+                max_items: super::collections::MAX_ITEMS,
+                max_name_length: super::collections::NAME_MAX,
+                max_description_length: super::collections::DESCRIPTION_MAX,
+            },
         },
         registrations: InstanceRegistrations {
             enabled: registrations.enabled(),

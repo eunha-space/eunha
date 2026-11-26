@@ -148,12 +148,15 @@ here.
 A remote author's `Delete` of a stamp is passed on, as
 `ActivityPub::Forwarder` passes it, to the followers of the local accounts
 that boosted or quoted the quoting post, and of the local author it replies
-to, signed by that author or else by the first of those accounts. The same
-forwarder passes on a remote status's `Delete`, and an edit's `Update`, when
-the activity carries a Linked Data signature and the status is public or
-unlisted. What it passes on goes as `ActivityPub::LowPriorityDeliveryWorker`
-sends it: on a delivery queue of its own, Mastodon's `pull`, taken only when
-the others have nothing due, and tried nine times rather than seventeen.
+to, signed by that author or else by the first of those accounts, when it
+carries a Linked Data signature or an FEP-8b32 proof
+(*docs/mastodon/inbound-statuses.md* says which are kept); with neither,
+Mastodon sends `null`, and eunha sends nothing. The same forwarder passes on
+a remote status's `Delete`, and an edit's `Update`, when the activity
+carries either and the status is public or unlisted. What it passes on goes as
+`ActivityPub::LowPriorityDeliveryWorker` sends it: on a delivery queue of its
+own, Mastodon's `pull`, taken only when the others have nothing due, and tried
+nine times rather than seventeen.
 
 
 How a quote is shown

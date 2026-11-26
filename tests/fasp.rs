@@ -663,7 +663,7 @@ async fn test_fasp_registration_capabilities_and_signatures() {
 
 /// Statuses and accounts are announced to subscribed providers as they are
 /// created, changed and deleted, and a favourite past the threshold makes a
-/// status trend.
+/// public status trend.
 #[tokio::test]
 async fn test_fasp_announces_lifecycle_events_and_trends() {
     let ctx = fasp_ctx("fasp-events").await;
@@ -741,6 +741,24 @@ async fn test_fasp_announces_lifecycle_events_and_trends() {
         .await;
     let private_uri = private["uri"].as_str().unwrap().to_owned();
 
+    // An unlisted one is not announced trending, however it is favourited
+    // (`public_visibility?`): the first trend is the public post's.
+    let unlisted = ctx
+        .api
+        .post_status(&ctx.alice_token, "quietly for providers", "unlisted")
+        .await;
+    let unlisted_uri = unlisted["uri"].as_str().unwrap().to_owned();
+    ctx.api
+        .post_json(
+            &format!(
+                "/api/v1/statuses/{}/favourite",
+                unlisted["id"].as_str().unwrap()
+            ),
+            Some(&ctx.bob_token),
+            &json!({}),
+        )
+        .await;
+
     // Edited, then favourited past the threshold, then deleted.
     let response = ctx
         .api
@@ -804,6 +822,13 @@ async fn test_fasp_announces_lifecycle_events_and_trends() {
             .iter()
             .any(|b| b["objectUris"] == json!([private_uri])),
         "a private status is never announced"
+    );
+    assert!(
+        !fake
+            .announcements()
+            .iter()
+            .any(|b| b["eventType"] == "trending" && b["objectUris"] == json!([unlisted_uri])),
+        "an unlisted status is never announced trending"
     );
 }
 
