@@ -1189,6 +1189,7 @@
   "mastodon.simple_form.hints.relay.directions.bidirectional": "릴레이에 게시물을 보내고, 릴레이의 다른 참여자가 보낸 게시물도 받습니다",
   "mastodon.simple_form.hints.relay.directions.broadcast": "릴레이에 게시물을 보내기만 합니다",
   "mastodon.simple_form.hints.relay.requires_opt_in": "직접 참여를 선택한 사용자의 게시물만 릴레이에 보냅니다",
+  "mastodon.simple_form.labels.defaults.setting_show_stats_in_feed": "피드에서 상호작용 통계 보이기",
   "mastodon.simple_form.labels.form_admin_settings.custom_robots": "사용자 정의 robots.txt",
   "mastodon.simple_form.labels.form_admin_settings.override_robots": "기본 robots.txt 덮어쓰기",
   "mastodon.simple_form.labels.relay.acct": "릴레이 핸들",

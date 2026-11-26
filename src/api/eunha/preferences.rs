@@ -4,8 +4,8 @@
 //! inverted as `indexable`) and "display from which app you sent a post"
 //! (`show_application`), and from `Settings::Preferences::*` the interface
 //! language and time zone, the languages to show in public timelines, how
-//! media, content warnings and GIFs are shown, and the notification emails
-//! eunha sends.
+//! media, content warnings, GIFs and the counts in feeds are shown, and the
+//! notification emails eunha sends.
 //!
 //! What Mastodon offers through the REST API already — the posting defaults
 //! (`source[privacy]`, `source[sensitive]`, `source[language]`,
@@ -87,6 +87,9 @@ pub struct Preferences {
     pub expand_content_warnings: bool,
     /// Animated GIFs played (`web.auto_play`, `reading:autoplay:gifs`).
     pub auto_play: bool,
+    /// Reply, boost and favourite counts on posts in feeds
+    /// (`web.show_stats_in_feed`, the initial state's `show_stats_in_feed`).
+    pub show_stats_in_feed: bool,
     pub notification_emails: NotificationEmails,
 }
 
@@ -141,6 +144,7 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         display_media: string_of("web.display_media", "default"),
         expand_content_warnings: user_setting_bool(settings, "web.expand_content_warnings", false),
         auto_play: user_setting_bool(settings, "web.auto_play", false),
+        show_stats_in_feed: user_setting_bool(settings, "web.show_stats_in_feed", true),
         notification_emails: NotificationEmails {
             follow: bool_of(
                 "notification_emails.follow",
@@ -199,6 +203,7 @@ pub struct Update {
     pub display_media: Option<String>,
     pub expand_content_warnings: Option<bool>,
     pub auto_play: Option<bool>,
+    pub show_stats_in_feed: Option<bool>,
     /// An empty list clears it.
     pub chosen_languages: Option<Vec<String>>,
     pub locale: Option<String>,
@@ -270,6 +275,9 @@ pub async fn update(
     }
     if let Some(auto_play) = form.auto_play {
         set("web.auto_play", auto_play.into());
+    }
+    if let Some(show) = form.show_stats_in_feed {
+        set("web.show_stats_in_feed", show.into());
     }
     let emails = &form.notification_emails;
     for ((key, _), value) in NOTIFICATION_EMAILS.iter().zip([

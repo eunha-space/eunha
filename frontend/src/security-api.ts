@@ -249,6 +249,7 @@ export interface Preferences {
   display_media: 'default' | 'show_all' | 'hide_all'
   expand_content_warnings: boolean
   auto_play: boolean
+  show_stats_in_feed: boolean
   notification_emails: Record<string, boolean | string | null>
 }
 

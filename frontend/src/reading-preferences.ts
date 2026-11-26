@@ -15,6 +15,8 @@ export interface ReadingPreferences {
   expandSpoilers: boolean
   /** `web.auto_play`: animated GIFs, avatars and headers play without a hover. */
   autoPlayGif: boolean
+  /** `web.show_stats_in_feed`: reply, boost and favourite counts on posts in feeds. */
+  showStatsInFeed: boolean
 }
 
 // `UserSettings`' defaults. A signed-out visitor gets them too: Mastodon's
@@ -24,6 +26,7 @@ export const DEFAULT_READING_PREFERENCES: ReadingPreferences = {
   displayMedia: 'default',
   expandSpoilers: false,
   autoPlayGif: false,
+  showStatsInFeed: true,
 }
 
 const cacheKey = (accountId: string) => `eunha:reading-preferences:${accountId}`
@@ -42,6 +45,7 @@ function readCached(accountId: string | null): ReadingPreferences {
           : 'default',
       expandSpoilers: parsed.expandSpoilers === true,
       autoPlayGif: parsed.autoPlayGif === true,
+      showStatsInFeed: parsed.showStatsInFeed !== false,
     }
   } catch {
     return DEFAULT_READING_PREFERENCES
@@ -77,6 +81,8 @@ export function applyPreferences(prefs: Preferences) {
     displayMedia: prefs.display_media,
     expandSpoilers: prefs.expand_content_warnings,
     autoPlayGif: prefs.auto_play,
+    // On unless turned off, as `UserSettings` defaults it.
+    showStatsInFeed: prefs.show_stats_in_feed !== false,
   }
   const accountId = getActiveAccountId()
   if (accountId) {
@@ -89,7 +95,8 @@ export function applyPreferences(prefs: Preferences) {
   if (
     next.displayMedia === current.displayMedia &&
     next.expandSpoilers === current.expandSpoilers &&
-    next.autoPlayGif === current.autoPlayGif
+    next.autoPlayGif === current.autoPlayGif &&
+    next.showStatsInFeed === current.showStatsInFeed
   ) {
     return
   }

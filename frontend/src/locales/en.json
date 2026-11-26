@@ -1803,6 +1803,7 @@
   "mastodon.simple_form.labels.defaults.setting_auto_play_gif": "Auto-play animated GIFs",
   "mastodon.simple_form.labels.defaults.setting_display_media": "Media display",
   "mastodon.simple_form.labels.defaults.setting_expand_spoilers": "Always expand posts marked with content warnings",
+  "mastodon.simple_form.labels.defaults.setting_show_stats_in_feed": "Show interaction statistics in feeds",
   "mastodon.simple_form.labels.defaults.severity": "Severity",
   "mastodon.simple_form.labels.defaults.whole_word": "Whole word",
   "mastodon.simple_form.labels.filters.actions.hide": "Hide completely",

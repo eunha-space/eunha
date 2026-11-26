@@ -74,6 +74,13 @@ export function TimelinePreferences({ token }: { token: string }) {
       </div>
       <Label className="text-sm font-normal">
         <Switch
+          checked={prefs.show_stats_in_feed}
+          onCheckedChange={(on) => void save({ show_stats_in_feed: on })}
+        />
+        {t({ id: 'mastodon.simple_form.labels.defaults.setting_show_stats_in_feed', defaultMessage: 'Show interaction statistics in feeds' })}
+      </Label>
+      <Label className="text-sm font-normal">
+        <Switch
           checked={prefs.display_own_posts}
           onCheckedChange={(on) => void save({ display_own_posts: on })}
         />
