@@ -32,7 +32,7 @@ eunha = "Browser email confirmations show the result on the sign-in page regardl
 why = "An account switcher can have a different account active, hiding the newly registered account's confirmation result on the timeline."
 evidence = "tests/integration/surfaces/auth_pages.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "integrity-proofs-on-outgoing-activities"
@@ -57,7 +57,7 @@ servers that matter. Off by default because an instance's traffic should look \
 like Mastodon's until its administrator decides otherwise."""
 evidence = "tests/integration/federation/integrity_proofs.rs"
 since = "4.7.0"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "invite-tree"
@@ -79,7 +79,7 @@ An instance that grew by invitation has a shape worth seeing. It is served under
 an endpoint Mastodon defines."""
 evidence = "tests/integration/surfaces/invite_tree.rs"
 since = "4.6.0"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "update-check-asks-about-mastodon"
@@ -104,7 +104,7 @@ on the database. An operator who wants the end-of-support warning names the \
 server and gets it."""
 evidence = "tests/integration/surfaces/software_updates.rs"
 since = "4.7.0"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "local-keys-moved-from-code"
@@ -121,7 +121,7 @@ Moving a key means encrypting it, which SQL migrations cannot do, and the \
 column going is the one thing here that cannot be undone."""
 evidence = "tests/integration/federation/keypairs.rs"
 since = "4.7.0"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "invites-rest-api"
@@ -145,7 +145,7 @@ what its own UI would allow, so a client that guessed at them is not misled \
 about what it is talking to."""
 evidence = "tests/integration/c2s/invites.rs"
 since = "4.6.0"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "moderation-tools-rest-api"
@@ -178,7 +178,7 @@ paths upstream's admin API would use, and answer only what its pages would \
 allow."""
 evidence = "tests/integration/c2s/moderation_tools.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "server-administration-rest-api"
@@ -215,7 +215,7 @@ sit at the paths upstream's admin API would use, and answer only what its \
 pages would allow."""
 evidence = "tests/integration/c2s/server_admin/mod.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "account-moves-rest-api"
@@ -241,7 +241,7 @@ these sit outside `/api/eunha/` at the paths upstream would plausibly use, and \
 answer only what its forms would allow."""
 evidence = "tests/integration/c2s/moves.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "admin-granted-invites"
@@ -274,7 +274,7 @@ limit — so there is no allowance to keep books on, and an invite is still just
 an invite."""
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.0"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "command-line-force-checks-before-deleting"
@@ -298,7 +298,7 @@ would lose the account for nothing; checking first changes no outcome of a \
 command that succeeds."""
 evidence = "tests/integration/surfaces/accounts_commands.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "admin-custom-emoji-rest-api"
@@ -322,7 +322,7 @@ client would look for them if upstream had them, and answer with the \
 permission its admin pages check."""
 evidence = "tests/integration/c2s/admin.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "private-tenant-prometheus-metrics"
@@ -333,7 +333,7 @@ eunha = "Uses an opt-in loopback-only listener at /metrics, with canonical tenan
 why = "Operators need service-level attribution while several tenants share one process, without exposing diagnostics through their public API routes."
 evidence = "src/telemetry.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "error-reporting"
@@ -350,7 +350,7 @@ administrator; the host has to hear what went wrong, and in which instance, \
 without reading every instance's log."""
 evidence = "src/error_reporting.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "encryption-key-check"
@@ -361,7 +361,7 @@ eunha = "Opens a sample of `keypairs.private_key` and `users.otp_secret` when a 
 why = "An instance imported with new keys instead of its Mastodon's locked its members out of TOTP with nothing in the log to say why."
 evidence = "tests/integration/federation/keypairs.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "preview-card-charset-sniffing"
@@ -382,7 +382,7 @@ cleanly is a better answer than a guess; the guess is still made for pages \
 that declare nothing or declare wrongly."""
 evidence = "src/preview_card/extract.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "email-subscriptions-rest-api"
@@ -405,7 +405,7 @@ what its forms would allow; the owner's switch, which upstream would keep \
 among the user's settings, is under `/api/eunha/`."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "terms-of-service-rest-api"
@@ -433,7 +433,7 @@ admin API, mirror its admin routes, and answer only what its forms would \
 allow."""
 evidence = "tests/integration/c2s/terms_of_service.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "email-subscription-unsubscribe-token"
@@ -457,7 +457,7 @@ that keeps working is what an unsubscribe link is for, so the ones eunha \
 mailed before the secret was configured are still honoured."""
 evidence = "tests/integration/c2s/email_subscriptions.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "notification-email-unsubscribe-token"
@@ -481,7 +481,7 @@ working is what an unsubscribe link is for, and one in a mail eunha sent, \
 before or after the secret was configured, should not be refused."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "terms-of-service-interstitial-api"
@@ -506,7 +506,7 @@ meaning, so a Mastodon web app on the same database would show the same \
 users the same page."""
 evidence = "tests/integration/c2s/terms_of_service.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "async-refresh-ids-signed-without-rails"
@@ -527,7 +527,7 @@ rather than serving beside it, so no Mastodon process ever has to read an id \
 eunha handed out, or the reverse."""
 evidence = "tests/integration/c2s/async_refreshes.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "data-portability-rest-api"
@@ -556,7 +556,7 @@ inherit, so moving one's data in and out needs an API to call. It sits under \
 could expect."""
 evidence = "tests/integration/surfaces/portability.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "two-factor-rest-api"
@@ -581,7 +581,7 @@ change that weakens the account asks for the password with it rather than \
 trusting the scope alone."""
 evidence = "tests/integration/surfaces/two_factor.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "pending-sign-in-in-redis"
@@ -601,7 +601,7 @@ eunha's sign-in forms — the OAuth authorization page and the account pages —
 have no server-side session to keep it in."""
 evidence = "tests/integration/surfaces/two_factor.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "sessions-and-authorized-apps-rest-api"
@@ -628,7 +628,7 @@ session because it is served as static files with no server-side session \
 of its own."""
 evidence = "tests/integration/surfaces/sessions.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "reset-password-token-digest"
@@ -649,7 +649,7 @@ password; the cost is that a link Mastodon mailed does not work on eunha, \
 which matters only for a reset in flight when an instance switches."""
 evidence = "tests/integration/surfaces/password_reset.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "account-deletion-rest-api"
@@ -669,7 +669,7 @@ one upstream would use for it, and the challenge keeps a token alone from \
 being enough."""
 evidence = "tests/integration/c2s/accounts.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "email-change-rest-api"
@@ -692,7 +692,7 @@ an API to call. The password stays the challenge, so a token alone is not \
 enough to move the account to an address its holder controls."""
 evidence = "tests/integration/surfaces/email_change.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "web-preferences-rest-api"
@@ -720,7 +720,7 @@ need an API to call. Settings Mastodon already serves through \
 `update_credentials` stay there."""
 evidence = "tests/integration/surfaces/preferences.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "deepl-endpoint-setting"
@@ -739,7 +739,7 @@ tests need to stand a fake DeepL in for the real one without patching the \
 binary."""
 evidence = "tests/integration/c2s/translations.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "fasp-admin-rest-api"
@@ -767,7 +767,7 @@ section out. Like `server-administration-rest-api`, the endpoints sit where \
 upstream's admin API would put them."""
 evidence = "tests/fasp.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "remote-account-images-not-downloaded"
@@ -789,7 +789,7 @@ bytes, and clients load them from the servers they came from. Writing the \
 columns as Mastodon writes them keeps a shared database correct for both."""
 evidence = "tests/remote_actors.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 
 [[divergence]]
@@ -812,7 +812,7 @@ routes site-local addresses. The guard lives in ojak, which other \
 applications share."""
 evidence = "tests/integration/federation/private_addresses.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "embedded-note-attribution-fetched"
@@ -833,7 +833,7 @@ another account wrote, and the real author's copy could then never take its \
 URI. Fetching it from its id asks the server that owns it who wrote it."""
 evidence = "tests/integration/federation/ownership.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "web-multi-account-switcher"
@@ -849,7 +849,7 @@ session is left signed in."""
 why = "Members can use personal and staff accounts without separate browser profiles."
 evidence = "frontend/e2e/account-switcher.spec.ts"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "web-hidden-card-image-not-loaded"
@@ -860,7 +860,7 @@ eunha = "A hidden card draws its blurhash alone and adds the image only once it 
 why = "Hiding a sensitive post's image, or every image with `hide_all`, is a reason not to fetch it: the request reaches the host the card points at, and the bytes cost a metered connection, for an image the reader chose not to see."
 evidence = "frontend/e2e/preview-cards.spec.ts"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 
 [[divergence]]
@@ -879,7 +879,7 @@ build and lay out every character under it, in every timeline and notification \
 the post reaches."""
 evidence = "frontend/e2e/post-content.spec.ts"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "composer-link-card"
@@ -898,7 +898,7 @@ card is kept, the post reuses it rather than fetching the page again, and the \
 fetch goes through the same SSRF-guarded client as every other."""
 evidence = "tests/integration/surfaces/preview_cards.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 
 [[divergence]]
@@ -916,7 +916,7 @@ application. It cannot infer approval bypass from the presence of a code. \
 Registration still validates the invite again when submitted."""
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 
 [[divergence]]
@@ -928,7 +928,7 @@ eunha = "New staff grants always bypass review, keep email confirmation and invi
 why = "A staff grant is permission to admit the granted number of people. Requiring another staff decision contradicts that action; changing the receiving member’s role would affect unrelated links. Keeping metadata outside public preserves Mastodon’s database schema."
 evidence = "tests/integration/surfaces/invite_grants.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 
 [[divergence]]
@@ -949,7 +949,7 @@ A title that names a missing translation key tells the reader nothing, and is \
 plainly an omission upstream rather than a choice."""
 evidence = "src/push.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "push-titles-in-english-and-korean"
@@ -970,7 +970,7 @@ them the only translated strings, and the clients localise from \
 `notification_type` anyway."""
 evidence = "src/push.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "earlier-collection-addresses-still-served"
@@ -993,7 +993,7 @@ re-verify by fetching it. Answering at both costs nothing and breaks nothing \
 they hold."""
 evidence = "tests/integration/c2s/collections.rs"
 since = "4.7.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "followers-digest-cache-of-its-own"
@@ -1016,7 +1016,7 @@ but the sharing, and a stale digest only costs a synchronization that finds \
 nothing to change or one put off until the next followers-only post."""
 evidence = "tests/followers_synchronization.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "deliveries-to-suspended-domains-dropped"
@@ -1042,7 +1042,7 @@ matching as the block matches accounts keeps it from refusing a server the \
 block does not name."""
 evidence = "tests/integration/federation/suspended_inboxes.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "poll-times-in-the-forms-servers-write"
@@ -1062,7 +1062,7 @@ reimplementing Ruby's heuristic date parser to read text no server sends \
 would add a large surface for nothing."""
 evidence = "src/api/ap/inbox/poll_parser.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "mastodon-web-ui-endpoints-not-served"
@@ -1091,7 +1091,7 @@ use them, and eunha does not serve that UI. The embed modal's oEmbed is \
 for push services, whatever client subscribed."""
 evidence = "tests/integration/c2s/routes.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "self-destruct-in-eunha-terms"
@@ -1118,7 +1118,7 @@ own pages and API rather than Rails views, so the exemptions name those. Its \
 queues are in PostgreSQL, so Redis memory says nothing about their backlog."""
 evidence = "tests/integration/surfaces/self_destruct.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "domain-change-migration"
@@ -1146,7 +1146,7 @@ migration, which servers already believe once the new actor lists the old one; \
 the refollow is what a `FollowService` would send from the new actor."""
 evidence = "tests/integration/federation/forwarding.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "oauth-authorization-page-signs-in"
@@ -1171,7 +1171,7 @@ does not; once signed in, everything Doorkeeper decides is as Mastodon \
 decides it."""
 evidence = "tests/integration/c2s/oauth_server.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "notification-fallback-text"
@@ -1192,7 +1192,7 @@ something; eunha keeps no translations of these strings, and an object's \
 inspection is plainly an upstream slip rather than a choice."""
 evidence = "tests/integration/c2s/collections.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "instance-default-pictures"
@@ -1214,7 +1214,7 @@ them; eunha's frontend has neither a build that digests its paths nor the \
 mascots, so it names pictures it serves and says what is in them."""
 evidence = "tests/integration/c2s/instance.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "admin-metrics-default-range"
@@ -1234,7 +1234,7 @@ week is what eunha's own dashboard asks for, and a client that leaves the \
 range out gets numbers instead of an error page."""
 evidence = "tests/integration/c2s/admin.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "admin-dashboard-system-dimensions"
@@ -1258,7 +1258,7 @@ share a search cluster, and one tenant's dashboard should not report the \
 others' memory or indexes."""
 evidence = "tests/integration/c2s/admin.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "shared-wrapstodon-page"
@@ -1283,7 +1283,7 @@ artwork. eunha's web app signs in with an OAuth token, not a cookie session, \
 so there is no session for the server to redirect to or to read."""
 evidence = "tests/integration/c2s/annual_reports.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "rate-limits-on-eunha-pages"
@@ -1309,7 +1309,7 @@ more than a person does, and for deployments that limit requests in front of \
 eunha; unset, the limits apply as Mastodon's do."""
 evidence = "tests/integration/c2s/rate_limits.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "link-verification-redirect-get"
@@ -1330,7 +1330,7 @@ redirect only for a `GET`. A link shortener answers both methods with the \
 same redirect."""
 evidence = "src/link_verification.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "rate-limit-message-in-english-and-korean"
@@ -1348,7 +1348,7 @@ titles are (`push-titles-in-english-and-korean`); clients tell a rate limit \
 by its status and headers, not the message."""
 evidence = "src/rate_limit.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "maintenance-commands-in-eunha-terms"
@@ -1376,7 +1376,7 @@ the tracked schema already indexes `statuses.conversation_id`. Keeping a \
 file it is unsure of is the safe side of deleting."""
 evidence = "tests/integration/surfaces/tootctl_commands.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "mail-text-made-from-html"
@@ -1400,7 +1400,7 @@ from saying different things. A mail client shows either part, so what a \
 reader sees is the same whichever it picks."""
 evidence = "src/email.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "mail-names-eunha"
@@ -1423,7 +1423,7 @@ The mail comes from a server running eunha. Saying it is Mastodon \
 misrepresents what the member signed up on and whom to ask about it."""
 evidence = "tests/integration/surfaces/email_change.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "key-rotation-replaces-the-rsa-keys"
@@ -1447,7 +1447,7 @@ for a different purpose, and an instance with no encryption keys keeps every \
 key in the legacy columns, where both implementations read it."""
 evidence = "tests/integration/surfaces/tootctl_accounts.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "command-line-leaves-the-instance-actor-out"
@@ -1468,7 +1468,7 @@ server sign with a key nobody can find. The instance actor is not a person, and 
 following someone does not make sense for it."""
 evidence = "tests/integration/surfaces/tootctl_accounts.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "accounts-refresh-fetches-the-actor"
@@ -1488,7 +1488,7 @@ so there is nothing to download again; what an operator refreshing an account \
 wants is what its server says about it now."""
 evidence = "tests/remote_actors.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "remote-duplicates-told-apart-by-their-keypairs"
@@ -1507,7 +1507,7 @@ The check exists to keep two different actors from being merged into one, and \
 comparing two blank columns no longer checks anything."""
 evidence = "tests/integration/surfaces/tootctl_accounts.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "fix-duplicates-for-the-tracked-schema"
@@ -1538,7 +1538,7 @@ Mastodon database before it is dumped for `eunha import-mastodon`, whose \
 storage is not this instance's to delete from."""
 evidence = "tests/integration/surfaces/fix_duplicates.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "report-unknown-category-rejected"
@@ -1557,7 +1557,7 @@ it may as well retry. A 422 is what Mastodon gives every other invalid report, \
 and is surely what the controller means; nothing depends on the crash."""
 evidence = "tests/integration/c2s/reports.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "push-subscription-unusable-key-rejected"
@@ -1576,7 +1576,7 @@ key bad in a way it did not anticipate. A client that sent one learns nothing \
 from a server error, and a 422 is the answer the validation exists to give."""
 evidence = "tests/integration/c2s/push.rs"
 since = "4.7.2"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "refused-strike-keeps-nothing"
@@ -1598,7 +1598,7 @@ account; keeping half of it done would be acting anyway. Deleting the posts, \
 which upstream does in a transaction, already behaves this way there."""
 evidence = "tests/integration/c2s/moderation.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "token-not-read-from-multipart"
@@ -1619,7 +1619,7 @@ whole file, for a parameter no client puts there. Clients send the \
 `Authorization` header."""
 evidence = "tests/integration/c2s/oauth_server.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "scheduled-tasks-on-the-utc-clock"
@@ -1644,7 +1644,7 @@ still spreads many instances on one host over the range, as the random pick \
 spreads Mastodon servers."""
 evidence = "src/scheduled_tasks.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "scheduled-tasks-remember-their-runs"
@@ -1673,7 +1673,7 @@ for weeks. Remembering runs keeps the schedule's intent, once a day, which \
 Mastodon gets from a Sidekiq that stays up."""
 evidence = "tests/integration/surfaces/scheduled_tasks.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "idle-instances-sleep"
@@ -1703,7 +1703,7 @@ on an instance nobody uses is either nothing or a refresh nobody reads, and a \
 request brings the schedule back."""
 evidence = "tests/integration/surfaces/jobs.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "no-pghero-space-stats"
@@ -1721,7 +1721,7 @@ The table only feeds PgHero's own pages, which eunha does not serve; \
 PostgreSQL's statistics views answer the same questions for an operator."""
 evidence = "src/scheduled_tasks.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "database-post-substring-search"
@@ -1732,7 +1732,7 @@ eunha = "Signed-in users can search post text and content warnings with escaped 
 why = "Small instances should be able to find posts without operating a separate search cluster."
 evidence = "tests/integration/c2s/search.rs"
 since = "4.7.3"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "web-search-progress-steps"
@@ -1743,7 +1743,7 @@ eunha = "The search page sends people, hashtags and posts on this server, and fo
 why = "Without Elasticsearch a post search can take seconds, and a remote fetch longer; one request made the whole page wait for the slowest part with no sign of what it was waiting for."
 evidence = "frontend/e2e/search.spec.ts"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "account-reach-storage"
@@ -1754,7 +1754,7 @@ eunha = "Records verified inbox hosts synchronously in a bounded eunha table and
 why = "An atomic database update coordinates signed fetches with account deletion without introducing Redis buffering or sharing incompatible filter bytes."
 evidence = "tests/integration/federation/account_delete.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "moderation-subscriptions-rest-api"
@@ -1775,7 +1775,7 @@ The web client is a single-page application, so these pages need an API to \
 call, like `fasp-admin-rest-api`."""
 evidence = "src/api/mastodon/admin/moderation_subscriptions.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "moderation-lists-fixes-beta-bugs"
@@ -1798,7 +1798,7 @@ These are bugs in an experimental feature of a beta, not behaviour anyone can \
 depend on. Review them when adopting the next release."""
 evidence = "src/moderation/lists.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "moderation-lists-idle-when-unchanged"
@@ -1816,7 +1816,7 @@ audit log with changes that changed nothing and repeats the block's work on \
 every account of the domain."""
 evidence = "src/moderation/lists.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "moderation-lists-fixed-first-run"
@@ -1831,7 +1831,7 @@ Schedules here are constants, and a process restarted often catches up an \
 overdue run anyway (*src/scheduled_tasks.rs*)."""
 evidence = "src/scheduled_tasks.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "server-checks-rest-api"
@@ -1847,7 +1847,7 @@ why = """
 The web client is a single-page application, so the page needs an API to call."""
 evidence = "src/api/mastodon/admin/server_checks.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "server-checks-for-eunha"
@@ -1868,7 +1868,7 @@ Sidekiq, the local filesystem and Chewy have no counterpart here. The checks \
 keep their keys, so a row Mastodon wrote stays readable."""
 evidence = "src/server_checks.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "media-on-hold-urls-unchanged"
@@ -1888,7 +1888,7 @@ nothing an expiring address would add, and the serializer would need each \
 attachment's account loaded with it."""
 evidence = "src/api/mastodon/convert.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "theme-color-settings-not-kept"
@@ -1899,7 +1899,7 @@ eunha = "Offers its own palettes independently of light and dark mode, stored in
 why = "eunha's web client has its own design tokens. Shared Mastodon theme settings are preserved."
 evidence = "frontend/src/components/theme-provider.tsx"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "public-pages-answer-as-to-a-visitor"
@@ -1922,7 +1922,7 @@ Answering as to a visitor shows crawlers and link previews what Mastodon shows \
 them, and hides from them what it hides."""
 evidence = "tests/integration/surfaces/public_pages.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "public-pages-text-in-english-and-korean"
@@ -1939,7 +1939,7 @@ eunha's server-side text is in those two locales (`push-titles-in-english-and-ko
 and these strings are mostly read by crawlers, which ask for no locale."""
 evidence = "src/web/pages.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "embed-page-drawn-by-the-server"
@@ -1958,7 +1958,7 @@ A page embedded on someone else's site should not load a whole client to show \
 one post, and eunha's web app is not built to run in a small frame."""
 evidence = "tests/integration/surfaces/public_pages.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "no-media-player-pages"
@@ -1976,7 +1976,7 @@ They would be used only by the few services that still read Twitter's player \
 cards; the OpenGraph tags name the same files. Not ported yet."""
 evidence = "src/web/pages.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "manifest-offers-no-mastodon-apps"
@@ -1993,7 +1993,7 @@ A browser would otherwise offer an eunha's visitors another project's app in \
 place of installing the site they are on."""
 evidence = "tests/integration/surfaces/public_pages.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "tag-page-links-its-feed"
@@ -2010,7 +2010,7 @@ The link is there to be followed by feed readers. The categories come from the \
 same entities the API serves, and differ only in capitalisation."""
 evidence = "tests/integration/surfaces/public_pages.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "remote-interaction-helper-not-served"
@@ -2030,7 +2030,7 @@ why = """
 not serve. Not having the flow is a gap in the web client, not in federation."""
 evidence = "src/api/ap/serving.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "no-single-sign-on"
@@ -2050,7 +2050,7 @@ each of these is a separate protocol with its own security surface, for few \
 instances. **An instance that depends on one cannot drop eunha in.**"""
 evidence = "src/api/account/mod.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "no-captcha"
@@ -2069,7 +2069,7 @@ party, hCaptcha; the rate limits, approval-required registrations and email \
 blocks are eunha's answer to sign-up spam instead."""
 evidence = "src/settings.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "statuses-cleanup-rest-api"
@@ -2087,7 +2087,7 @@ eunha's settings page is a single-page app holding a token, so the form needs \
 an API to call."""
 evidence = "tests/integration/surfaces/statuses_cleanup_settings.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "command-line-without-block-commands"
@@ -2103,7 +2103,7 @@ why = """
 Bulk changes to the blocks are a loop over the admin API. Not ported yet."""
 evidence = "src/tootctl/mod.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "post-language-frequency-in-browser"
@@ -2114,7 +2114,7 @@ eunha = "Stores per-account selection counts in the browser. The default post la
 why = "The standalone web client can rank languages without a synchronized web settings blob."
 evidence = "frontend/src/components/post-language-picker.tsx"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "leased-hosting-growth-limits"
@@ -2125,7 +2125,7 @@ eunha = "Optional leased limits close new registrations, including invited signu
 why = "A hosting allowance can block growth after a warned grace period while federation, reading, posting text, moderation and existing data remain available."
 evidence = "src/growth_limits.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "rename-unused-owner"
@@ -2136,7 +2136,7 @@ eunha = "accounts rename-unused-owner changes the public username of a local Own
 why = "Hosting operators can correct the initial handle without replacing the account or its keys."
 evidence = "tests/integration/surfaces/tootctl_accounts.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "hostname-default-site-title"
@@ -2147,7 +2147,7 @@ eunha = "Instances without a saved site title display their web hostname."
 why = "An instance has an identifiable name before its operator configures one."
 evidence = "tests/integration/c2s/server_admin/mod.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "staff-alert-digests"
@@ -2176,7 +2176,7 @@ report is not delayed, and the dashboard and web push still show each one as it 
 host running many instances can widen the window to send fewer still."""
 evidence = "tests/integration/c2s/admin_digest.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "welcome-mail-off-by-default"
@@ -2193,7 +2193,7 @@ for it. Leaving it to each instance keeps eunha's mail to what members need \
 or asked for."""
 evidence = "tests/integration/surfaces/accounts_commands.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "notification-mail-off-by-default"
@@ -2212,7 +2212,7 @@ default mostly reaches people who did not ask for it, and costs the instance \
 its sending reputation."""
 evidence = "tests/integration/c2s/notification_emails.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "hosted-instances"
@@ -2235,7 +2235,7 @@ instance's lifetime. Its administrators cannot act on notices about them, and \
 closing the instance must go through the host's own durable deprovisioning."""
 evidence = "tests/integration/c2s/server_admin/hosted.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "hosting-provider-credit"
@@ -2252,7 +2252,7 @@ A hosting service can say who runs the machines without changing \
 own contact and description."""
 evidence = "tests/integration/c2s/server_admin/hosted.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "federated-timeline-signed-in-by-default"
@@ -2270,7 +2270,7 @@ community's front door should be its own posts; members, who see what their \
 follows bring in, keep the feed for discovery."""
 evidence = "tests/integration/c2s/feed_access.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "quote-of-a-post-not-for-everyone-rejected"
@@ -2292,7 +2292,7 @@ gives everywhere else in the API; a 500 tells the client the server broke \
 and that it may retry. Nothing is written either way."""
 evidence = "tests/integration/c2s/statuses.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "quote-stamp-array-fields-unverified"
@@ -2314,7 +2314,7 @@ undistributed is an accident of the crash, not a decision about stamps, and \
 retrying an activity that can only fail the same way does nothing."""
 evidence = "tests/remote_quotes.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "remote-edit-quote-change-significant"
@@ -2339,7 +2339,7 @@ it from ever doing so. Changing which post a post quotes changes what readers \
 see, and leaving it out of the history hides the change."""
 evidence = "tests/integration/federation/quote.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "web-interface-languages"
@@ -2356,7 +2356,7 @@ its translations."""
 why = "eunha's own messages are translated by hand, a locale at a time; offering a locale eunha has no translations of would show English under its name."
 evidence = "frontend/e2e/interface-language.spec.ts"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "pending-follow-settles-in-place"
@@ -2367,7 +2367,7 @@ eunha = "While a follow button in the search results or on a profile shows Reque
 why = "A follow of a remote account is Requested until its server sends `Accept`, which usually comes within seconds. A button that stays Requested looks as if the follow did not go through."
 evidence = "frontend/e2e/search.spec.ts"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "inbound-payload-limits"
@@ -2393,7 +2393,7 @@ mentions by default. A post that mentions more than 100 accounts is refused \
 whole, not trimmed."""
 evidence = "tests/integration/federation/payload_limits.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "leading-mention-is-addressed"
@@ -2413,7 +2413,7 @@ way."""
 why = "A post that starts by addressing someone is a reply in all but name. Twitter and X have shown such posts only to followers who also follow the account addressed, and people expect it to stay out of the public timelines."
 evidence = "tests/integration/c2s/leading_mentions.rs"
 since = "5.0.0-beta.1"
-reviewed_for = "5.0.0-beta.1"
+reviewed_for = "5.0.0-rc.2"
 
 [[divergence]]
 id = "moderation-action-without-cited-posts"
@@ -2495,5 +2495,19 @@ delivered to the boosters' followers as the body `null`."""
 eunha = "Forwards such a `Delete` only when it carries a signature or proof, and otherwise sends nothing."
 why = "A `null` body is not an activity; every receiver drops it, and each delivery costs a request."
 evidence = "tests/integration/federation/quote.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"
+
+[[divergence]]
+id = "seo-reply-to-gone-post"
+kind = "behaviour"
+summary = "Draws a reply's page without parentItem when the post it answers is gone"
+mastodon = """
+`SEO::SocialMediaPostingSerializer#parent_item` reads `object.thread`, which is \
+nil once the post a reply answers is deleted, so `url_for(nil)` raises and the \
+reply's public page fails to draw."""
+eunha = "Leaves `parentItem` out of the reply's schema.org markup, and draws the page."
+why = "A deleted parent should not take down the page of a reply that still exists."
+evidence = "src/web/pages.rs"
 since = "5.0.0-rc.2"
 reviewed_for = "5.0.0-rc.2"

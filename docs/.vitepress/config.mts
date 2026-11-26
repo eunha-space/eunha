@@ -78,7 +78,7 @@ export default defineConfig({
         items: [
           { text: "Tracking Mastodon", link: "/mastodon/tracking" },
           { text: "Deliberate divergences", link: "/mastodon/divergences" },
-          { text: "Outstanding from 5.0.0-beta.1", link: "/mastodon/5.0.0-beta.1" },
+          { text: "Outstanding from 5.0.0-rc.2", link: "/mastodon/5.0.0-rc.2" },
           { text: "API entity parity", link: "/mastodon/entity-parity" },
           { text: "Differential testing", link: "/mastodon/differential-testing" },
           { text: "Federating with Mastodon", link: "/mastodon/federation-testing" },
