@@ -114,7 +114,8 @@ provider's `/data_sharing/v0/announcements`:
  -  an account is announced as `new`, `update` and `delete` while it is
     discoverable, and as `update` when a change turned discoverability off;
  -  a status is announced as `trending` when a favourite, boost or reply brings
-    what it has had within the subscription's timeframe to its threshold.
+    what it has had within the subscription's timeframe to its threshold, and
+    it is public and its author indexable.
 
 The hooks sit where eunha creates, edits and deletes statuses — posting,
 scheduled posts, boosts, and what arrives over federation — where it favourites

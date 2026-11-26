@@ -273,7 +273,7 @@ async fn announce_trend_now(
 ) -> Result<(), request::Error> {
     // A status that is gone has nothing to announce.
     let Some(status) = sqlx::query!(
-        r#"SELECT a.indexable FROM statuses s JOIN accounts a ON a.id = s.account_id
+        r#"SELECT s.visibility, a.indexable FROM statuses s JOIN accounts a ON a.id = s.account_id
         WHERE s.id = $1 AND s.deleted_at IS NULL"#,
         status_id
     )
@@ -283,7 +283,8 @@ async fn announce_trend_now(
     else {
         return Ok(());
     };
-    if !status.indexable {
+    // `status.public_visibility? && status.account.indexable?`.
+    if status.visibility != crate::db::models::vis::PUBLIC || !status.indexable {
         return Ok(());
     }
     let uri = super::status_uri(state, status_id)
