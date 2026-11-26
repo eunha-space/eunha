@@ -708,6 +708,72 @@ fn client_data(kind: &str, challenge: &str, domain: &str) -> Vec<u8> {
     .unwrap()
 }
 
+/// Make a security key in the browser's place and register it as
+/// `nickname`; returns what the API answered.
+async fn register_key(ctx: &TestContext, credential_id: &[u8], nickname: &str) -> Value {
+    use eunha::webauthn::cbor::Value as C;
+
+    let options: Value = ctx
+        .api
+        .post_json(
+            "/api/eunha/v1/two_factor_authentication/webauthn_credentials/options",
+            Some(&ctx.alice_token),
+            &json!({ "password": PASSWORD }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let key = p256::ecdsa::SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+    let challenge = options["challenge"].as_str().unwrap();
+    let attestation = eunha::webauthn::cbor::encode(&C::Map(vec![
+        (C::Text("fmt".into()), C::Text("none".into())),
+        (C::Text("attStmt".into()), C::Map(vec![])),
+        (
+            C::Text("authData".into()),
+            C::Bytes(authenticator_data(
+                &ctx.domain,
+                0x41,
+                0,
+                Some((credential_id, &cose_key(&key))),
+            )),
+        ),
+    ]));
+    let created = ctx
+        .api
+        .post_json(
+            "/api/eunha/v1/two_factor_authentication/webauthn_credentials",
+            Some(&ctx.alice_token),
+            &json!({
+                "nickname": nickname,
+                "credential": {
+                    "id": b64(credential_id),
+                    "rawId": b64(credential_id),
+                    "type": "public-key",
+                    "response": {
+                        "clientDataJSON": b64(&client_data("webauthn.create", challenge, &ctx.domain)),
+                        "attestationObject": b64(&attestation),
+                    },
+                },
+            }),
+        )
+        .await;
+    assert_eq!(created.status(), StatusCode::OK);
+    created.json().await.unwrap()
+}
+
+/// `otp_required_for_login`, `otp_secret` and `otp_backup_codes`.
+async fn two_factor_row(ctx: &TestContext, user_id: i64) -> (bool, Option<String>, Vec<String>) {
+    let (required, sealed, codes): (bool, Option<String>, Option<Vec<String>>) = sqlx::query_as(
+        "SELECT otp_required_for_login, otp_secret, otp_backup_codes FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&ctx.db)
+    .await
+    .unwrap();
+    (required, sealed, codes.unwrap_or_default())
+}
+
 #[tokio::test]
 async fn test_security_keys_register_and_sign_in() {
     use eunha::webauthn::cbor::Value as C;
@@ -716,18 +782,18 @@ async fn test_security_keys_register_and_sign_in() {
     let ctx = TestContext::new("2fa-webauthn").await;
     let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
 
-    // Security keys come after an authenticator app.
-    let early = ctx
+    // Adding a key asks for the password (`require_challenge!` on `new`)...
+    let unchallenged = ctx
         .api
         .post_json(
             "/api/eunha/v1/two_factor_authentication/webauthn_credentials/options",
             Some(&ctx.alice_token),
-            &json!({ "password": PASSWORD }),
+            &json!({ "password": "nope" }),
         )
         .await;
-    assert_eq!(early.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    enable_totp(&ctx, &ctx.alice_token).await;
+    assert_eq!(unchallenged.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
+    // ...but not an authenticator app first, since Mastodon 5.0.
     let options: Value = ctx
         .api
         .post_json(
@@ -789,6 +855,32 @@ async fn test_security_keys_register_and_sign_in() {
         )
         .await;
     assert_eq!(created.status(), StatusCode::OK);
+    // The first second factor brings the recovery codes, shown this once.
+    let created: Value = created.json().await.unwrap();
+    assert_eq!(created["nickname"], "Yubikey");
+    let recovery = created["recovery_codes"].as_array().unwrap();
+    assert_eq!(recovery.len(), 10);
+    let (required, _, digests) = two_factor_row(&ctx, alice_user).await;
+    assert!(!required, "TOTP stays off");
+    assert_eq!(digests.len(), 10);
+    assert!(bcrypt::verify(recovery[0].as_str().unwrap(), &digests[0]).unwrap());
+    assert!(ctx
+        .mail_to("alice@test.invalid", "Security key authentication enabled")
+        .await
+        .is_some());
+    let status: Value = ctx
+        .api
+        .get(
+            "/api/eunha/v1/two_factor_authentication",
+            Some(&ctx.alice_token),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["otp_enabled"], false);
+    assert_eq!(status["webauthn_enabled"], true);
+    assert_eq!(status["recovery_codes_remaining"], 10);
     let (external_id, nickname): (String, String) =
         sqlx::query_as("SELECT external_id, nickname FROM webauthn_credentials WHERE user_id = $1")
             .bind(alice_user)
@@ -883,4 +975,195 @@ async fn test_security_keys_register_and_sign_in() {
         .await
         .unwrap();
     assert_eq!(removed["webauthn_enabled"], false);
+    // It was the only second factor, so two-factor authentication went with
+    // it, the recovery codes too, and the mail says so.
+    assert_eq!(removed["recovery_codes_remaining"], 0);
+    let (_, _, digests) = two_factor_row(&ctx, alice_user).await;
+    assert!(digests.is_empty());
+    assert!(ctx
+        .mail_to("alice@test.invalid", "Two-factor authentication disabled")
+        .await
+        .is_some());
+}
+
+/// Mastodon 5.0: an authenticator app and security keys stand on their own,
+/// share one set of recovery codes, and each can go without the other.
+#[tokio::test]
+async fn test_an_authenticator_app_and_security_keys_stand_alone() {
+    let ctx = TestContext::new("2fa-methods").await;
+    let alice_user = user_id_for(&ctx.db, ctx.alice_id.parse().unwrap()).await;
+    let tfa = "/api/eunha/v1/two_factor_authentication";
+    let otp = format!("{tfa}/otp");
+    let good = json!({ "password": PASSWORD });
+
+    // Nothing to turn off, regenerate or remove before there is a second
+    // factor.
+    let nothing = ctx.api.delete_json(tfa, &ctx.alice_token, &good).await;
+    assert_eq!(nothing.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let no_codes = ctx
+        .api
+        .post_json(
+            &format!("{tfa}/recovery_codes"),
+            Some(&ctx.alice_token),
+            &good,
+        )
+        .await;
+    assert_eq!(no_codes.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let no_app = ctx.api.delete_json(&otp, &ctx.alice_token, &good).await;
+    assert_eq!(no_app.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // A key first: it makes the recovery codes; the second does not.
+    let first = register_key(&ctx, b"first-key", "First").await;
+    assert_eq!(first["recovery_codes"].as_array().unwrap().len(), 10);
+    let second = register_key(&ctx, b"second-key", "Second").await;
+    assert!(second.get("recovery_codes").is_none(), "{second}");
+    assert!(ctx
+        .mail_to("alice@test.invalid", "New security key")
+        .await
+        .is_some());
+
+    // Recovery codes can be regenerated with only keys.
+    let regenerated = ctx
+        .api
+        .post_json(
+            &format!("{tfa}/recovery_codes"),
+            Some(&ctx.alice_token),
+            &good,
+        )
+        .await;
+    assert_eq!(regenerated.status(), StatusCode::OK);
+    let (_, _, digests) = two_factor_row(&ctx, alice_user).await;
+    assert_eq!(digests.len(), 10);
+
+    // Then the app: its confirmation leaves the codes the user has.
+    let setup: Value = ctx
+        .api
+        .post_json(&otp, Some(&ctx.alice_token), &good)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let secret = setup["secret"].as_str().unwrap();
+    let confirmed: Value = ctx
+        .api
+        .post_json(
+            &format!("{otp}/confirm"),
+            Some(&ctx.alice_token),
+            &json!({ "otp_attempt": eunha::two_factor::totp_at(secret, now()).unwrap() }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(confirmed["recovery_codes"].is_null(), "{confirmed}");
+    let (required, sealed, unchanged) = two_factor_row(&ctx, alice_user).await;
+    assert!(required);
+    assert!(sealed.is_some());
+    assert_eq!(unchanged, digests);
+
+    // Removing the app asks for the password, and keeps the keys and the
+    // codes (`disable_otp_login!`), with no mail.
+    let wrong = ctx
+        .api
+        .delete_json(&otp, &ctx.alice_token, &json!({ "password": "nope" }))
+        .await;
+    assert_eq!(wrong.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let status: Value = ctx
+        .api
+        .delete_json(&otp, &ctx.alice_token, &good)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["otp_enabled"], false);
+    assert_eq!(status["webauthn_enabled"], true);
+    assert_eq!(status["webauthn_credentials"].as_array().unwrap().len(), 2);
+    let (required, sealed, kept) = two_factor_row(&ctx, alice_user).await;
+    assert!(!required);
+    assert!(sealed.is_none());
+    assert_eq!(kept, digests);
+    assert!(ctx
+        .sent_to("alice@test.invalid")
+        .iter()
+        .all(|m| !m.subject.contains("Two-factor authentication disabled")));
+
+    // A sign-in with only keys still offers the code form, for a recovery
+    // code.
+    let client_id = register_app(&ctx).await;
+    let page = authorize(
+        &ctx,
+        &client_id,
+        &[("email", "alice@test.invalid"), ("password", PASSWORD)],
+    )
+    .await
+    .text()
+    .await
+    .unwrap();
+    assert!(page.contains("id=\"webauthn-form\""));
+    assert!(page.contains("name=\"otp_attempt\""));
+
+    // With the app back, deleting every key leaves two-factor on.
+    let setup: Value = ctx
+        .api
+        .post_json(&otp, Some(&ctx.alice_token), &good)
+        .await
+        .json()
+        .await
+        .unwrap();
+    forget_consumed_step(&ctx, alice_user).await;
+    let secret = setup["secret"].as_str().unwrap();
+    let confirmed = ctx
+        .api
+        .post_json(
+            &format!("{otp}/confirm"),
+            Some(&ctx.alice_token),
+            &json!({ "otp_attempt": eunha::two_factor::totp_at(secret, now()).unwrap() }),
+        )
+        .await;
+    assert_eq!(confirmed.status(), StatusCode::OK);
+    let ids: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM webauthn_credentials WHERE user_id = $1 ORDER BY id")
+            .bind(alice_user)
+            .fetch_all(&ctx.db)
+            .await
+            .unwrap();
+    let mut last = Value::Null;
+    for id in ids {
+        last = ctx
+            .api
+            .delete_json(
+                &format!("{tfa}/webauthn_credentials/{id}"),
+                &ctx.alice_token,
+                &good,
+            )
+            .await
+            .json()
+            .await
+            .unwrap();
+    }
+    assert_eq!(last["otp_enabled"], true);
+    assert_eq!(last["webauthn_enabled"], false);
+    assert_eq!(last["recovery_codes_remaining"], 10);
+    assert!(ctx
+        .mail_to(
+            "alice@test.invalid",
+            "Authentication with security keys disabled"
+        )
+        .await
+        .is_some());
+
+    // And with no keys, removing the app turns it all off.
+    let off: Value = ctx
+        .api
+        .delete_json(&otp, &ctx.alice_token, &good)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(off["otp_enabled"], false);
+    assert_eq!(off["recovery_codes_remaining"], 0);
+    assert!(ctx
+        .mail_to("alice@test.invalid", "Two-factor authentication disabled")
+        .await
+        .is_some());
 }

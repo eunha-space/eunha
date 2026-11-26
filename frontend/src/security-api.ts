@@ -70,10 +70,15 @@ export const getTwoFactor = (token: string) => call<TwoFactorStatus>(TFA, token)
 export const beginOtpSetup = (token: string, password: string) =>
   call<OtpSetup>(`${TFA}/otp`, token, 'POST', { password })
 
+/** `recovery_codes` is null when the user already had some, which stand. */
 export const confirmOtpSetup = (token: string, otpAttempt: string) =>
-  call<{ recovery_codes: string[] }>(`${TFA}/otp/confirm`, token, 'POST', {
+  call<{ recovery_codes: string[] | null }>(`${TFA}/otp/confirm`, token, 'POST', {
     otp_attempt: otpAttempt,
   })
+
+/** Remove the authenticator app, keeping any security keys. */
+export const removeOtp = (token: string, password: string) =>
+  call<TwoFactorStatus>(`${TFA}/otp`, token, 'DELETE', { password })
 
 export const regenerateRecoveryCodes = (token: string, password: string) =>
   call<{ recovery_codes: string[] }>(`${TFA}/recovery_codes`, token, 'POST', { password })
@@ -113,12 +118,17 @@ interface CreationOptionsJSON {
 export const securityKeysSupported = () =>
   typeof window !== 'undefined' && 'PublicKeyCredential' in window
 
+/** A registered key, with recovery codes when it brought the user's first. */
+export interface AddedSecurityKey extends WebauthnCredential {
+  recovery_codes?: string[]
+}
+
 /** Make a new security key with the browser and register it. */
 export async function addSecurityKey(
   token: string,
   password: string,
   nickname: string,
-): Promise<WebauthnCredential> {
+): Promise<AddedSecurityKey> {
   const options = await call<CreationOptionsJSON>(
     `${TFA}/webauthn_credentials/options`,
     token,
@@ -145,7 +155,7 @@ export async function addSecurityKey(
   })) as PublicKeyCredential | null
   if (!credential) throw new SecurityError(0, t({ id: 'eunha.two_factor_settings.no_security_key_created', defaultMessage: 'No security key was created' }))
   const response = credential.response as AuthenticatorAttestationResponse
-  return call<WebauthnCredential>(`${TFA}/webauthn_credentials`, token, 'POST', {
+  return call<AddedSecurityKey>(`${TFA}/webauthn_credentials`, token, 'POST', {
     nickname,
     credential: {
       id: credential.id,

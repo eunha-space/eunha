@@ -11,9 +11,10 @@ recorded divergence (`divergences.toml`).
 Two-factor authentication
 -------------------------
 
-An authenticator app (TOTP) first, then security keys on top of it, as
-Mastodon has it. Everything is stored the way Mastodon 4.7 stores it, so either
-can read what the other wrote:
+An authenticator app (TOTP), security keys, or both, as Mastodon 5.0 has it:
+each is a second factor on its own, and either can be added without the other.
+Everything is stored the way Mastodon 4.7 stores it, so either can read what
+the other wrote:
 
  -  `users.otp_secret`: a 32-byte base32 secret behind `encrypts :otp_secret`,
     the Rails `ActiveRecord::Encryption` envelope. eunha needs the instance's
@@ -65,11 +66,30 @@ The API, each with a `read:accounts` or `write:accounts` token:
 | `GET /api/eunha/v1/two_factor_authentication`               | the methods page                                   |
 | `POST …/otp` with `password`                                | `OtpAuthenticationController#create`               |
 | `POST …/otp/confirm` with `otp_attempt`                     | `ConfirmationsController#create`                   |
+| `DELETE …/otp` with `password`                              | `OtpAuthenticationController#destroy`              |
 | `POST …/recovery_codes` with `password`                     | `RecoveryCodesController#create`                   |
 | `DELETE …` with `password`                                  | `TwoFactorAuthenticationMethodsController#disable` |
 | `POST …/webauthn_credentials/options` with `password`       | `WebauthnCredentialsController#options`            |
 | `POST …/webauthn_credentials` with `credential`, `nickname` | `#create`                                          |
 | `DELETE …/webauthn_credentials/:id` with `password`         | `#destroy`                                         |
+
+The first second factor brings the recovery codes: confirming an
+authenticator app, or adding a security key, makes ten and answers with them
+(`recovery_codes`) when the user has none, and otherwise leaves the ones they
+have (`recovery_codes` is `null` from `…/otp/confirm`, and absent from
+`…/webauthn_credentials`). Regenerating them, and turning two-factor
+authentication off, need it to be on by either method.
+
+Removing a method keeps the other:
+
+ -  `DELETE …/otp` with security keys left turns TOTP off and forgets its
+    secret, keeping the keys and the recovery codes (`disable_otp_login!`),
+    and mails nothing. Without keys it turns two-factor authentication off.
+ -  Deleting the last security key without TOTP turns two-factor
+    authentication off.
+
+Turning it off (`disable_two_factor!`) forgets the secret, the recovery codes
+and every security key.
 
 Each change mails what Mastodon's `UserMailer` mails: two-factor enabled,
 disabled, recovery codes regenerated, security keys enabled or disabled, a key
@@ -86,6 +106,9 @@ carries (`sign_in_attempt:*`), for an hour. Mastodon's own paths to the forms,
 `/auth/signup` with a `302`, so apps and links made for Mastodon reach them.
 As upstream does:
 
+ -  the password is checked before anything else, so whether the account
+    wants a second factor or a security code is never told to someone
+    without it;
  -  a change to the user in between (`users.updated_at`) sends the person back
     to the password;
  -  ten wrong codes in an hour (`2fa_auth_attempts:<user>:<hour>`) stop further
@@ -106,7 +129,8 @@ A role with `require_2fa` (and the everyone role, id -99, if it has it) leaves a
 member without two-factor authentication unable to use the API: every request
 `require_user!` guards answers 403, `Your login is currently disabled`. Signing
 in on the authorization page or the account pages leads straight into setting up
-an authenticator app, then shows the recovery codes, then carries on with the
+an authenticator app, then shows the recovery codes (unless the member already
+has some, which stand), then carries on with the
 authorization, as Mastodon's `require_functional!` sends the person to the setup
 first. The settings page says so too, and its setup works for such a member.
 

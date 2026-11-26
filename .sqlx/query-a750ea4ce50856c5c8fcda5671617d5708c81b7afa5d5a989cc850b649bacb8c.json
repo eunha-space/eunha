@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT otp_backup_codes FROM users WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "otp_backup_codes",
+        "type_info": "VarcharArray",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "otp_backup_codes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a750ea4ce50856c5c8fcda5671617d5708c81b7afa5d5a989cc850b649bacb8c"
+}

@@ -66,6 +66,40 @@ test('two-factor setup shows the secret, then the recovery codes', async ({ page
   await expect(page.getByText('Two-factor authentication is enabled')).toBeVisible()
 })
 
+test('the authenticator app can be removed while security keys stay', async ({ page }) => {
+  await signedIn(page)
+  let status = {
+    otp_enabled: true,
+    webauthn_enabled: true,
+    required: false,
+    recovery_codes_remaining: 10,
+    webauthn_credentials: [{ id: '3', nickname: 'Yubikey', created_at: '2026-10-01T00:00:00.000Z' }],
+    available: true,
+  }
+  const sent: Record<string, unknown> = {}
+  await page.route('**/api/eunha/v1/two_factor_authentication', (route) =>
+    route.fulfill(json(status)),
+  )
+  await page.route('**/api/eunha/v1/two_factor_authentication/otp', async (route) => {
+    sent.method = route.request().method()
+    sent.body = route.request().postDataJSON()
+    status = { ...status, otp_enabled: false }
+    await route.fulfill(json(status))
+  })
+
+  await page.goto('/settings/account')
+  const section = page.locator('section', { hasText: 'Two-factor authentication' })
+  await section.getByLabel('Current password').fill('hunter2hunter2')
+  page.once('dialog', (dialog) => void dialog.accept())
+  await section.getByRole('button', { name: 'Delete', exact: true }).click()
+
+  await expect(section.getByRole('button', { name: 'Set up' })).toBeVisible()
+  expect(sent).toEqual({ method: 'DELETE', body: { password: 'hunter2hunter2' } })
+  await expect(section.getByText('Yubikey')).toBeVisible()
+  await expect(section.getByText('10 recovery codes left')).toBeVisible()
+  await expect(section.getByText('Two-factor authentication is enabled')).toBeVisible()
+})
+
 test('sessions and authorized apps can be revoked', async ({ page }) => {
   await signedIn(page)
   let sessions = [
