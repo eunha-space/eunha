@@ -238,7 +238,10 @@ export function StatusCard({
   const [busy, setBusy] = useState(false)
   // A post with a content warning starts folded, unless the reader always
   // expands them (Mastodon's `expandSpoilers`, which sets `hidden` false).
-  const { expandSpoilers } = useReadingPreferences()
+  const { expandSpoilers, showStatsInFeed } = useReadingPreferences()
+  // Mastodon's `withCounters`: a post in a feed shows its counts only while
+  // `web.show_stats_in_feed` is on; the post's own page always does.
+  const counted = detailed || showStatsInFeed
   const [expanded, setExpanded] = useState(expandSpoilers || !initial.spoilerText)
   const [expandSpoilersBefore, setExpandSpoilersBefore] = useState(expandSpoilers)
   if (expandSpoilersBefore !== expandSpoilers) {
@@ -741,14 +744,14 @@ export function StatusCard({
         <div className="-mb-1 flex items-center gap-1">
           <ActionButton
             icon={<Reply />}
-            count={status.repliesCount}
+            count={counted ? status.repliesCount : undefined}
             label={t({ id: 'status.reply', defaultMessage: 'Reply' })}
             onClick={() => (onReply ? onReply(status) : navigate(threadPath))}
           />
           {!token ? (
             <ActionButton
               icon={<Repeat2 />}
-              count={status.reblogsCount}
+              count={counted ? status.reblogsCount : undefined}
               active={status.reblogged ?? false}
               activeClass="text-primary"
               disabled
@@ -775,7 +778,7 @@ export function StatusCard({
                 }
               >
                 <Repeat2 />
-                {status.reblogsCount ? (
+                {counted && status.reblogsCount ? (
                   <span className="text-xs">{status.reblogsCount}</span>
                 ) : null}
               </DropdownMenuTrigger>
@@ -809,7 +812,7 @@ export function StatusCard({
           )}
           <ActionButton
             icon={<Star />}
-            count={status.favouritesCount}
+            count={counted ? status.favouritesCount : undefined}
             active={status.favourited ?? false}
             activeClass="text-yellow-500"
             disabled={busy || !token}

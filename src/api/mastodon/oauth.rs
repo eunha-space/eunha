@@ -31,7 +31,6 @@ use crate::{
 
 pub async fn verify_app_credentials(
     state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     bearer: Option<Extension<crate::middleware::BearerToken>>,
 ) -> AppResult<Json<AppCredentials>> {
     let token = bearer
@@ -66,7 +65,6 @@ pub async fn verify_app_credentials(
             .collect(),
         redirect_uri,
         redirect_uris: uris,
-        vapid_key: Some(instance.vapid_public_key.clone()),
     }))
 }
 
@@ -222,7 +220,6 @@ fn application_errors(name: &str, redirect_uri: &str, scopes: &str, website: &st
 /// whose validations answer `422` with `Validation failed: …`.
 pub async fn register_app(
     state: AppState,
-    Extension(ResolvedInstance(instance)): Extension<ResolvedInstance>,
     Params(form): Params<RegisterAppForm>,
 ) -> AppResult<Json<CredentialApplication>> {
     let client_id = generate_token(32);
@@ -273,10 +270,10 @@ pub async fn register_app(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(app_to_credential(&app, &instance.vapid_public_key)))
+    Ok(Json(app_to_credential(&app)))
 }
 
-fn app_to_credential(app: &OauthApplication, vapid_key: &str) -> CredentialApplication {
+fn app_to_credential(app: &OauthApplication) -> CredentialApplication {
     let uris: Vec<String> = app.redirect_uri.lines().map(str::to_owned).collect();
     let redirect_uri = uris
         .first()
@@ -295,7 +292,6 @@ fn app_to_credential(app: &OauthApplication, vapid_key: &str) -> CredentialAppli
         client_id: app.uid.clone(),
         client_secret: app.secret.clone(),
         client_secret_expires_at: 0,
-        vapid_key: Some(vapid_key.to_string()),
     }
 }
 

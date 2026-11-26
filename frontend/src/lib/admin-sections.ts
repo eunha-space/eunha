@@ -70,6 +70,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     { to: '/admin/settings/about', get label() { return t({ id: 'column.about', defaultMessage: 'About' }) } },
     { to: '/admin/settings/registrations', get label() { return t({ id: 'mastodon.admin.settings.registrations.title', defaultMessage: 'Registrations' }) } },
     { to: '/admin/settings/discovery', get label() { return t({ id: 'mastodon.admin.settings.discovery.title', defaultMessage: 'Discovery' }) } },
+    { to: '/admin/settings/crawlers', get label() { return t({ id: 'mastodon.admin.settings.crawlers.title', defaultMessage: 'Crawler controls' }) } },
     { to: '/admin/settings/content_retention', get label() { return t({ id: 'mastodon.admin.settings.content_retention.title', defaultMessage: 'Content retention' }) } },
     { to: '/admin/settings/appearance', get label() { return t({ id: 'mastodon.admin.settings.appearance.title', defaultMessage: 'Appearance' }) } },
   ] },

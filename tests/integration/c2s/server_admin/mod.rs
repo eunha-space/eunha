@@ -651,3 +651,52 @@ async fn test_content_retention() {
     assert_eq!(file, None);
     assert_eq!(remote_url, "https://remote.invalid/m.png");
 }
+
+/// `RobotsController`: the default rules keep AI crawlers out, until an
+/// administrator overrides them on the crawlers page.
+#[tokio::test]
+async fn test_robots_txt_follows_the_crawler_settings() {
+    let ctx = TestContext::new("srv-robots").await;
+    make_admin(&ctx).await;
+
+    let resp = ctx.api.get("/robots.txt", None).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.headers()["cache-control"], "max-age=2592000, public");
+    assert!(resp.headers()["content-type"]
+        .to_str()
+        .unwrap()
+        .starts_with("text/plain"));
+    let body = resp.text().await.unwrap();
+    assert!(body.starts_with("# You are not allowed to use the contents"));
+    assert!(body.contains("User-agent: GPTBot\n"));
+    assert!(body.contains("User-agent: *\nDisallow: /authorize_follow\n"));
+    assert!(body.ends_with("Disallow: /share\n"));
+
+    let settings = json_ok(
+        ctx.api
+            .get("/api/v1/admin/settings", Some(&ctx.alice_token))
+            .await,
+    )
+    .await;
+    assert_eq!(settings["override_robots"], false);
+    assert_eq!(settings["custom_robots"], "");
+
+    // Custom rules alone change nothing until the override is on.
+    json_ok(
+        patch_settings(
+            &ctx,
+            json!({"custom_robots": "User-agent: *\nDisallow: /\n"}),
+        )
+        .await,
+    )
+    .await;
+    let body = ctx.api.get("/robots.txt", None).await.text().await.unwrap();
+    assert!(body.contains("User-agent: GPTBot"), "{body}");
+
+    let settings = json_ok(patch_settings(&ctx, json!({"override_robots": true})).await).await;
+    assert_eq!(settings["override_robots"], true);
+    assert_eq!(
+        ctx.api.get("/robots.txt", None).await.text().await.unwrap(),
+        "User-agent: *\nDisallow: /\n"
+    );
+}

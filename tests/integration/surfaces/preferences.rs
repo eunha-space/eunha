@@ -292,6 +292,8 @@ async fn test_mastodon_preferences_read_the_web_settings() {
     assert_eq!(prefs["reading:expand:media"], "default");
     assert_eq!(prefs["reading:expand:spoilers"], false);
     assert_eq!(prefs["reading:autoplay:gifs"], false);
+    // Mastodon 5.0 took `posting:default:spoiler_field` back out.
+    assert!(prefs.get("posting:default:spoiler_field").is_none());
     assert_eq!(prefs["posting:default:language"], "en", "the site's");
     assert_eq!(
         mastodon("?lang=ja", None).await["posting:default:language"],
@@ -308,6 +310,7 @@ async fn test_mastodon_preferences_read_the_web_settings() {
             "display_media": "show_all",
             "expand_content_warnings": true,
             "auto_play": true,
+            "show_stats_in_feed": false,
             "locale": "ko",
         }),
     )
@@ -318,6 +321,7 @@ async fn test_mastodon_preferences_read_the_web_settings() {
     assert_eq!(changed["display_media"], "show_all");
     assert_eq!(changed["expand_content_warnings"], true);
     assert_eq!(changed["auto_play"], true);
+    assert_eq!(changed["show_stats_in_feed"], false);
     let settings: String = sqlx::query_scalar("SELECT settings FROM users WHERE id = $1")
         .bind(alice_user)
         .fetch_one(&ctx.db)
@@ -327,6 +331,7 @@ async fn test_mastodon_preferences_read_the_web_settings() {
     assert_eq!(settings["web.display_media"], "show_all");
     assert_eq!(settings["web.expand_content_warnings"], true);
     assert_eq!(settings["web.auto_play"], true);
+    assert_eq!(settings["web.show_stats_in_feed"], false);
     assert_eq!(
         patch(&ctx, json!({ "display_media": "sometimes" }))
             .await

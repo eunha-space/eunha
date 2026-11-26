@@ -60,13 +60,6 @@ export function TimelinePreferences({ token }: { token: string }) {
   return (
     <section className="space-y-2 rounded-lg border p-4">
       <h2 className="font-semibold">{t({ id: 'eunha.timeline_preferences.timelines_and_posting', defaultMessage: 'Timelines and posting' })}</h2>
-      <Label className="text-sm font-normal">
-        <Switch
-          checked={prefs.default_spoiler_field}
-          onCheckedChange={(on) => void save({ default_spoiler_field: on })}
-        />
-        {t({ id: 'eunha.timeline_preferences.open_the_content_warning_field_when', defaultMessage: 'Open the content warning field when composing' })}
-      </Label>
       <div className="space-y-0.5">
         <Label className="text-sm font-normal">
           <Switch
@@ -79,6 +72,13 @@ export function TimelinePreferences({ token }: { token: string }) {
           {t({ id: 'mastodon.simple_form.hints.defaults.setting_aggregate_reblogs', defaultMessage: 'Do not show new boosts for posts that have been recently boosted (only affects newly-received boosts)' })}
         </p>
       </div>
+      <Label className="text-sm font-normal">
+        <Switch
+          checked={prefs.show_stats_in_feed}
+          onCheckedChange={(on) => void save({ show_stats_in_feed: on })}
+        />
+        {t({ id: 'mastodon.simple_form.labels.defaults.setting_show_stats_in_feed', defaultMessage: 'Show interaction statistics in feeds' })}
+      </Label>
       <Label className="text-sm font-normal">
         <Switch
           checked={prefs.display_own_posts}

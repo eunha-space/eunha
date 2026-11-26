@@ -4,8 +4,8 @@
 //! inverted as `indexable`) and "display from which app you sent a post"
 //! (`show_application`), and from `Settings::Preferences::*` the interface
 //! language and time zone, the languages to show in public timelines, how
-//! media, content warnings and GIFs are shown, and the notification emails
-//! eunha sends.
+//! media, content warnings, GIFs and the counts in feeds are shown, and the
+//! notification emails eunha sends.
 //!
 //! What Mastodon offers through the REST API already — the posting defaults
 //! (`source[privacy]`, `source[sensitive]`, `source[language]`,
@@ -78,8 +78,6 @@ pub struct Preferences {
     pub display_own_posts: bool,
     /// Whether the user's own boosts appear in their home feed.
     pub display_own_boosts: bool,
-    /// Whether the composer shows the content warning field from the start.
-    pub default_spoiler_field: bool,
     /// Media marked sensitive hidden (`default`), or all media shown
     /// (`show_all`) or hidden (`hide_all`): `web.display_media`, which
     /// clients read as `reading:expand:media`.
@@ -89,6 +87,9 @@ pub struct Preferences {
     pub expand_content_warnings: bool,
     /// Animated GIFs played (`web.auto_play`, `reading:autoplay:gifs`).
     pub auto_play: bool,
+    /// Reply, boost and favourite counts on posts in feeds
+    /// (`web.show_stats_in_feed`, the initial state's `show_stats_in_feed`).
+    pub show_stats_in_feed: bool,
     pub notification_emails: NotificationEmails,
 }
 
@@ -140,13 +141,10 @@ async fn load(state: &AppState, user_id: i64) -> AppResult<Preferences> {
         aggregate_reblogs: crate::feed::aggregates_reblogs(settings),
         display_own_posts: crate::feed::displays_own(&parsed, false),
         display_own_boosts: crate::feed::displays_own(&parsed, true),
-        default_spoiler_field: parsed
-            .get("default_spoiler_field")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false),
         display_media: string_of("web.display_media", "default"),
         expand_content_warnings: user_setting_bool(settings, "web.expand_content_warnings", false),
         auto_play: user_setting_bool(settings, "web.auto_play", false),
+        show_stats_in_feed: user_setting_bool(settings, "web.show_stats_in_feed", true),
         notification_emails: NotificationEmails {
             follow: bool_of(
                 "notification_emails.follow",
@@ -202,10 +200,10 @@ pub struct Update {
     pub aggregate_reblogs: Option<bool>,
     pub display_own_posts: Option<bool>,
     pub display_own_boosts: Option<bool>,
-    pub default_spoiler_field: Option<bool>,
     pub display_media: Option<String>,
     pub expand_content_warnings: Option<bool>,
     pub auto_play: Option<bool>,
+    pub show_stats_in_feed: Option<bool>,
     /// An empty list clears it.
     pub chosen_languages: Option<Vec<String>>,
     pub locale: Option<String>,
@@ -263,9 +261,6 @@ pub async fn update(
     if let Some(display) = form.display_own_boosts {
         set("display_own_boosts", display.into());
     }
-    if let Some(spoiler_field) = form.default_spoiler_field {
-        set("default_spoiler_field", spoiler_field.into());
-    }
     if let Some(display) = &form.display_media {
         // `in: %w(hide_all default show_all)`.
         if !matches!(display.as_str(), "hide_all" | "default" | "show_all") {
@@ -280,6 +275,9 @@ pub async fn update(
     }
     if let Some(auto_play) = form.auto_play {
         set("web.auto_play", auto_play.into());
+    }
+    if let Some(show) = form.show_stats_in_feed {
+        set("web.show_stats_in_feed", show.into());
     }
     let emails = &form.notification_emails;
     for ((key, _), value) in NOTIFICATION_EMAILS.iter().zip([

@@ -25,7 +25,8 @@ type Key = Exclude<keyof AdminSettings, 'overridden'>
 
 type Field =
   | { key: Key; kind: 'text' | 'email' | 'url' | 'number'; label: string; hint?: string }
-  | { key: Key; kind: 'textarea'; label: string; hint?: string; rows?: number }
+  // `shownWith`: drawn only while that switch is on.
+  | { key: Key; kind: 'textarea'; label: string; hint?: string; rows?: number; shownWith?: Key }
   | { key: Key; kind: 'switch'; label: string; hint?: string }
   | { key: Key; kind: 'select'; label: string; hint?: string; items: Record<string, string> }
   | { key: Key; kind: 'upload'; label: string; hint?: string }
@@ -111,7 +112,6 @@ const PAGES: Record<string, { title: string; preamble: string; fields: Field[] }
         items: { public: FEED_ACCESS.public, authenticated: FEED_ACCESS.authenticated },
       },
       { key: 'remote_topic_feed_access', kind: 'select', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.remote_topic_feed_access', defaultMessage: 'Access to hashtag and link feeds featuring remote posts' }) }, items: FEED_ACCESS },
-      { key: 'noindex', kind: 'switch', get label() { return t({ id: 'mastodon.admin.settings.default_noindex.title', defaultMessage: 'Opt users out of search engine indexing by default' }) }, get hint() { return t({ id: 'eunha.admin.settings.affects_all_users_who_have_not', defaultMessage: 'Affects all users who have not changed this setting themselves.' }) } },
       { key: 'allow_referrer_origin', kind: 'switch', get label() { return t({ id: 'eunha.admin.settings.allow_external_websites_to_see_your', defaultMessage: 'Allow external websites to see your server as the source of traffic' }) } },
       { key: 'activity_api_enabled', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.activity_api_enabled', defaultMessage: 'Publish aggregate statistics about user activity in the API' }) }, get hint() { return t({ id: 'eunha.admin.settings.counts_of_locally_published_posts_active', defaultMessage: 'Counts of locally published posts, active users, and new registrations in weekly buckets.' }) } },
       { key: 'peers_api_enabled', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.peers_api_enabled', defaultMessage: 'Publish list of discovered servers in the API' }) }, get hint() { return t({ id: 'eunha.admin.settings.a_list_of_domain_names_this', defaultMessage: 'A list of domain names this server has encountered in the fediverse.' }) } },
@@ -127,6 +127,15 @@ const PAGES: Record<string, { title: string; preamble: string; fields: Field[] }
       { key: 'opt_in_server_recommendation', kind: 'switch', get label() { return t({ id: 'eunha.admin.settings.allow_this_server_to_be_recommended', defaultMessage: 'Allow this server to be recommended' }) }, get hint() { return t({ id: 'eunha.admin.settings.tells_other_services_this_server_may', defaultMessage: 'Tells other services this server may be recommended to people.' }) } },
       { key: 'profile_directory', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.profile_directory', defaultMessage: 'Enable profile directory' }) }, get hint() { return t({ id: 'mastodon.simple_form.hints.form_admin_settings.profile_directory', defaultMessage: 'The profile directory lists all users who have opted-in to be discoverable.' }) } },
       { key: 'wrapstodon', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.wrapstodon', defaultMessage: 'Enable Wrapstodon' }) }, get hint() { return t({ id: 'eunha.admin.settings.offer_local_users_to_generate_a', defaultMessage: 'Offer local users to generate a playful summary of their use during the year.' }) } },
+    ],
+  },
+  crawlers: {
+    get title() { return t({ id: 'mastodon.admin.settings.crawlers.title', defaultMessage: 'Crawler controls' }) },
+    get preamble() { return t({ id: 'mastodon.admin.settings.crawlers.preamble', defaultMessage: 'Control how (well-behaved) bots such as search engine crawlers can interact with your server. Malicious bots can ignore these settings and must be blocked at the network level.' }) },
+    fields: [
+      { key: 'override_robots', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.override_robots', defaultMessage: 'Override default robots.txt' }) }, get hint() { return t({ id: 'mastodon.simple_form.hints.form_admin_settings.override_robots', defaultMessage: 'Allows you to customize rules of access for well-behaved bots' }) } },
+      { key: 'custom_robots', kind: 'textarea', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.custom_robots', defaultMessage: 'Custom robots.txt' }) }, get hint() { return t({ id: 'eunha.admin.settings.robots_txt_syntax', defaultMessage: 'Written as RFC 9309 describes. It replaces the default rules, which keep AI crawlers out.' }) }, rows: 8, shownWith: 'override_robots' },
+      { key: 'noindex', kind: 'switch', get label() { return t({ id: 'mastodon.admin.settings.default_noindex.title', defaultMessage: 'Opt users out of search engine indexing by default' }) }, get hint() { return t({ id: 'eunha.admin.settings.affects_all_users_who_have_not', defaultMessage: 'Affects all users who have not changed this setting themselves.' }) } },
     ],
   },
   content_retention: {
@@ -270,6 +279,7 @@ export default function Settings() {
         <form onSubmit={save} className="max-w-2xl space-y-5">
           <p className="text-muted-foreground text-sm">{def.preamble}</p>
           {def.fields.map((field) => {
+            if (field.kind === 'textarea' && field.shownWith && draft[field.shownWith] !== true) return null
             const overridden = settings.overridden.includes(field.key)
             const id = `setting-${field.key}`
             const value = draft[field.key]

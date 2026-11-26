@@ -90,6 +90,32 @@ test('a settings page saves its own keys and no others', async ({ page }) => {
   expect(saved).not.toContain('name="site_title"')
 })
 
+// Mastodon 5.0's crawler controls: the custom robots.txt is offered only
+// once the override is on, and saved with it and `noindex`.
+test('the crawlers page overrides robots.txt', async ({ page }) => {
+  await signIn(page, MANAGE_SETTINGS)
+  let saved: string | null = null
+  await page.route('**/api/v1/admin/settings', async (r) => {
+    if (r.request().method() === 'PATCH') {
+      saved = r.request().postData()
+      await r.fulfill({ json: { ...settings, override_robots: true, custom_robots: 'User-agent: *' } })
+    } else {
+      await r.fulfill({ json: { ...settings, override_robots: false, custom_robots: '', noindex: false } })
+    }
+  })
+
+  await page.goto('/admin/settings/crawlers')
+  await expect(page.getByRole('heading', { name: /Crawler controls/ })).toBeVisible()
+  await expect(page.getByLabel('Custom robots.txt')).toHaveCount(0)
+  await page.getByText('Override default robots.txt').click()
+  await page.getByLabel('Custom robots.txt').fill('User-agent: *')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect.poll(() => saved).toContain('name="custom_robots"')
+  expect(saved).toContain('name="override_robots"')
+  expect(saved).toContain('name="noindex"')
+  expect(saved).not.toContain('name="site_title"')
+})
+
 test('a rule is added and moved', async ({ page }) => {
   await signIn(page, MANAGE_RULES)
   const rule = (id: string, text: string) => ({

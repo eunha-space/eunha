@@ -211,6 +211,63 @@ async fn account_feed_carries_public_posts_and_leaves_the_rest_out() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
+/// An image without a thumbnail of its own gets its small version as the
+/// account feed's `media:thumbnail`, as Mastodon 5.0's does; a tag's feed
+/// still names only a thumbnail of its own.
+#[tokio::test]
+async fn account_feed_gives_every_attachment_a_thumbnail() {
+    let ctx = TestContext::new("web-rss-thumbnail").await;
+    let media: Value = ctx
+        .api
+        .post_multipart_file(
+            "/api/v1/media",
+            &ctx.alice_token,
+            "test.png",
+            "image/png",
+            crate::helpers::tiny_png(),
+            &[],
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let status: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &serde_json::json!({
+                "status": "A picture #pictured",
+                "visibility": "public",
+                "media_ids": [media["id"]],
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let small = status["media_attachments"][0]["preview_url"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let feed = ctx.api.get("/@alice.rss", None).await.text().await.unwrap();
+    roxmltree::Document::parse(&feed).expect("a feed is well-formed XML");
+    assert!(
+        feed.contains(&format!(r#"<media:thumbnail url="{small}"/>"#)),
+        "{feed}"
+    );
+    let feed = ctx
+        .api
+        .get("/tags/pictured.rss", None)
+        .await
+        .text()
+        .await
+        .unwrap();
+    assert!(feed.contains("A picture"), "{feed}");
+    assert!(!feed.contains("media:thumbnail"), "{feed}");
+}
+
 #[tokio::test]
 async fn account_feed_leaves_out_replies_to_others_until_asked() {
     let ctx = TestContext::new("web-rss-replies").await;
@@ -359,6 +416,106 @@ async fn account_and_post_heads_say_what_crawlers_read() {
         .head
         .contains(r#"<meta name="robots" content="noindex" />"#));
     assert!(head.head.contains("/tags/rusty.rss"));
+}
+
+/// The schema.org JSON-LD a head carries.
+fn seo_schema(head: &str) -> Value {
+    let start = head
+        .find(r#"<script type="application/ld+json">"#)
+        .expect("a schema")
+        + r#"<script type="application/ld+json">"#.len();
+    let end = start + head[start..].find("</script>").unwrap();
+    serde_json::from_str(&head[start..end]).unwrap()
+}
+
+/// `SEO::ProfilePageSerializer` on a profile, and on a post a full author, the
+/// post it replies to and the one it quotes, as Mastodon 5.0's do.
+#[tokio::test]
+async fn heads_carry_schema_org_profiles_replies_and_quotes() {
+    use eunha::web::pages::{account_head, owner, readable_status, status_head, Owner, Tab};
+
+    let ctx = TestContext::new("web-seo").await;
+    let Owner::Found(account) = owner(&ctx.state, "alice").await.unwrap() else {
+        panic!("alice has an account");
+    };
+    let head = account_head(&ctx.state, &account, &Tab::Posts).await;
+    let profile = seo_schema(&head.head);
+    assert_eq!(profile["@context"], "https://schema.org");
+    assert_eq!(profile["@type"], "ProfilePage");
+    assert!(profile["datePublished"].as_str().unwrap().ends_with('Z'));
+    let person = &profile["mainEntity"];
+    assert_eq!(person["@type"], "Person");
+    assert_eq!(person["identifier"], format!("alice@{}", ctx.domain));
+    assert_eq!(person["url"], format!("https://{}/@alice", ctx.domain));
+    assert_eq!(
+        person["agentInteractionStatistic"][0]["interactionType"],
+        "https://schema.org/WriteAction"
+    );
+    assert!(person["image"].as_str().unwrap().starts_with("http"));
+
+    let first = ctx
+        .api
+        .post_status(&ctx.alice_token, "The first", "public")
+        .await;
+    let first_id = first["id"].as_str().unwrap();
+    let reply: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &serde_json::json!({
+                "status": "A reply that quotes",
+                "visibility": "public",
+                "in_reply_to_id": first_id,
+                "quoted_status_id": first_id,
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id: i64 = reply["id"].as_str().unwrap().parse().unwrap();
+    let row = readable_status(&ctx.state, account.id, id)
+        .await
+        .unwrap()
+        .unwrap();
+    let entity = eunha::api::mastodon::statuses::serialize_status(&ctx.state, &row, None)
+        .await
+        .unwrap();
+    let head = status_head(&ctx.state, &account, &row, &entity)
+        .await
+        .unwrap();
+    let posting = seo_schema(&head.head);
+    let first_url = format!("https://{}/@alice/{first_id}", ctx.domain);
+    assert_eq!(posting["@type"], "SocialMediaPosting");
+    assert_eq!(
+        posting["parentItem"],
+        serde_json::json!({"@type": "SocialMediaPosting", "url": first_url})
+    );
+    assert_eq!(
+        posting["sharedContent"],
+        serde_json::json!({"@type": "SocialMediaPosting", "url": first_url})
+    );
+    assert_eq!(posting["author"]["@type"], "Person");
+    assert_eq!(
+        posting["author"]["agentInteractionStatistic"][0]["userInteractionCount"],
+        2
+    );
+    assert!(posting["datePublished"].as_str().unwrap().ends_with('Z'));
+    assert_eq!(posting["dateModified"], Value::Null);
+
+    // Opted out of indexing, a profile carries no schema.
+    sqlx::query("UPDATE users SET settings = '{\"noindex\":true}' WHERE account_id = $1")
+        .bind(account.id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let head = account_head(&ctx.state, &account, &Tab::Posts).await;
+    assert!(
+        !head.head.contains(r#"<script type="application/ld+json">"#),
+        "{}",
+        head.head
+    );
 }
 
 /// Pages for what a visitor may not see answer as Mastodon's do, the web app

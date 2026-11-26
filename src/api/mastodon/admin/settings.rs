@@ -1,6 +1,6 @@
 //! `Admin::SettingsController` and its pages (branding, about, registrations,
-//! discovery, content retention, appearance), over `Form::AdminSettings`, and
-//! `Admin::SiteUploadsController`.
+//! discovery, crawlers, content retention, appearance), over
+//! `Form::AdminSettings`, and `Admin::SiteUploadsController`.
 //!
 //! Mastodon: app/controllers/admin/settings_controller.rb
 //! Mastodon: app/controllers/admin/settings/
@@ -73,6 +73,8 @@ const KEYS: &[(&str, Kind)] = &[
     // eunha's: whether new members get `UserMailer#welcome`.
     ("welcome_email", Kind::Boolean),
     ("theme_color", Kind::Text),
+    ("custom_robots", Kind::Text),
+    ("override_robots", Kind::Boolean),
     ("app_icon", Kind::Upload),
     ("favicon", Kind::Upload),
     ("min_age", Kind::Integer),

@@ -10,7 +10,6 @@ import { ChartBar, LockOpen, Paperclip, Settings2, X } from 'lucide-react'
 
 import type { mastodon } from '../masto.ts'
 import { getCachedInstance, getDefaultPostLanguage, getInstance, postStatus, updateMediaDescription, uploadMedia } from '../api.ts'
-import { getPreferences } from '../security-api.ts'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -203,26 +202,16 @@ export function Compose({
   const [error, setError] = useState<string | null>(null)
   const [confirmingPrivateQuote, setConfirmingPrivateQuote] = useState(false)
   const [privateQuoteDismissed, setPrivateQuoteDismissed] = useState(false)
-  const [warningOverride, setWarningOverride] = useState<boolean>()
-  const [defaultWarning, setDefaultWarning] = useState(false)
+  const [warningOpen, setWarningOpen] = useState(false)
   const [warning, setWarning] = useState('')
   const [sensitive, setSensitive] = useState<boolean>()
   const [defaultSensitive, setDefaultSensitive] = useState(getMeAccount()?.defaultSensitive ?? false)
-  const warningOpen = warningOverride ?? defaultWarning
   // The card the post will get, shown as it is written. A post with media or
   // a quote gets none (`FetchLinkCardService`), and one with a content
   // warning is sensitive, which hides the card's image as it will be hidden
   // once posted.
   const linkCard = useLinkCard(token, text, attachments.length === 0 && !uploading && !quoteOf)
   const warned = warningOpen && !!warning.trim()
-
-  useEffect(() => {
-    let active = true
-    getPreferences(token).then((prefs) => {
-      if (active) setDefaultWarning(prefs.default_spoiler_field)
-    }).catch(() => {})
-    return () => { active = false }
-  }, [token])
 
   const [defaultLanguage, setDefaultLanguage] = useState('')
   const [languageOverride, setLanguageOverride] = useState<string>()
@@ -325,7 +314,7 @@ export function Compose({
   useEffect(() => {
     const quotedWarning = quoteOf?.spoilerText
     if (!quotedWarning) return
-    setWarningOverride(true)
+    setWarningOpen(true)
     setWarning((current) => current || quotedWarning)
     // Once per quoted post, not on each of its re-renders.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -439,7 +428,7 @@ export function Compose({
       })
       setText('')
       setWarning('')
-      setWarningOverride(undefined)
+      setWarningOpen(false)
       setSensitive(undefined)
       setPoll(undefined)
       setLanguageOverride(undefined)
@@ -767,7 +756,7 @@ export function Compose({
                 <Settings2 />
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuCheckboxItem checked={warningOpen} onCheckedChange={setWarningOverride}>
+                <DropdownMenuCheckboxItem checked={warningOpen} onCheckedChange={setWarningOpen}>
                   {t({ id: 'collections.content_warning', defaultMessage: 'Content warning' })}
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem checked={sensitive ?? defaultSensitive} onCheckedChange={setSensitive}>

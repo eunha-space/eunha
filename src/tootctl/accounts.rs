@@ -919,8 +919,10 @@ const PRUNABLE: &str = "SELECT a.id FROM accounts a
       AND NOT EXISTS (SELECT 1 FROM follow_requests x WHERE x.target_account_id = a.id)
     ORDER BY a.id";
 
-/// `Accounts#prune`: each prunable account that is not a bot or a group,
-/// suspended or silenced, is destroyed.
+/// `Accounts#prune`: each prunable account that is not a group, suspended
+/// or silenced, is destroyed. [`PRUNABLE`] has already left bots out
+/// (`non_automated`), which is why Mastodon 5.0 stopped checking for them
+/// here.
 pub async fn prune(
     state: &AppState,
     console: &dyn Console,
@@ -934,11 +936,8 @@ pub async fn prune(
         let Some(account) = load(&state.db, id).await? else {
             return Ok(None);
         };
-        let automated = matches!(
-            account.actor_type.as_deref(),
-            Some("Application" | "Service" | "Group")
-        );
-        if automated || account.suspended_at.is_some() || account.silenced_at.is_some() {
+        let group = account.actor_type.as_deref() == Some("Group");
+        if group || account.suspended_at.is_some() || account.silenced_at.is_some() {
             return Ok(None);
         }
         if !dry_run {

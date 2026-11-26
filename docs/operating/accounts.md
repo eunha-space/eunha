@@ -683,6 +683,10 @@ Boosts in timelines](#boosts-in-timelines)).
     `reading:expand:spoilers` and `reading:autoplay:gifs`. The web client
     applies them as Mastodon's does; see [How posts are
     shown](#how-posts-are-shown).
+ -  `show_stats_in_feed`, Mastodon 5.0's `web.show_stats_in_feed` (on unless
+    turned off), shows reply, boost and favourite counts on posts in feeds.
+    Mastodon has it only in its web client's initial state, so
+    `GET /api/v1/preferences` does not carry it.
  -  `notification_emails` turns the mails eunha sends on or off: the
     notification emails `follow`, `follow_request`, `reblog`, `favourite`,
     `mention` and `quote` (see [Notification emails](#notification-emails)),
@@ -709,7 +713,8 @@ How posts are shown
 -------------------
 
 The web client loads the signed-in account's `display_media`,
-`expand_content_warnings` and `auto_play` when it starts, keeps a copy per
+`expand_content_warnings`, `auto_play` and `show_stats_in_feed` when it
+starts, keeps a copy per
 account so the next load paints with them, and takes a new value as soon as
 the settings page saves it. Switching accounts reloads the page with the other
 account's preferences. Signed out, it uses Mastodon's defaults: sensitive
@@ -726,6 +731,10 @@ follows them, as Mastodon's web client does:
     loaded until it is shown.
  -  A post with a content warning starts folded, or open with
     `expand_content_warnings`. The same goes for a quoted post.
+ -  With `show_stats_in_feed` off, a post on a timeline, a profile, the
+    notifications, search or under a thread shows no reply, boost or
+    favourite counts beside its buttons (Mastodon's `withCounters`). A post's
+    own page shows them whatever the setting.
  -  With `auto_play`, GIFs (`gifv` attachments), avatars, profile headers
     and custom emoji animate. Without it, a GIF plays while the pointer is
     over it, an avatar shows its `avatar_static` until hovered (your own in

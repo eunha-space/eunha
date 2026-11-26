@@ -300,7 +300,14 @@ These are for people and crawlers rather than other servers. They live in
 
  -  **`/@user`, `/@user/:id`, and `/tags/:name`** are the web app, with the
     title, OpenGraph tags, `rel="alternate"` links and `Link` header Mastodon's
-    pages carry, and a post's JSON-LD unless its author asked not to be indexed.
+    pages carry, and schema.org JSON-LD unless the account asked not to be
+    indexed: a `ProfilePage` on a profile, and a `SocialMediaPosting` on a
+    post. Its author is the full `Person`, with the posts written and accounts
+    followed as `agentInteractionStatistic`; a reply names the post it
+    answers as `parentItem`, and a quote the quoted post as `sharedContent`,
+    in place of its link card. Images carry their width and height, and a
+    video or audio file its description as `name`. A reply whose parent is
+    gone leaves `parentItem` out, where Mastodon fails to draw the page.
     The server cannot see the web app's token, so each answers as to a visitor:
     `404`, `403` or `410` where a visitor would get that, with the app still
     loading for a member who may see more. A boost's page redirects to the
@@ -309,7 +316,10 @@ These are for people and crawlers rather than other servers. They live in
     `/@user/media.rss`, `/@user/tagged/:tag.rss` and `/tags/:name.rss`
     (`?local=true`). `?limit=` goes up to 200. An account's carries public and
     unlisted posts, without boosts, and a tag's only public ones, unless the
-    feed settings keep that tag's posts from visitors.
+    feed settings keep that tag's posts from visitors. In an account's feed
+    every attachment has a `media:thumbnail`, its own thumbnail or else its
+    small version; a tag's names only a thumbnail of its own, as Mastodon's
+    still does.
  -  **`/@user/:id/embed`** draws a public or unlisted post without the web app,
     for any site to frame. `/api/oembed` names it, with `/embed.js`, which sets
     the frame's height.
@@ -320,7 +330,8 @@ These are for people and crawlers rather than other servers. They live in
     `/authorize_follow` and `/.well-known/proxy` redirect to the first.
  -  **`/health`** answers `OK` once the process is serving, and asks nothing of
     the database. **`/manifest`** and **`/manifest.json`** describe the
-    installable app.
+    installable app. **`/robots.txt`** is the crawler rules (see
+    [administration](../operating/administration.md#server-settings)).
 
 In limited federation mode the pages say nothing about what they name, and the
 feeds and embeds answer `404`. See

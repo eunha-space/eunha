@@ -208,11 +208,22 @@ fn description(words: &Words, status: &types::Status) -> String {
     with_custom_emojis(&html, &status.emojis, SYNDICATED_EMOJI_STYLES)
 }
 
+/// Which attachments get a `media:thumbnail`.
+#[derive(Clone, Copy)]
+enum Thumbnails {
+    /// Every one: its own thumbnail, or else its small version, as
+    /// `accounts/show.rss` has since Mastodon 5.0.
+    Every,
+    /// Only one with a thumbnail of its own, as `tags/show.rss` still does.
+    OwnOnly,
+}
+
 fn item(
     out: &mut String,
     words: &Words,
     status: &types::Status,
     files: &HashMap<String, MediaFile>,
+    thumbnails: Thumbnails,
 ) {
     out.push_str("<item>");
     let url = status.url.as_deref().unwrap_or(&status.uri);
@@ -285,7 +296,11 @@ fn item(
                 xml(text)
             );
         }
-        if file.is_some_and(|file| file.thumbnail) {
+        let wanted = match thumbnails {
+            Thumbnails::Every => true,
+            Thumbnails::OwnOnly => file.is_some_and(|file| file.thumbnail),
+        };
+        if wanted {
             if let Some(thumbnail) = media.preview_url.as_deref() {
                 let _ = write!(out, r#"<media:thumbnail url="{}"/>"#, xml(thumbnail));
             }
@@ -319,12 +334,13 @@ async fn items(
     words: &Words,
     out: &mut String,
     statuses: Vec<DbStatus>,
+    thumbnails: Thumbnails,
 ) -> AppResult<()> {
     let ids: Vec<i64> = statuses.iter().map(|status| status.id).collect();
     let files = media_files(state, &ids).await?;
     let entities = build_status_list_with_filters(state, statuses, None).await?;
     for status in &entities {
-        item(out, words, status, &files);
+        item(out, words, status, &files, thumbnails);
     }
     Ok(())
 }
@@ -379,7 +395,7 @@ pub async fn account_feed(
     }
     element(&mut out, "webfeeds:icon", &entity.avatar);
     element(&mut out, "generator", &generator());
-    items(state, &words, &mut out, statuses).await?;
+    items(state, &words, &mut out, statuses, Thumbnails::Every).await?;
     Ok(document(out))
 }
 
@@ -413,7 +429,7 @@ pub async fn tag_feed(
         );
     }
     element(&mut out, "generator", &generator());
-    items(state, &words, &mut out, statuses).await?;
+    items(state, &words, &mut out, statuses, Thumbnails::OwnOnly).await?;
     Ok(document(out))
 }
 

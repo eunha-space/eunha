@@ -110,7 +110,6 @@
    "redirect_uri",
    "redirect_uris",
    "scopes",
-   "vapid_key",
    "website"
   ],
   "conditional": []
@@ -400,7 +399,6 @@
    "posting_default_privacy",
    "posting_default_quote_policy",
    "posting_default_sensitive",
-   "posting_default_spoiler_field",
    "reading_autoplay_gifs",
    "reading_default_sensitive_media",
    "reading_default_sensitive_text"

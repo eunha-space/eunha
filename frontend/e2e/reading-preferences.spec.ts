@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 
 // The account's reading preferences (`web.display_media`,
-// `web.expand_content_warnings`, `web.auto_play`) decide how posts are shown,
+// `web.expand_content_warnings`, `web.auto_play`, `web.show_stats_in_feed`)
+// decide how posts are shown,
 // as they do in Mastodon's web client. Every request is stubbed.
 const account = {
   id: '1', username: 'alice', acct: 'alice', display_name: 'Alice', note: '',
@@ -32,9 +33,15 @@ interface Reading {
   display_media: 'default' | 'show_all' | 'hide_all'
   expand_content_warnings: boolean
   auto_play: boolean
+  show_stats_in_feed?: boolean
 }
 
-async function setup(page: Page, reading: Reading | null, changes: Partial<typeof post> = {}) {
+async function setup(
+  page: Page,
+  reading: Reading | null,
+  changes: Partial<typeof post> = {},
+  descendants: unknown[] = [],
+) {
   if (reading) {
     await page.addInitScript(() => {
       localStorage.setItem('eunha:accounts', JSON.stringify([{ token: 'test-token', account: { id: '1', acct: 'alice' } }]))
@@ -52,7 +59,7 @@ async function setup(page: Page, reading: Reading | null, changes: Partial<typeo
     await page.route('**/api/eunha/v1/terms_of_service/interstitial', r => r.fulfill({ status: 204 }))
   }
   await page.route('**/api/v1/statuses/10', r => r.fulfill({ json: { ...post, ...changes } }))
-  await page.route('**/api/v1/statuses/10/context', r => r.fulfill({ json: { ancestors: [], descendants: [] } }))
+  await page.route('**/api/v1/statuses/10/context', r => r.fulfill({ json: { ancestors: [], descendants } }))
   await page.route('**/media/*', r => r.fulfill({
     contentType: 'image/svg+xml',
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#287da8" /></svg>',
@@ -132,4 +139,25 @@ test('a saved preference is kept for the account and used on the next page', asy
   await page.route('**/api/eunha/v1/preferences', r => r.abort())
   await page.goBack()
   await expect(page.getByText('What happens next')).toBeVisible()
+})
+
+// Mastodon's `withCounters`: with `web.show_stats_in_feed` off, a post in a
+// list (here a reply under the thread) shows no counts, and the post's own
+// page still does.
+test('turning interaction statistics off hides the counts on posts in feeds', async ({ page }) => {
+  const reply = {
+    ...post, id: '11', in_reply_to_id: '10', sensitive: false, spoiler_text: '',
+    content: '<p>A reply</p>', media_attachments: [], favourites_count: 7,
+    uri: 'https://example.invalid/users/alice/statuses/11', url: 'https://example.invalid/@alice/11',
+  }
+  const reading = { display_media: 'default', expand_content_warnings: true, auto_play: false } as const
+  await setup(page, { ...reading, show_stats_in_feed: false }, { replies_count: 5 }, [reply])
+  await expect(page.getByText('A reply')).toBeVisible()
+  await expect(page.getByText('5', { exact: true })).toBeVisible()
+  await expect(page.getByText('7', { exact: true })).toHaveCount(0)
+
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+  await setup(page, { ...reading, show_stats_in_feed: true }, { replies_count: 5 }, [reply])
+  await expect(page.getByText('A reply')).toBeVisible()
+  await expect(page.getByText('7', { exact: true })).toBeVisible()
 })
