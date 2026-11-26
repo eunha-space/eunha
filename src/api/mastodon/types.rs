@@ -351,6 +351,16 @@ pub struct InstanceConfiguration {
     pub translation: TranslationConfiguration,
     pub timelines_access: TimelinesAccess,
     pub limited_federation: bool,
+    pub collections: CollectionsConfiguration,
+}
+
+/// `configuration.collections`: how many accounts a local collection may
+/// feature, and how long its name and description may be.
+#[derive(Debug, Serialize)]
+pub struct CollectionsConfiguration {
+    pub max_items: i64,
+    pub max_name_length: usize,
+    pub max_description_length: usize,
 }
 
 #[derive(Debug, Serialize)]

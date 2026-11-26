@@ -29,7 +29,6 @@ const MASTODON_UPDATES: &[&str] = &[
     "/api/v1/admin/ip_blocks/1",
     "/api/v1/admin/tags/1",
     "/api/v1/collections/1",
-    "/api/v1_alpha/collections/1",
     "/api/v2/filters/1",
     "/api/v2/filters/keywords/1",
     "/api/v2/notifications/policy",

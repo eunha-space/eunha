@@ -304,6 +304,20 @@ async fn blocks(state: &AppState, owner_id: i64, signer: Option<&str>) -> AppRes
     .unwrap_or(false))
 }
 
+/// Whether the account `owner_id` is suspended or has asked to be deleted
+/// (`unavailable?`), whose collections `CollectionPolicy#show?` shows to
+/// nobody.
+async fn unavailable(state: &AppState, owner_id: i64) -> AppResult<bool> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT suspended_at IS NOT NULL OR requested_deletion_at IS NOT NULL AS "gone!"
+           FROM accounts WHERE id = $1"#,
+        owner_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(true))
+}
+
 /// `body` with `context` as its `@context`, before its other members.
 fn with_context(body: &mut Value, context: Value) {
     if let Value::Object(members) = body {
@@ -318,9 +332,9 @@ fn with_context(body: &mut Value, context: Value) {
 
 /// `CollectionsController#show`: a local collection, at `/collections/{id}`
 /// or, when `owner` names its owner, at
-/// `/ap/users/{account_id}/collections/{id}`; not there for a signer its
-/// owner blocks. Says too when it was last updated, which its caching
-/// depends on.
+/// `/ap/users/{account_id}/collections/{id}`; not there while its owner is
+/// suspended or asked to be deleted, or for a signer its owner blocks. Says
+/// too when it was last updated, which its caching depends on.
 pub async fn collection_document(
     state: &AppState,
     domain: &str,
@@ -332,7 +346,7 @@ pub async fn collection_document(
         .await?
         .filter(|c| owner.is_none_or(|owner| owner == c.owner_id))
         .ok_or(AppError::NotFound)?;
-    if blocks(state, c.owner_id, signer).await? {
+    if unavailable(state, c.owner_id).await? || blocks(state, c.owner_id, signer).await? {
         return Err(AppError::NotFound);
     }
     let mut body = featured_collection_body(state, domain, &c).await?;
@@ -341,8 +355,8 @@ pub async fn collection_document(
 }
 
 /// `CollectionItemsController#show`: an item of one of the local account
-/// `owner`'s collections, as a FeaturedItem; not there for a signer the
-/// owner blocks.
+/// `owner`'s collections, as a FeaturedItem; not there while the owner is
+/// suspended or asked to be deleted, or for a signer the owner blocks.
 pub async fn collection_item_document(
     state: &AppState,
     domain: &str,
@@ -365,7 +379,7 @@ pub async fn collection_item_document(
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
-    if blocks(state, owner, signer).await? {
+    if unavailable(state, owner).await? || blocks(state, owner, signer).await? {
         return Err(AppError::NotFound);
     }
     let account = match (r.account_id, r.username) {

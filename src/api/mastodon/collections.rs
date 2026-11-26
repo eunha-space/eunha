@@ -42,9 +42,12 @@ use crate::api::ap::collections as ap_coll;
 
 const DEFAULT_LIMIT: i64 = 40;
 const MAX_LIMIT: i64 = 100;
-const MAX_ITEMS: i64 = 25;
-const NAME_MAX: usize = 40;
-const DESCRIPTION_MAX: usize = 100;
+/// `Collection::MAX_ITEMS`.
+pub const MAX_ITEMS: i64 = 25;
+/// `Collection::NAME_LENGTH_LOCAL_LIMIT`.
+pub const NAME_MAX: usize = 40;
+/// `Collection::DESCRIPTION_LENGTH_LOCAL_LIMIT`.
+pub const DESCRIPTION_MAX: usize = 100;
 const DEFAULT_COLLECTION_LIMIT: i64 = 10;
 
 // State enum: pending=0, accepted=1, rejected=2, revoked=3
@@ -309,8 +312,15 @@ pub async fn account_collections(
     if let Some(Extension(a)) = &auth {
         a.require_scope("read:collections")?;
     }
-    // `Account.without_requested_deletion.find`.
-    super::accounts::find_account(&state, account_id).await?;
+    // `Account.without_suspended.find`: neither suspended nor asked to be
+    // deleted.
+    if super::accounts::find_account(&state, account_id)
+        .await?
+        .suspended_at
+        .is_some()
+    {
+        return Err(AppError::NotFound);
+    }
     let viewer_id = auth.as_ref().map(|Extension(a)| a.account_id);
     let only_discoverable = viewer_id != Some(account_id);
 
@@ -391,6 +401,9 @@ pub async fn show_collection(
     let c = load_collection(&state, id)
         .await?
         .ok_or(AppError::NotFound)?;
+    if !may_show(&state, c.account_id, viewer_id).await? {
+        return Err(AppError::Forbidden);
+    }
     let collection = collection_entity(&state, instance.web_domain(), &c, viewer_id).await?;
 
     // accounts = [owner] + accounts of visible (pending/accepted) items.
@@ -425,6 +438,26 @@ pub async fn show_collection(
     Ok(Json(
         json!({ "collection": collection, "accounts": accounts }),
     ))
+}
+
+/// `CollectionPolicy#show?`: not while the owner `owner_id` is suspended or
+/// has asked to be deleted (`unavailable?`), and not to a viewer the owner
+/// blocks, or whose domain it blocks.
+async fn may_show(state: &AppState, owner_id: i64, viewer_id: Option<i64>) -> AppResult<bool> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT o.suspended_at IS NULL AND o.requested_deletion_at IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM blocks b
+                                  WHERE b.account_id = o.id AND b.target_account_id = $2)
+                  AND NOT EXISTS (SELECT 1 FROM account_domain_blocks d
+                                  JOIN accounts v ON v.id = $2
+                                  WHERE d.account_id = o.id AND d.domain = v.domain) AS "shown!"
+           FROM accounts o WHERE o.id = $1"#,
+        owner_id,
+        viewer_id,
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .unwrap_or(false))
 }
 
 // ── POST /api/v1/collections ──────────────────────────────────────────────
