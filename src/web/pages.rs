@@ -18,6 +18,8 @@
 //! Mastodon: app/helpers/accounts_helper.rb
 //! Mastodon: app/helpers/statuses_helper.rb
 //! Mastodon: app/serializers/seo/social_media_posting_serializer.rb
+//! Mastodon: app/serializers/seo/profile_page_serializer.rb
+//! Mastodon: app/serializers/seo/person_serializer.rb
 
 use axum::http::StatusCode;
 use serde_json::{json, Value};
@@ -461,6 +463,11 @@ pub async fn account_head(state: &AppState, account: &Account, tab: &Tab) -> Hea
     let mut head = String::new();
     if noindex {
         head.push_str(&name_tag("robots", "noindex, noarchive"));
+    } else {
+        head.push_str(&format!(
+            r#"<script type="application/ld+json">{}</script>"#,
+            json_escape(&seo_profile_page(state, account, &entity).to_string())
+        ));
     }
     let rss_url = match tab {
         Tab::Tagged(tag) => format!(
@@ -664,26 +671,84 @@ fn interaction_counter(kind: &str, count: i64) -> Value {
     })
 }
 
-/// `render_seo_schema`: `SEO::SocialMediaPostingSerializer`, without the
-/// players' `embedUrl`, which eunha has no page for.
-fn seo_schema(state: &AppState, entity: &types::Status) -> Value {
-    let handle = local_handle(state, &entity.account.username);
+/// Rails' `Time#iso8601`, to the second.
+fn iso8601(time: chrono::NaiveDateTime) -> String {
+    time.format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+/// `SEO::PersonSerializer`.
+fn seo_person(state: &AppState, account: &Account, entity: &types::Account) -> Value {
+    let handle = local_handle(state, &account.username);
+    json!({
+        "@type": "Person",
+        "name": display_name(entity),
+        "alternateName": handle,
+        "identifier": handle,
+        "interactionStatistic": [
+            interaction_counter("FollowAction", entity.followers_count),
+        ],
+        "agentInteractionStatistic": [
+            interaction_counter("WriteAction", entity.statuses_count),
+            interaction_counter("FollowAction", entity.following_count),
+        ],
+        "description": account.note,
+        "image": entity.avatar,
+        "url": entity.url,
+    })
+}
+
+/// `render_seo_schema(@account)`: `SEO::ProfilePageSerializer`.
+fn seo_profile_page(state: &AppState, account: &Account, entity: &types::Account) -> Value {
+    json!({
+        "@context": "https://schema.org",
+        "@type": "ProfilePage",
+        "datePublished": iso8601(account.created_at),
+        "dateModified": iso8601(account.updated_at),
+        "mainEntity": seo_person(state, account, entity),
+    })
+}
+
+/// `ActivityPub::TagManager#url_for` of a post still there: its address on
+/// this server when it is local, and its `url` when that is an `http(s)` one
+/// otherwise.
+async fn status_url_for(state: &AppState, id: i64) -> AppResult<Option<Option<String>>> {
+    let row = sqlx::query!(
+        r#"SELECT s.id, s.url, a.username, a.domain IS NULL AS "local!"
+             FROM statuses s JOIN accounts a ON a.id = s.account_id
+            WHERE s.id = $1 AND s.deleted_at IS NULL"#,
+        id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(row.map(|row| {
+        if row.local {
+            Some(format!(
+                "https://{}/@{}/{}",
+                state.urls.web_domain, row.username, row.id
+            ))
+        } else {
+            row.url
+                .filter(|url| url.starts_with("https://") || url.starts_with("http://"))
+        }
+    }))
+}
+
+/// `render_seo_schema(@status)`: `SEO::SocialMediaPostingSerializer`,
+/// without the players' `embedUrl`, which eunha has no page for. A reply
+/// whose parent is gone has no `parentItem`, where Mastodon fails to draw
+/// the page.
+async fn seo_schema(
+    state: &AppState,
+    account: &Account,
+    status: &DbStatus,
+    entity: &types::Status,
+) -> AppResult<Value> {
     let mut schema = json!({
         "@context": "https://schema.org",
         "@type": "SocialMediaPosting",
         "url": entity.url,
-        "datePublished": entity.created_at,
-        "dateModified": entity.edited_at,
-        "author": {
-            "@type": "Person",
-            "name": display_name(&entity.account),
-            "alternateName": handle,
-            "identifier": handle,
-            "url": entity.account.url,
-            "interactionStatistic": [
-                interaction_counter("FollowAction", entity.account.followers_count),
-            ],
-        },
+        "datePublished": iso8601(status.created_at),
+        "dateModified": status.edited_at.map(iso8601),
         "text": entity.content,
         "interactionStatistic": [
             interaction_counter("LikeAction", entity.favourites_count),
@@ -697,12 +762,29 @@ fn seo_schema(state: &AppState, entity: &types::Status) -> Value {
             .iter()
             .filter(|media| kinds.contains(&media.media_type.as_str()))
             .map(|media| {
-                json!({
+                let mut object = json!({
                     "@type": kind,
                     "contentUrl": media_url(media),
                     "thumbnailUrl": media.preview_url,
-                    "description": media.description,
-                })
+                });
+                if kind == "ImageObject" {
+                    let original = |key: &str| {
+                        media
+                            .meta
+                            .as_ref()
+                            .and_then(|meta| meta.get("original")?.get(key))
+                            .cloned()
+                            .unwrap_or(Value::Null)
+                    };
+                    object["description"] = json!(media.description);
+                    object["width"] = original("width");
+                    object["height"] = original("height");
+                } else {
+                    // A player is named by its description, where an image
+                    // is described by it.
+                    object["name"] = json!(media.description);
+                }
+                object
             })
             .collect()
     };
@@ -716,10 +798,28 @@ fn seo_schema(state: &AppState, entity: &types::Status) -> Value {
             schema[key] = Value::Array(list);
         }
     }
-    if let Some(card) = &entity.card {
+    let quoted = sqlx::query_scalar!(
+        "SELECT quoted_status_id FROM quotes WHERE status_id = $1",
+        status.id,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+    let quoted_url = match quoted.flatten() {
+        Some(id) => status_url_for(state, id).await?,
+        None => None,
+    };
+    if let Some(url) = quoted_url {
+        schema["sharedContent"] = json!({ "@type": "SocialMediaPosting", "url": url });
+    } else if let Some(card) = &entity.card {
         schema["sharedContent"] = json!({ "@type": "WebPage", "url": card.url });
     }
-    schema
+    if let Some(parent) = status.in_reply_to_id {
+        if let Some(url) = status_url_for(state, parent).await? {
+            schema["parentItem"] = json!({ "@type": "SocialMediaPosting", "url": url });
+        }
+    }
+    schema["author"] = seo_person(state, account, &entity.account);
+    Ok(schema)
 }
 
 /// `statuses/show`.
@@ -761,7 +861,11 @@ pub async fn status_head(
     } else {
         head.push_str(&format!(
             r#"<script type="application/ld+json">{}</script>"#,
-            json_escape(&seo_schema(state, entity).to_string())
+            json_escape(
+                &seo_schema(state, account, status, entity)
+                    .await?
+                    .to_string()
+            )
         ));
     }
     head.push_str(&alternate(

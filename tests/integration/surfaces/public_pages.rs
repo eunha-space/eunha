@@ -361,6 +361,106 @@ async fn account_and_post_heads_say_what_crawlers_read() {
     assert!(head.head.contains("/tags/rusty.rss"));
 }
 
+/// The schema.org JSON-LD a head carries.
+fn seo_schema(head: &str) -> Value {
+    let start = head
+        .find(r#"<script type="application/ld+json">"#)
+        .expect("a schema")
+        + r#"<script type="application/ld+json">"#.len();
+    let end = start + head[start..].find("</script>").unwrap();
+    serde_json::from_str(&head[start..end]).unwrap()
+}
+
+/// `SEO::ProfilePageSerializer` on a profile, and on a post a full author, the
+/// post it replies to and the one it quotes, as Mastodon 5.0's do.
+#[tokio::test]
+async fn heads_carry_schema_org_profiles_replies_and_quotes() {
+    use eunha::web::pages::{account_head, owner, readable_status, status_head, Owner, Tab};
+
+    let ctx = TestContext::new("web-seo").await;
+    let Owner::Found(account) = owner(&ctx.state, "alice").await.unwrap() else {
+        panic!("alice has an account");
+    };
+    let head = account_head(&ctx.state, &account, &Tab::Posts).await;
+    let profile = seo_schema(&head.head);
+    assert_eq!(profile["@context"], "https://schema.org");
+    assert_eq!(profile["@type"], "ProfilePage");
+    assert!(profile["datePublished"].as_str().unwrap().ends_with('Z'));
+    let person = &profile["mainEntity"];
+    assert_eq!(person["@type"], "Person");
+    assert_eq!(person["identifier"], format!("alice@{}", ctx.domain));
+    assert_eq!(person["url"], format!("https://{}/@alice", ctx.domain));
+    assert_eq!(
+        person["agentInteractionStatistic"][0]["interactionType"],
+        "https://schema.org/WriteAction"
+    );
+    assert!(person["image"].as_str().unwrap().starts_with("http"));
+
+    let first = ctx
+        .api
+        .post_status(&ctx.alice_token, "The first", "public")
+        .await;
+    let first_id = first["id"].as_str().unwrap();
+    let reply: Value = ctx
+        .api
+        .post_json(
+            "/api/v1/statuses",
+            Some(&ctx.alice_token),
+            &serde_json::json!({
+                "status": "A reply that quotes",
+                "visibility": "public",
+                "in_reply_to_id": first_id,
+                "quoted_status_id": first_id,
+            }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id: i64 = reply["id"].as_str().unwrap().parse().unwrap();
+    let row = readable_status(&ctx.state, account.id, id)
+        .await
+        .unwrap()
+        .unwrap();
+    let entity = eunha::api::mastodon::statuses::serialize_status(&ctx.state, &row, None)
+        .await
+        .unwrap();
+    let head = status_head(&ctx.state, &account, &row, &entity)
+        .await
+        .unwrap();
+    let posting = seo_schema(&head.head);
+    let first_url = format!("https://{}/@alice/{first_id}", ctx.domain);
+    assert_eq!(posting["@type"], "SocialMediaPosting");
+    assert_eq!(
+        posting["parentItem"],
+        serde_json::json!({"@type": "SocialMediaPosting", "url": first_url})
+    );
+    assert_eq!(
+        posting["sharedContent"],
+        serde_json::json!({"@type": "SocialMediaPosting", "url": first_url})
+    );
+    assert_eq!(posting["author"]["@type"], "Person");
+    assert_eq!(
+        posting["author"]["agentInteractionStatistic"][0]["userInteractionCount"],
+        2
+    );
+    assert!(posting["datePublished"].as_str().unwrap().ends_with('Z'));
+    assert_eq!(posting["dateModified"], Value::Null);
+
+    // Opted out of indexing, a profile carries no schema.
+    sqlx::query("UPDATE users SET settings = '{\"noindex\":true}' WHERE account_id = $1")
+        .bind(account.id)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    let head = account_head(&ctx.state, &account, &Tab::Posts).await;
+    assert!(
+        !head.head.contains(r#"<script type="application/ld+json">"#),
+        "{}",
+        head.head
+    );
+}
+
 /// Pages for what a visitor may not see answer as Mastodon's do, the web app
 /// loading underneath so a signed-in member can still read it.
 #[tokio::test]

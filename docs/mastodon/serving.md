@@ -290,7 +290,14 @@ These are for people and crawlers rather than other servers. They live in
 
  -  **`/@user`, `/@user/:id`, and `/tags/:name`** are the web app, with the
     title, OpenGraph tags, `rel="alternate"` links and `Link` header Mastodon's
-    pages carry, and a post's JSON-LD unless its author asked not to be indexed.
+    pages carry, and schema.org JSON-LD unless the account asked not to be
+    indexed: a `ProfilePage` on a profile, and a `SocialMediaPosting` on a
+    post. Its author is the full `Person`, with the posts written and accounts
+    followed as `agentInteractionStatistic`; a reply names the post it
+    answers as `parentItem`, and a quote the quoted post as `sharedContent`,
+    in place of its link card. Images carry their width and height, and a
+    video or audio file its description as `name`. A reply whose parent is
+    gone leaves `parentItem` out, where Mastodon fails to draw the page.
     The server cannot see the web app's token, so each answers as to a visitor:
     `404`, `403` or `410` where a visitor would get that, with the app still
     loading for a member who may see more. A boost's page redirects to the
