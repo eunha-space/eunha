@@ -2511,3 +2511,21 @@ why = "A deleted parent should not take down the page of a reply that still exis
 evidence = "src/web/pages.rs"
 since = "5.0.0-rc.2"
 reviewed_for = "5.0.0-rc.2"
+
+[[divergence]]
+id = "relay-preferences-rest-api"
+kind = "addition"
+summary = "Serves a member's relay preferences over the REST API"
+mastodon = """
+Lets a member opt in to and out of relays that require it only through \
+`Settings::RelayPreferencesController`, a web form behind a session."""
+eunha = """
+Serves `GET`, `PUT` and `PATCH /api/eunha/v1/relay_preferences`, listing the \
+enabled relays that require opt-in with whether the member opted in, and \
+saving the form's `relay_ids` as `Form::RelayPreferencesBatch` does."""
+why = """
+eunha's web client is a single-page app with no server-rendered settings to \
+inherit, so the privacy settings need an API to call."""
+evidence = "tests/integration/c2s/server_admin/relays.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"
