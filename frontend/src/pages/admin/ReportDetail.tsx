@@ -9,11 +9,9 @@ import {
   getReport,
   getReportHistory,
   listReportNotes,
-  reportModerationAction,
   publicAccount,
   transitionReport,
   updateReport,
-  type AccountActionType,
   type ActionLog,
   type AdminAccount,
   type AdminReport,
@@ -30,10 +28,12 @@ import {
   AdminAccountLink,
   AdminStatus,
   ChoiceSelect,
-  ConfirmButton,
   formatDate,
 } from '@/components/admin/admin-common.tsx'
-import { AccountActionDialog } from '@/components/admin/account-action-dialog.tsx'
+import {
+  AccountActionDialog,
+  type ActionType,
+} from '@/components/admin/account-action-dialog.tsx'
 import { ActionLogEntry } from '@/components/admin/action-log-entry.tsx'
 import { ModerationNotes } from '@/components/admin/moderation-notes.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
@@ -151,7 +151,7 @@ export default function ReportDetail() {
   const [error, setError] = useState<string | null>(null)
   const [rules, setRules] = useState<InstanceRule[]>([])
   const [busy, setBusy] = useState(false)
-  const [action, setAction] = useState<AccountActionType | 'custom' | null>(null)
+  const [action, setAction] = useState<ActionType | 'custom' | null>(null)
   const [history, setHistory] = useState<ActionLog[]>([])
 
   const load = useCallback(() => {
@@ -231,33 +231,22 @@ export default function ReportDetail() {
               </Button>
               {report.statuses.length > 0 && (
                 <>
-                  <ConfirmButton
-                    title={t({ id: 'eunha.admin.report_detail.mark_the_reported_posts_as_sensitive', defaultMessage: 'Mark the reported posts as sensitive?' })}
-                    description={t({ id: 'eunha.admin.report_detail.their_media_is_hidden_behind_a', defaultMessage: 'Their media is hidden behind a warning, the report is resolved, and the account gets a strike.' })}
-                    confirmLabel={t({ id: 'collections.mark_as_sensitive', defaultMessage: 'Mark as sensitive' })}
-                    destructive={false}
-                    disabled={report.action_taken}
-                    onConfirm={async () => {
-                      setReport(await reportModerationAction(token, report.id, 'mark_as_sensitive'))
-                      toast.success(t({ id: 'eunha.admin.report_detail.posts_marked_as_sensitive', defaultMessage: 'Posts marked as sensitive.' }))
-                      load()
-                    }}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!target || report.action_taken}
+                    onClick={() => setAction('mark_as_sensitive')}
                   >
                     {t({ id: 'collections.mark_as_sensitive', defaultMessage: 'Mark as sensitive' })}
-                  </ConfirmButton>
-                  <ConfirmButton
-                    title={t({ id: 'eunha.admin.report_detail.delete_the_reported_posts', defaultMessage: 'Delete the reported posts?' })}
-                    description={t({ id: 'eunha.admin.report_detail.the_posts_are_removed_the_report', defaultMessage: 'The posts are removed, the report is resolved, and the account gets a strike. This cannot be undone.' })}
-                    confirmLabel={t({ id: 'eunha.admin.report_detail.delete_posts', defaultMessage: 'Delete posts' })}
-                    disabled={report.action_taken}
-                    onConfirm={async () => {
-                      setReport(await reportModerationAction(token, report.id, 'delete'))
-                      toast.success(t({ id: 'eunha.admin.report_detail.posts_deleted', defaultMessage: 'Posts deleted.' }))
-                      load()
-                    }}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={!target || report.action_taken}
+                    onClick={() => setAction('delete')}
                   >
                     {t({ id: 'eunha.admin.report_detail.delete_posts', defaultMessage: 'Delete posts' })}
-                  </ConfirmButton>
+                  </Button>
                 </>
               )}
               {target && (
@@ -436,7 +425,7 @@ export default function ReportDetail() {
       {target && token && report && (
         <AccountActionDialog
           account={target}
-          reportId={report.id}
+          report={report}
           token={token}
           open={action !== null}
           initialType={action === 'custom' || action === null ? undefined : action}

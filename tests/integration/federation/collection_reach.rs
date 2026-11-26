@@ -258,7 +258,11 @@ async fn test_moderated_collections_reach() {
     let act = |report_id: i64, kind: &'static str| {
         let state = ctx.state.clone();
         async move {
-            eunha::moderation::moderation_action::save(&state, bob, report_id, kind, None, false)
+            let action = eunha::moderation::moderation_action::ModerationAction {
+                send_email_notification: false,
+                ..eunha::moderation::moderation_action::ModerationAction::new(kind)
+            };
+            eunha::moderation::moderation_action::save(&state, bob, report_id, action)
                 .await
                 .unwrap();
         }

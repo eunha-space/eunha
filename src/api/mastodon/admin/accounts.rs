@@ -783,6 +783,11 @@ pub struct AccountActionForm {
     pub warning_preset_id: Option<FlexId>,
     pub text: Option<String>,
     pub send_email_notification: Option<FlexBool>,
+    /// Not permitted by upstream's API, only by its admin form
+    /// (`Admin::Accounts::ModerationActionsController`), which eunha's web
+    /// client stands in for; see `account-action-form-options`.
+    pub include_statuses: Option<FlexBool>,
+    pub include_rule_violations: Option<FlexBool>,
 }
 
 pub async fn account_action(
@@ -805,7 +810,8 @@ pub async fn account_action(
             warning_preset_id: form.warning_preset_id.map(|id| id.0),
             text: form.text,
             send_email_notification: form.send_email_notification.is_none_or(|b| b.0),
-            include_statuses: true,
+            include_statuses: form.include_statuses.is_none_or(|b| b.0),
+            include_rule_violations: form.include_rule_violations.is_none_or(|b| b.0),
         },
     )
     .await?;
