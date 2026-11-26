@@ -21,8 +21,10 @@ Server settings
 as each of Mastodon's settings pages posts only its own. Both need
 `manage_settings`. The values are the ones in Mastodon's `settings` table,
 YAML-encoded the same way, so a database edited here reads the same in
-Mastodon. The web client splits them across Mastodon's six pages: branding,
-about, registrations, discovery, content retention and appearance.
+Mastodon. The web client splits them across Mastodon's seven pages: branding,
+about, registrations, discovery, crawler controls, content retention and
+appearance. Crawler controls holds `noindex` with the robots.txt settings, as
+Mastodon 5.0's does.
 
 A save is validated as Mastodon validates it, and refused whole with a 422 and
 Mastodon's messages, such as
@@ -99,9 +101,18 @@ last on its own.
 | `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December                                     |
 | `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                                                        |
 | `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))                                      |
+| `override_robots`, `custom_robots`                               | `/robots.txt`: `custom_robots` when `override_robots` is on, the default rules otherwise (below)                 |
 | `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))                                 |
 
 Until you save a site title, eunha displays the instance’s web hostname.
+
+`/robots.txt` is Mastodon's `RobotsController`, cached publicly for a month.
+Its default rules keep AI crawlers that honour robots.txt (`GPTBot`,
+`ClaudeBot`, `CCBot`, `Google-Extended` and the rest of Mastodon's list) out
+of the whole site, and every crawler out of `/authorize_follow`,
+`/authorize_interaction`, `/intent`, `/invite/`, `/media/`, `/media_proxy/`,
+`/remote_interaction_helper` and `/share`. With `override_robots` on, the
+file is `custom_robots` as saved, and nothing of the default.
 
 The rest are saved for a Mastodon on the same database and read by nothing in
 eunha yet: `theme` (Mastodon 4.7 has only the default), `landing_page`,

@@ -310,7 +310,8 @@ These are for people and crawlers rather than other servers. They live in
     `/authorize_follow` and `/.well-known/proxy` redirect to the first.
  -  **`/health`** answers `OK` once the process is serving, and asks nothing of
     the database. **`/manifest`** and **`/manifest.json`** describe the
-    installable app.
+    installable app. **`/robots.txt`** is the crawler rules (see
+    [administration](../operating/administration.md#server-settings)).
 
 In limited federation mode the pages say nothing about what they name, and the
 feeds and embeds answer `404`. See

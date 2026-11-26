@@ -1,6 +1,7 @@
 //! eunha's web frontend, and the pages served beside it.
 //!
 //! Mastodon: app/controllers/custom_css_controller.rb
+//! Mastodon: app/controllers/robots_controller.rb
 //! Mastodon: app/controllers/wrapstodon_controller.rb
 //! Mastodon: app/views/wrapstodon/show.html.haml
 //! Mastodon: app/controllers/concerns/web_app_controller_concern.rb
@@ -47,6 +48,7 @@ pub async fn serve(state: AppState, uri: Uri, viewer: Option<AuthenticatedUser>)
             return ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], "OK").into_response();
         }
         "manifest" | "manifest.json" => return manifest(&state).await,
+        "robots.txt" => return robots(&state).await,
         // `get 'change-password', to: redirect('/auth/edit')`.
         ".well-known/change-password" => {
             return redirect(
@@ -459,6 +461,64 @@ async fn custom_css(state: &AppState) -> Response {
             (header::CACHE_CONTROL, "max-age=2592000, public"),
         ],
         css,
+    )
+        .into_response()
+}
+
+/// `RobotsController::DEFAULT_ROBOTS`: AI crawlers kept out of the whole
+/// site, and every crawler out of the pages that only act for a visitor.
+pub const DEFAULT_ROBOTS: &str = "\
+# You are not allowed to use the contents of this website for LLM training
+
+User-agent: AI2Bot
+User-agent: Ai2Bot-Dolma
+User-agent: anthropic-ai
+User-agent: Applebot-Extended
+User-agent: Bytespider
+User-agent: CCBot
+User-agent: ClaudeBot
+User-agent: cohere-ai
+User-agent: cohere-training-data-crawler
+User-agent: Diffbot
+User-agent: FacebookBot
+User-agent: Google-CloudVertexBot
+User-agent: Google-Extended
+User-agent: GPTBot
+User-agent: ImagesiftBot
+User-agent: LinerBot
+User-agent: Meta-ExternalAgent
+User-agent: omgilibot
+User-agent: PanguBot
+User-agent: Scrapy
+User-agent: Webzio-Extended
+Disallow: /
+
+User-agent: *
+Disallow: /authorize_follow
+Disallow: /authorize_interaction
+Disallow: /intent
+Disallow: /invite/
+Disallow: /media/
+Disallow: /media_proxy/
+Disallow: /remote_interaction_helper
+Disallow: /share
+";
+
+/// `RobotsController#show`: the `custom_robots` setting when
+/// `override_robots` is on, [`DEFAULT_ROBOTS`] otherwise, cached for a
+/// month.
+async fn robots(state: &AppState) -> Response {
+    let body = if crate::settings::boolean(state, "override_robots").await {
+        crate::settings::string(state, "custom_robots").await
+    } else {
+        DEFAULT_ROBOTS.to_owned()
+    };
+    (
+        [
+            (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
+            (header::CACHE_CONTROL, "max-age=2592000, public"),
+        ],
+        body,
     )
         .into_response()
 }

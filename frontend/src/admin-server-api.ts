@@ -61,6 +61,8 @@ export interface AdminSettings {
   postpone_confirmation_emails: boolean
   welcome_email: boolean
   theme_color: string
+  custom_robots: string
+  override_robots: boolean
   app_icon: SiteUpload | null
   favicon: SiteUpload | null
   min_age: number | null

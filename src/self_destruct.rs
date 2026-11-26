@@ -102,10 +102,10 @@ pub async fn gate(req: Request, next: Next) -> Response {
 /// What Mastodon still serves while it self-destructs, in eunha's terms.
 ///
 ///  -  What is not an `ApplicationController`: the health check, WebFinger,
-///     host-meta, NodeInfo, the OAuth metadata, the manifest and the custom
-///     CSS; Doorkeeper's token and revocation endpoints, which are
-///     `ActionController::API`; and the streaming API, which Mastodon serves
-///     from its Node process. The web client's static files, which nginx
+///     host-meta, NodeInfo, the OAuth metadata, the manifest, the custom
+///     CSS and robots.txt; Doorkeeper's token and revocation endpoints,
+///     which are `ActionController::API`; and the streaming API, which
+///     Mastodon serves from its Node process. The web client's static files, which nginx
 ///     serves for Mastodon, go too.
 ///  -  What skips `check_self_destruct!`, so that members can still sign in
 ///     and take their data with them: signing in and out, password resets,
@@ -120,6 +120,7 @@ pub fn exempt(path: &str) -> bool {
         "/manifest",
         "/manifest.json",
         "/custom.css",
+        "/robots.txt",
         "/oauth/token",
         "/oauth/revoke",
         "/account",

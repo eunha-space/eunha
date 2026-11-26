@@ -72,8 +72,8 @@ and anything asking for JSON, and otherwise a page saying the server is
 closing — except what Mastodon still serves:
 
  -  WebFinger, host-meta, NodeInfo, the OAuth metadata, the manifest, the
-    custom CSS, the token and revocation endpoints, the streaming API and the
-    web client's static files;
+    custom CSS, robots.txt, the token and revocation endpoints, the streaming
+    API and the web client's static files;
  -  signing in and out, password resets, email confirmation and the security
     key step, the account page and its password change;
  -  the exports and the archive takeout (`/settings/export`,
