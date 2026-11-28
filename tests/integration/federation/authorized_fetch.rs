@@ -1,6 +1,6 @@
-//! Authorized fetch (Mastodon's secure mode) and limited federation mode, as
-//! peers meet them: what is served to an unsigned or a signed fetch, and
-//! which servers may deliver at all.
+//! What peers meet without authorized fetch (Mastodon's secure mode, which
+//! eunha does not have) and in limited federation mode: what is served to an
+//! unsigned or a signed fetch, and which servers may deliver at all.
 
 use reqwest::StatusCode;
 use serde_json::json;
@@ -32,116 +32,62 @@ async fn remote_account(ctx: &TestContext, domain: &str, username: &str) -> (i64
     (id, format!("{uri}#main-key"), private_pem)
 }
 
-/// In authorized fetch mode an actor needs a signed fetch; the instance actor
-/// and WebFinger, which a peer needs before it can sign, do not.
+/// eunha has no authorized fetch mode (the `no-authorized-fetch`
+/// divergence): an unsigned fetch of anything public is served, and so is a
+/// signed one.
 #[tokio::test]
-async fn authorized_fetch_refuses_unsigned_fetches() {
-    let ctx = TestContext::with_instance("af-config", |instance| {
-        instance.authorized_fetch = Some(serde_json::json!(true))
-    })
-    .await;
+async fn unsigned_fetches_of_public_documents_are_served() {
+    let ctx = TestContext::new("af-none").await;
     let (_, key_id, pem) = remote_account(&ctx, "peer.invalid", "eve").await;
-
-    let unsigned = ctx.api.ap_get("/users/alice", None).await;
-    assert_eq!(unsigned.status(), StatusCode::UNAUTHORIZED);
-    let signed = ctx.api.ap_get_signed("/users/alice", &key_id, &pem).await;
-    assert_eq!(signed.status(), StatusCode::OK);
-
     let status = ctx
         .api
-        .post_status(&ctx.alice_token, "secure", "public")
+        .post_status(&ctx.alice_token, "for anyone", "public")
         .await;
-    let path = format!("/users/alice/statuses/{}", status["id"].as_str().unwrap());
-    assert_eq!(
-        ctx.api.ap_get(&path, None).await.status(),
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        ctx.api.ap_get_signed(&path, &key_id, &pem).await.status(),
-        StatusCode::OK
-    );
-    for collection in ["outbox", "followers", "following", "collections/featured"] {
-        let path = format!("/users/alice/{collection}");
+    let status = format!("/users/alice/statuses/{}", status["id"].as_str().unwrap());
+    for path in [
+        "/users/alice",
+        status.as_str(),
+        "/users/alice/outbox",
+        "/users/alice/followers",
+        "/users/alice/following",
+        "/users/alice/collections/featured",
+        "/actor",
+    ] {
         assert_eq!(
-            ctx.api.ap_get(&path, None).await.status(),
-            StatusCode::UNAUTHORIZED,
-            "{collection}"
+            ctx.api.ap_get(path, None).await.status(),
+            StatusCode::OK,
+            "{path}, unsigned"
         );
         assert_eq!(
-            ctx.api.ap_get_signed(&path, &key_id, &pem).await.status(),
+            ctx.api.ap_get_signed(path, &key_id, &pem).await.status(),
             StatusCode::OK,
-            "{collection}"
+            "{path}, signed"
         );
     }
-
-    assert_eq!(
-        ctx.api.ap_get("/actor", None).await.status(),
-        StatusCode::OK,
-        "the instance actor stays public"
-    );
-    let webfinger = ctx
-        .api
-        .get(
-            &format!("/.well-known/webfinger?resource=acct:alice@{}", ctx.domain),
-            None,
-        )
-        .await;
-    assert_eq!(webfinger.status(), StatusCode::OK);
 }
 
-/// `Setting.authorized_fetch` turns it on when the configuration says nothing,
-/// and the configuration overrides it either way.
+/// Mastodon's `authorized_fetch` site setting, as a database taken over from
+/// Mastodon may carry it, changes nothing.
 #[tokio::test]
-async fn authorized_fetch_follows_the_setting_unless_configured() {
-    let ctx = TestContext::with_instance("af-setting", |instance| {
-        instance.authorized_fetch = None;
-    })
-    .await;
-    // With nothing saved, Mastodon's `actors`: an actor needs a signature, and
-    // nothing else does.
-    assert_eq!(
-        ctx.api.ap_get("/users/alice", None).await.status(),
-        StatusCode::UNAUTHORIZED,
-        "actors by default"
-    );
-    assert_eq!(
-        ctx.api.ap_get("/users/alice/outbox", None).await.status(),
-        StatusCode::OK,
-    );
-    crate::helpers::set_setting(&ctx.db, "authorized_fetch", "none").await;
-    assert_eq!(
-        ctx.api.ap_get("/users/alice", None).await.status(),
-        StatusCode::OK
-    );
-    crate::helpers::set_setting(&ctx.db, "authorized_fetch", "true").await;
-    assert_eq!(
-        ctx.api.ap_get("/users/alice", None).await.status(),
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        ctx.api.ap_get("/users/alice/outbox", None).await.status(),
-        StatusCode::UNAUTHORIZED
-    );
-
-    let overridden = TestContext::with_instance("af-off", |instance| {
-        instance.authorized_fetch = Some(serde_json::json!(false))
-    })
-    .await;
-    crate::helpers::set_setting(&overridden.db, "authorized_fetch", "true").await;
-    assert_eq!(
-        overridden.api.ap_get("/users/alice", None).await.status(),
-        StatusCode::OK
-    );
+async fn the_authorized_fetch_setting_is_ignored() {
+    let ctx = TestContext::new("af-setting").await;
+    for saved in ["actors", "all", "true"] {
+        crate::helpers::set_setting(&ctx.db, "authorized_fetch", saved).await;
+        for path in ["/users/alice", "/users/alice/outbox"] {
+            assert_eq!(
+                ctx.api.ap_get(path, None).await.status(),
+                StatusCode::OK,
+                "{path} with authorized_fetch = {saved}"
+            );
+        }
+    }
 }
 
-/// A fetch signed from a suspended domain is refused, 403, and a status is
-/// not there for a signer its author blocks.
+/// Though no fetch needs a signature, one signed from a suspended domain is
+/// refused, 403, and a status is not there for a signer its author blocks.
 #[tokio::test]
-async fn authorized_fetch_refuses_blocked_signers() {
-    let ctx = TestContext::with_instance("af-blocked", |instance| {
-        instance.authorized_fetch = Some(serde_json::json!(true))
-    })
-    .await;
+async fn signed_fetches_from_blocked_signers_are_refused() {
+    let ctx = TestContext::new("af-blocked").await;
     let (_, banned_key, banned_pem) = remote_account(&ctx, "banned.invalid", "mallory").await;
     sqlx::query!(
         "INSERT INTO domain_blocks (domain, severity, created_at, updated_at)
@@ -224,19 +170,40 @@ async fn authorized_fetch_refuses_blocked_signers() {
     );
 }
 
-/// Limited federation mode forces authorized fetch, whatever the
-/// configuration and settings say.
+/// Limited federation mode, which shows visitors nothing, needs every fetch
+/// signed, except the instance actor's and WebFinger, which a peer needs
+/// before it can sign.
 #[tokio::test]
-async fn limited_federation_forces_authorized_fetch() {
+async fn limited_federation_requires_signed_fetches() {
     let ctx = TestContext::with_instance("lf-fetch", |instance| {
         instance.limited_federation_mode = true;
-        instance.authorized_fetch = Some(serde_json::json!(false));
     })
     .await;
+    crate::helpers::set_setting(&ctx.db, "authorized_fetch", "none").await;
+    for path in [
+        "/users/alice",
+        "/users/alice/outbox",
+        "/users/alice/followers",
+    ] {
+        assert_eq!(
+            ctx.api.ap_get(path, None).await.status(),
+            StatusCode::UNAUTHORIZED,
+            "{path}"
+        );
+    }
     assert_eq!(
-        ctx.api.ap_get("/users/alice", None).await.status(),
-        StatusCode::UNAUTHORIZED
+        ctx.api.ap_get("/actor", None).await.status(),
+        StatusCode::OK,
+        "the instance actor stays public"
     );
+    let webfinger = ctx
+        .api
+        .get(
+            &format!("/.well-known/webfinger?resource=acct:alice@{}", ctx.domain),
+            None,
+        )
+        .await;
+    assert_eq!(webfinger.status(), StatusCode::OK);
     // A signer from a domain not on the allow list is refused before its key
     // is looked at; one from an allowed domain is served.
     let (_, key_id, pem) = remote_account(&ctx, "elsewhere.invalid", "eve").await;

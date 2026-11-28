@@ -79,13 +79,23 @@ async fn test_self_deletion_federates_delete_actor() {
     assert_eq!(job.1, "https://remote.invalid/users/carol/inbox");
 }
 
-/// Signed fetches narrow the fan-out, with followers still receiving the Delete.
+/// Where every actor fetch is signed, as in limited federation mode, signed
+/// fetches narrow the fan-out, with followers still receiving the Delete.
 #[tokio::test]
 async fn test_deletion_reaches_signed_fetchers_and_followers() {
     let ctx = TestContext::with_instance("del-reach", |instance| {
-        instance.authorized_fetch = Some(json!("actors"));
+        instance.limited_federation_mode = true;
     })
     .await;
+    for domain in ["fetcher.invalid", "follower.invalid", "unreached.invalid"] {
+        sqlx::query(
+            "INSERT INTO domain_allows (domain, created_at, updated_at) VALUES ($1, now(), now())",
+        )
+        .bind(domain)
+        .execute(&ctx.db)
+        .await
+        .unwrap();
+    }
     let (_, fetcher, pem) = seed_remote(&ctx, "carol", "fetcher.invalid").await;
     let (follower_id, follower, _) = seed_remote(&ctx, "dave", "follower.invalid").await;
     seed_remote(&ctx, "eve", "unreached.invalid").await;

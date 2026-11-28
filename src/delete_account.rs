@@ -548,7 +548,7 @@ async fn delete_actor_inboxes(state: &AppState, account_id: i64) -> Result<Vec<S
     let hosts = hosts
         .filter(|hosts| !hosts.is_empty())
         .map(|hosts| hosts.into_iter().collect::<std::collections::HashSet<_>>());
-    let filter = if crate::settings::actors_require_signature(state).await {
+    let filter = if crate::settings::actors_require_signature(state) {
         hosts.as_ref()
     } else {
         None

@@ -21,7 +21,7 @@ import { Textarea } from '@/components/ui/textarea.tsx'
 import { FormSkeleton } from '@/components/skeletons.tsx'
 import { t } from '@/i18n.tsx'
 
-type Key = Exclude<keyof AdminSettings, 'overridden'>
+type Key = keyof AdminSettings
 
 type Field =
   | { key: Key; kind: 'text' | 'email' | 'url' | 'number'; label: string; hint?: string }
@@ -115,13 +115,6 @@ const PAGES: Record<string, { title: string; preamble: string; fields: Field[] }
       { key: 'allow_referrer_origin', kind: 'switch', get label() { return t({ id: 'eunha.admin.settings.allow_external_websites_to_see_your', defaultMessage: 'Allow external websites to see your server as the source of traffic' }) } },
       { key: 'activity_api_enabled', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.activity_api_enabled', defaultMessage: 'Publish aggregate statistics about user activity in the API' }) }, get hint() { return t({ id: 'eunha.admin.settings.counts_of_locally_published_posts_active', defaultMessage: 'Counts of locally published posts, active users, and new registrations in weekly buckets.' }) } },
       { key: 'peers_api_enabled', kind: 'switch', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.peers_api_enabled', defaultMessage: 'Publish list of discovered servers in the API' }) }, get hint() { return t({ id: 'eunha.admin.settings.a_list_of_domain_names_this', defaultMessage: 'A list of domain names this server has encountered in the fediverse.' }) } },
-      {
-        key: 'authorized_fetch',
-        kind: 'select',
-        get label() { return t({ id: 'mastodon.admin.settings.security.authorized_fetch', defaultMessage: 'Require authentication from federated servers' }) },
-        get hint() { return t({ id: 'eunha.admin.settings.which_activitypub_requests_have_to_be', defaultMessage: 'Which ActivityPub requests have to be signed. Requiring it of profiles lets the server tell who an account is known to.' }) },
-        items: { get none() { return t({ id: 'mastodon.admin.reports.comment.none', defaultMessage: 'None' }) }, get actors() { return t({ id: 'search_results.accounts', defaultMessage: 'Profiles' }) }, get all() { return t({ id: 'notifications.filter.all', defaultMessage: 'All' }) } },
-      },
       { key: 'bootstrap_timeline_accounts', kind: 'text', get label() { return t({ id: 'mastodon.simple_form.labels.form_admin_settings.bootstrap_timeline_accounts', defaultMessage: 'Always recommend these accounts to new users' }) }, get hint() { return t({ id: 'mastodon.simple_form.hints.form_admin_settings.bootstrap_timeline_accounts', defaultMessage: 'These accounts will be pinned to the top of new users\'\' follow recommendations. Provide a comma-separated list of accounts.' }) } },
       { key: 'opt_in_server_directory', kind: 'switch', get label() { return t({ id: 'eunha.admin.settings.list_this_server_in_server_directories', defaultMessage: 'List this server in server directories' }) }, get hint() { return t({ id: 'eunha.admin.settings.tells_other_services_this_server_wants', defaultMessage: 'Tells other services this server wants to be listed.' }) } },
       { key: 'opt_in_server_recommendation', kind: 'switch', get label() { return t({ id: 'eunha.admin.settings.allow_this_server_to_be_recommended', defaultMessage: 'Allow this server to be recommended' }) }, get hint() { return t({ id: 'eunha.admin.settings.tells_other_services_this_server_may', defaultMessage: 'Tells other services this server may be recommended to people.' }) } },
@@ -280,7 +273,6 @@ export default function Settings() {
           <p className="text-muted-foreground text-sm">{def.preamble}</p>
           {def.fields.map((field) => {
             if (field.kind === 'textarea' && field.shownWith && draft[field.shownWith] !== true) return null
-            const overridden = settings.overridden.includes(field.key)
             const id = `setting-${field.key}`
             const value = draft[field.key]
             return (
@@ -289,7 +281,6 @@ export default function Settings() {
                   <Label className="text-sm font-medium">
                     <Switch
                       checked={value === true}
-                      disabled={overridden}
                       onCheckedChange={(on) => set(field.key, on)}
                     />
                     {field.label}
@@ -334,13 +325,7 @@ export default function Settings() {
                     onRemoved={load}
                   />
                 )}
-                {overridden ? (
-                  <p className="text-muted-foreground text-xs">
-                    {t({ id: 'eunha.admin.settings.the_instance_configuration_decides_this_whatever', defaultMessage: 'The instance configuration decides this, whatever is saved here.' })}
-                  </p>
-                ) : (
-                  field.hint && <p className="text-muted-foreground text-xs">{field.hint}</p>
-                )}
+                {field.hint && <p className="text-muted-foreground text-xs">{field.hint}</p>}
               </div>
             )
           })}

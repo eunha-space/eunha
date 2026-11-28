@@ -72,37 +72,36 @@ Hashtags (the hashtags the member follows); **You** holds Saved and Invite
 people, followed by the **New post** button; and Moderation, for staff, comes
 last on its own.
 
-| Setting                                                          | What reads it                                                                                                    |
-| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `site_title`                                                     | both versions of `/api/v1/instance`, NodeInfo, the web client's page title                                       |
-| `site_short_description`                                         | `/api/v2/instance`'s `description`, `/api/v1/instance`'s `short_description`, NodeInfo                           |
-| `site_extended_description`                                      | `/api/v1/instance/extended_description`, rendered as Markdown                                                    |
-| `site_contact_email`, `site_contact_username`                    | the instance's contact address and account                                                                       |
-| `site_terms`                                                     | the privacy policy (see [terms of service](./terms-of-service))                                                  |
-| `registrations_mode`                                             | sign-ups, approval of new accounts, the instance API, NodeInfo                                                   |
-| `closed_registrations_message`                                   | `/api/v2/instance`'s `registrations.message` while sign-ups are closed                                           |
-| `require_invite_text`                                            | a sign-up waiting for approval must give a reason                                                                |
-| `min_age`                                                        | the sign-up age check (see [account security](./accounts)) and the instance API                                  |
-| `status_page_url`                                                | `/api/v2/instance`'s `configuration.urls.status`                                                                 |
-| `thumbnail`, `thumbnail_description`                             | the instance thumbnail                                                                                           |
-| `app_icon`, `favicon`                                            | the instance's icons, and the web client's favicon                                                               |
-| `custom_css`                                                     | `/custom.css`, linked from every page of the web client                                                          |
-| `allow_referrer_origin`                                          | the web client's `Referrer-Policy`                                                                               |
-| `profile_directory`                                              | `/api/v1/directory`, a 404 when off                                                                              |
-| `trends`, `trendable_by_default`                                 | trends (see [moderation](./moderation#trends))                                                                   |
-| `*_feed_access`                                                  | the public, hashtag and link timelines                                                                           |
-| `show_domain_blocks`, `show_domain_blocks_rationale`             | `/api/v1/instance/domain_blocks`                                                                                 |
-| `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                                                         |
-| `authorized_fetch`                                               | `none`, `actors` (the default) or `all`: which fetches must be signed, unless the instance configuration decides |
-| `postpone_confirmation_emails`                                   | no confirmation mail until approved; see [signing up](./accounts.md#signing-up)                                  |
-| `welcome_email`                                                  | eunha's: send new users the welcome mail an hour after joining; off unless turned on                             |
-| `opt_in_*`                                                       | the `optIn*` metadata in nodeinfo                                                                                |
-| `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                                          |
-| `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December                                     |
-| `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                                                        |
-| `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))                                      |
-| `override_robots`, `custom_robots`                               | `/robots.txt`: `custom_robots` when `override_robots` is on, the default rules otherwise (below)                 |
-| `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))                                 |
+| Setting                                                          | What reads it                                                                                    |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `site_title`                                                     | both versions of `/api/v1/instance`, NodeInfo, the web client's page title                       |
+| `site_short_description`                                         | `/api/v2/instance`'s `description`, `/api/v1/instance`'s `short_description`, NodeInfo           |
+| `site_extended_description`                                      | `/api/v1/instance/extended_description`, rendered as Markdown                                    |
+| `site_contact_email`, `site_contact_username`                    | the instance's contact address and account                                                       |
+| `site_terms`                                                     | the privacy policy (see [terms of service](./terms-of-service))                                  |
+| `registrations_mode`                                             | sign-ups, approval of new accounts, the instance API, NodeInfo                                   |
+| `closed_registrations_message`                                   | `/api/v2/instance`'s `registrations.message` while sign-ups are closed                           |
+| `require_invite_text`                                            | a sign-up waiting for approval must give a reason                                                |
+| `min_age`                                                        | the sign-up age check (see [account security](./accounts)) and the instance API                  |
+| `status_page_url`                                                | `/api/v2/instance`'s `configuration.urls.status`                                                 |
+| `thumbnail`, `thumbnail_description`                             | the instance thumbnail                                                                           |
+| `app_icon`, `favicon`                                            | the instance's icons, and the web client's favicon                                               |
+| `custom_css`                                                     | `/custom.css`, linked from every page of the web client                                          |
+| `allow_referrer_origin`                                          | the web client's `Referrer-Policy`                                                               |
+| `profile_directory`                                              | `/api/v1/directory`, a 404 when off                                                              |
+| `trends`, `trendable_by_default`                                 | trends (see [moderation](./moderation#trends))                                                   |
+| `*_feed_access`                                                  | the public, hashtag and link timelines                                                           |
+| `show_domain_blocks`, `show_domain_blocks_rationale`             | `/api/v1/instance/domain_blocks`                                                                 |
+| `peers_api_enabled`, `activity_api_enabled`                      | `/api/v1/instance/peers` and `/api/v1/instance/activity`                                         |
+| `postpone_confirmation_emails`                                   | no confirmation mail until approved; see [signing up](./accounts.md#signing-up)                  |
+| `welcome_email`                                                  | eunha's: send new users the welcome mail an hour after joining; off unless turned on             |
+| `opt_in_*`                                                       | the `optIn*` metadata in nodeinfo                                                                |
+| `media_cache_retention_period`, `content_cache_retention_period` | the daily vacuum, below                                                                          |
+| `wrapstodon`                                                     | annual reports, and `/api/v2/instance`'s `wrapstodon` from 10 to 31 December                     |
+| `bootstrap_timeline_accounts`                                    | follow suggestions (see [below](#follow-recommendations))                                        |
+| `noindex`                                                        | the default of each member's `noindex` (see [account security](./accounts))                      |
+| `override_robots`, `custom_robots`                               | `/robots.txt`: `custom_robots` when `override_robots` is on, the default rules otherwise (below) |
+| `backups_retention_period`                                       | archive takeouts are deleted after it (see [import and export](./import-export))                 |
 
 Until you save a site title, eunha displays the instance’s web hostname.
 
@@ -163,11 +162,10 @@ was served as (see
 The server never does this. A server whose configuration still sets any of
 these keys logs a warning naming them; remove them once imported.
 
-`authorized_fetch` set in the instance configuration (`true` is `all`, `false`
-is `none`, or one of those names), or forced by limited federation mode, decides
-whatever is saved; the settings then list it under
-`overridden`, and the web client shows it disabled, as Mastodon's form does
-when its environment variable is set.
+Mastodon's `authorized_fetch` setting is not among them: eunha has no
+authorized fetch mode (see
+[instances](./instances#signed-fetches-and-limited-federation)), and ignores
+one saved by Mastodon.
 
 ### Registrations close themselves on an idle server
 
@@ -559,8 +557,9 @@ again unblocks it, and blocking a relay's actor anywhere else opts out of it.
 A relay that does not require opt-in is sent everyone's posts, a member who
 blocked it included, as Mastodon sends them.
 A relay needs unsigned fetches, and in
-authorized fetch mode posts go without their Linked Data signatures, as
-Mastodon sends them, so a relay does not work while authorized fetch is on.
+limited federation mode, which requires signed fetches, posts go without their
+Linked Data signatures, as Mastodon sends them in authorized fetch mode, so a
+relay does not work there.
 
 
 Invites

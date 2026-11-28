@@ -1127,9 +1127,7 @@ async fn attach_linked_data_signature(
     match linked_data {
         LinkedData::Unsigned => return activity,
         // `Payloadable#signing_enabled?`.
-        LinkedData::UnlessAuthorizedFetch
-            if crate::settings::authorized_fetch_mode(state).await =>
-        {
+        LinkedData::UnlessAuthorizedFetch if crate::settings::authorized_fetch_mode(state) => {
             return activity;
         }
         _ => {}

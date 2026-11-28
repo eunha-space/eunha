@@ -303,8 +303,8 @@ impl ApiClient {
         req.send().await.unwrap()
     }
 
-    /// GET asking for ActivityPub with a draft-cavage HTTP Signature, as a
-    /// peer in authorized fetch mode fetches.
+    /// GET asking for ActivityPub with a draft-cavage HTTP Signature, as
+    /// most peers fetch.
     pub async fn ap_get_signed(
         &self,
         path: &str,
@@ -798,7 +798,7 @@ impl TestContext {
 
     /// [`TestContext::with_instance_config`] under the name the federation
     /// tests use: for what is read off the instance configuration rather than
-    /// the database, such as `limited_federation_mode` or `authorized_fetch`.
+    /// the database, such as `limited_federation_mode`.
     pub async fn with_instance(
         label: &str,
         configure: impl FnOnce(&mut eunha::config::InstanceConfig),
@@ -956,9 +956,7 @@ impl TestContext {
                 privacy_policy: String::new(),
                 terms_of_service: String::new(),
                 email_subscriptions: true,
-                // Mastodon's default is `actors`. Most tests read actors with a
-                // plain GET; those about signatures set what they need.
-                authorized_fetch: Some(serde_json::json!(false)),
+                authorized_fetch: None,
                 disable_announcement_reactions: false,
                 default_locale: None,
                 force_default_locale: false,

@@ -202,13 +202,12 @@ Mastodon's `domain_not_allowed?` asks: its deliveries are dropped and its
 signatures refused before any key is fetched from it, its accounts and
 statuses are not fetched or resolved, and its accounts cannot be followed. In
 limited federation mode (see
-[instances](./instances#authorized-fetch-and-limited-federation)) the question
+[instances](./instances#signed-fetches-and-limited-federation)) the question
 is the allow list instead: only a domain on it, matched exactly and not by a
 parent domain, federates at all, and removing one suspends and then deletes its
 accounts. Outside that mode the allow list is kept but does nothing.
-`authorized_fetch`, the site setting behind Mastodon's secure mode, is read
-from the `settings` table the same way as the settings above, unless the
-instance configuration decides it.
+eunha has no `authorized_fetch`, the site setting behind Mastodon's secure
+mode; a saved one is ignored.
 
 A delivery is dropped when the block covers its inbox's server, the way a
 block covers an account's domain: the inbox's host, with its port when that is

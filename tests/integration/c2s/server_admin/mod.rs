@@ -107,8 +107,10 @@ async fn test_settings_need_manage_settings() {
     assert_eq!(settings["trends"], true);
     assert_eq!(settings["backups_retention_period"], 7);
     assert_eq!(settings["thumbnail"], Value::Null);
-    // The test configuration turns authorized fetch off, whose default is now on.
-    assert_eq!(settings["overridden"], json!(["authorized_fetch"]));
+    // eunha has no authorized fetch setting (the `no-authorized-fetch`
+    // divergence), and so nothing the instance configuration overrides.
+    assert_eq!(settings.get("authorized_fetch"), None);
+    assert_eq!(settings.get("overridden"), None);
     // Saving settings is not logged, as `Admin::SettingsController` logs
     // nothing.
     json_ok(

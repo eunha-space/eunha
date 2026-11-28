@@ -152,7 +152,7 @@ async fn private_posts_are_served_to_who_may_see_them() {
 }
 
 /// `expires_in` and `vary_by`, as each controller sets them, in public
-/// fetch mode and in authorized fetch mode.
+/// fetch mode and in authorized fetch mode (limited federation mode).
 #[tokio::test]
 async fn documents_say_how_long_they_may_be_cached() {
     let ctx = TestContext::new("ap-cache-headers").await;
@@ -204,9 +204,16 @@ async fn documents_say_how_long_they_may_be_cached() {
     assert_eq!(header(&missing, "cache-control"), Some("private, no-store"));
 
     let ctx = TestContext::with_instance("ap-cache-headers-af", |instance| {
-        instance.authorized_fetch = Some(serde_json::json!(true))
+        instance.limited_federation_mode = true
     })
     .await;
+    sqlx::query(
+        "INSERT INTO domain_allows (domain, created_at, updated_at)
+         VALUES ('peer.invalid', now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
     let (_, key, pem) = remote_account(&ctx, "peer.invalid", "eve").await;
     let status = ctx
         .api

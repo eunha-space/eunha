@@ -27,7 +27,8 @@ eunha signs when it queues the activity, with a two-day lifetime.
 eunha signs where `Payloadable#serialize_payload` signs: a public or unlisted
 status's `Create`, `Update` and `Announce` and its poll's `Update`, an
 account's profile `Update`, a `QuoteRequest` and a `FeatureRequest`, unless
-authorized fetch is on; and, whatever the mode, the `Delete` of a public or
+in limited federation mode, which stands for Mastodon's authorized fetch
+mode; and, whatever the mode, the `Delete` of a public or
 unlisted status, the `Undo` of such a boost, an account's own `Delete`, and
 the `Delete` of a revoked quote's `QuoteAuthorization` ([quotes](./quotes.md)).
 Follows, likes, blocks, reports, moves, direct and followers-only posts go

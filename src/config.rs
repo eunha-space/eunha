@@ -475,10 +475,9 @@ pub struct InstanceConfig {
     /// as by default, an administrator still has to enable the feature.
     #[serde(default = "default_true")]
     pub email_subscriptions: bool,
-    /// Mastodon's `AUTHORIZED_FETCH`: when set, which ActivityPub fetches must
-    /// be signed, whatever the `authorized_fetch` site setting says: `true` or
-    /// `"all"`, `false` or `"none"`, and otherwise `"actors"`. Unset, the
-    /// setting decides. Limited federation mode turns it on regardless.
+    /// Mastodon's `AUTHORIZED_FETCH`, which eunha does not have (the
+    /// `no-authorized-fetch` divergence): not read, except to warn that it is
+    /// set.
     #[serde(default)]
     pub authorized_fetch: Option<serde_json::Value>,
     /// Mastodon's `DEFAULT_LOCALE`: the locale the instance speaks when nobody

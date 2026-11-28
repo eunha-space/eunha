@@ -391,7 +391,7 @@ async fn rotate_keys_for_account(
     let mut activity = crate::federation::activity::update_actor(&update_id, &actor_url, actor)?;
     // `serialize_payload(…, signer: @account, sign_with:)`, which signs when
     // `Payloadable#signing_enabled?`, with the key the others still hold.
-    if !crate::settings::authorized_fetch_mode(state).await {
+    if !crate::settings::authorized_fetch_mode(state) {
         let key_id: String = crate::api::ap::serving::AccountUris::of(&state.uris, &account)
             .key_id()?
             .into();

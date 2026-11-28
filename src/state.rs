@@ -88,6 +88,13 @@ impl AppState {
                  `eunha settings import-config` whenever asked; remove them"
             );
         }
+        if config.instance.authorized_fetch.is_some() {
+            tracing::warn!(
+                "[instance] authorized_fetch is no longer read: eunha serves public documents \
+                 to unsigned fetches, and limited federation mode alone requires signatures; \
+                 remove it"
+            );
+        }
         if config.instance.icon_url.is_some() {
             tracing::warn!(
                 "[instance] icon_url is no longer read; upload an app icon and a thumbnail \

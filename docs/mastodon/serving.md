@@ -14,10 +14,14 @@ what it serves by the scheme the account uses.
 Who may fetch what
 ------------------
 
-In authorized fetch mode every route below needs a signed request
-(`require_account_signature!`), except the instance actor, `/actor`, whose
-key a peer has to fetch before it can sign. Whoever signed a request is the
-reader Mastodon's policies ask about, in either mode. A post, its activity,
+eunha has no authorized fetch mode (the `no-authorized-fetch` divergence):
+every route below serves what is public to an unsigned request. Limited
+federation mode stands where Mastodon's authorized fetch mode does: there every
+route needs a signed request (`require_account_signature!`), except the
+instance actor, `/actor`, whose key a peer has to fetch before it can sign.
+In any mode, a request signed by a domain this instance does not federate with
+is refused, 403. Whoever signed a request is the reader Mastodon's policies
+ask about, in either mode. A post, its activity,
 and its replies, likes and shares are served as `StatusPolicy#show?` allows
 that reader, by an account that is still there: a public or unlisted one to
 anyone its author does not block, by account or by domain; a followers-only
@@ -26,15 +30,16 @@ mentions. A quote's stamp is served as its quoted post is. A boost's
 activity is its `Announce`, and the boost itself is a `302` to the post it
 boosted (`redirect_to_original`). An account's collections
 are not there for a signer the account blocks; its featured posts and
-hashtags are shown empty to one, in authorized fetch mode, as
-`ActivityPub::CollectionsController` shows them.
+hashtags are shown empty to one, as `ActivityPub::CollectionsController` shows
+them in authorized fetch mode, and eunha in any mode.
 
 
 Account deletion reach
 ----------------------
 
 Migration 040 enables reach tracking for newly created local accounts.
-When signed actor fetches are required, eunha records the verified peer's
+When signed actor fetches are required, which is in limited federation mode
+alone, eunha records the verified peer's
 preferred inbox host before serving the actor. Followers and enabled relays
 always receive account deletions. Among other known inboxes, eunha includes
 hosts that fetched the actor. eunha uses a bounded PostgreSQL set of up to
@@ -66,12 +71,13 @@ controller that serves it in Mastodon says (`vary_by`, `expires_in`):
     authorized fetch mode; a public or unlisted post three minutes (five
     seconds while its quote is pending), and its activity three minutes,
     publicly only then and in public fetch mode; replies, likes and shares
-    not at all; featured posts and hashtags, threads, an outbox and a
+    not at all; featured posts and hashtags (publicly only unsigned, since a
+    signer an account blocks is shown them empty), threads, an outbox and a
     collection item three minutes; an outbox page a minute, publicly only
     unsigned; a paged collection's pages not at all; a collection thirty
-    seconds after a change and five minutes otherwise; a stamp thirty
-    seconds; the instance actor ten minutes. “Publicly” is in public fetch
-    mode, unless it says otherwise.
+    seconds after a change and five minutes otherwise; a stamp thirty seconds;
+    the instance actor ten minutes. “Publicly” is in public fetch mode, unless
+    it says otherwise.
 
 
 The actor
@@ -223,7 +229,7 @@ Featured hashtags
 
 Featuring a hashtag sends an `Add` of it, and no longer featuring it a
 `Remove`, to everyone the account reaches (`AccountReachFinder`), with a
-Linked Data signature outside authorized fetch mode, as
+Linked Data signature outside limited federation mode, as
 `CreateFeaturedTagService` and `RemoveFeaturedTagService` send them. Their
 target is the account's featured posts, as Mastodon's is. Featuring one
 already featured sends nothing. A featured tag is counted when it is

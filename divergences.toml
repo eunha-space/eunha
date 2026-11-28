@@ -2529,3 +2529,32 @@ inherit, so the privacy settings need an API to call."""
 evidence = "tests/integration/c2s/server_admin/relays.rs"
 since = "5.0.0-rc.2"
 reviewed_for = "5.0.0-rc.2"
+
+[[divergence]]
+id = "no-authorized-fetch"
+kind = "omission"
+summary = "Has no authorized fetch mode: public documents are served unsigned"
+mastodon = """
+`AUTHORIZED_FETCH` and the `authorized_fetch` setting decide which ActivityPub \
+fetches must be signed: none, actors (the default since 5.0) or all. An \
+unsigned fetch of what they cover gets a 401, while the same posts stay \
+readable as public pages and through the API."""
+eunha = """
+Has neither: every fetch of something public is served, signed or not. \
+Limited federation mode, which shows visitors nothing, still requires every \
+fetch to be signed. In any mode a fetch signed by a suspended domain is \
+refused with a 403, and a signer an account blocks is not shown its posts, \
+featured posts or featured hashtags. Followers-only posts and other \
+non-public documents are served only to a signer allowed to see them, as \
+before. The `[instance] authorized_fetch` key is warned about and ignored, \
+and a saved `authorized_fetch` setting is ignored."""
+why = """
+Refusing unsigned fetches of documents that anyone can read as a web page \
+protects nothing, and it costs federation: a server that signs only its \
+deliveries cannot verify a follow from this one, and the follow is silently \
+lost. Signatures stay for what they can enforce, which is who may see \
+non-public posts, and refusing the servers and accounts that are blocked when \
+they identify themselves, as most servers do."""
+evidence = "tests/integration/federation/authorized_fetch.rs"
+since = "5.0.0-rc.2"
+reviewed_for = "5.0.0-rc.2"

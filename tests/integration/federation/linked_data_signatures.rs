@@ -130,14 +130,22 @@ async fn test_public_posts_go_signed_and_private_ones_do_not() {
     verify(&update, &public_key).expect("the profile Update verifies");
 }
 
-/// In authorized fetch mode Mastodon signs only what it must
-/// (`always_sign`): a post goes unsigned, its deletion signed.
+/// In authorized fetch mode, which in eunha is limited federation mode,
+/// Mastodon signs only what it must (`always_sign`): a post goes unsigned,
+/// its deletion signed.
 #[tokio::test]
 async fn test_authorized_fetch_signs_only_deletions() {
     let ctx = TestContext::with_config("ldsig-secure", |config| {
-        config.instance.authorized_fetch = Some(serde_json::json!(true));
+        config.instance.limited_federation_mode = true;
     })
     .await;
+    sqlx::query(
+        "INSERT INTO domain_allows (domain, created_at, updated_at)
+         VALUES ('nina.invalid', now(), now())",
+    )
+    .execute(&ctx.db)
+    .await
+    .unwrap();
     let (_, public_key) = alice_with_a_follower(&ctx).await;
 
     let status = ctx

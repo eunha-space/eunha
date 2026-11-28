@@ -435,7 +435,7 @@ pub fn federation() -> Federation<AppState> {
                         // signed_request_account.present?)`.
                         let signer = signer(&ctx).await;
                         let requires_signature =
-                            crate::settings::actors_require_signature(ctx.data()).await;
+                            crate::settings::actors_require_signature(ctx.data());
                         if !crate::delete_account::record_actor_fetch(
                             ctx.data(),
                             account.id,
@@ -611,11 +611,8 @@ pub fn federation() -> Federation<AppState> {
         // `AccountsController` asks it of an actor by `actors_require_signature?`.
         builder = builder.guard(scheme.actor_kind(), move |ctx: Ctx, _| async move {
             vary_by(&ctx, Vary::Actor).await;
-            require_signature_when(
-                &ctx,
-                crate::settings::actors_require_signature(ctx.data()).await,
-            )
-            .await
+            require_signature_when(&ctx, crate::settings::actors_require_signature(ctx.data()))
+                .await
         });
         for (kind, vary) in [
             ("account_collections", Vary::Page),
@@ -824,27 +821,23 @@ fn found(result: AppResult<Value>) -> AppResult<Found<Value>> {
 }
 
 /// `SignatureVerification#require_account_signature!`, run in authorized
-/// fetch mode: an unsigned fetch, or one whose signature does not hold, is
-/// 401; one signed with a key on a domain this instance does not federate
-/// with is 403, its key never fetched. Outside authorized fetch mode nothing
-/// is verified here.
+/// fetch mode (limited federation mode, in eunha): an unsigned fetch, or one
+/// whose signature does not hold, is 401. Whatever the mode, one signed with a
+/// key on a domain this instance does not federate with is 403, its key never
+/// fetched (the `no-authorized-fetch` divergence).
 async fn require_signature(ctx: &Ctx) -> AppResult<Access> {
-    require_signature_when(
-        ctx,
-        crate::settings::authorized_fetch_mode(ctx.data()).await,
-    )
-    .await
+    require_signature_when(ctx, crate::settings::authorized_fetch_mode(ctx.data())).await
 }
 
-/// `require_account_signature!`, when asked for.
+/// `require_account_signature!`, when asked for. When it is not, a fetch
+/// signed by a domain this instance does not federate with is still refused,
+/// and any other is served, its signature valid or not.
 async fn require_signature_when(ctx: &Ctx, required: bool) -> AppResult<Access> {
-    if !required {
-        return Ok(Access::Allow);
-    }
     Ok(match ctx.signing().await {
-        Signing::Verified(_) => Access::Allow,
         Signing::Blocked(_) => Access::Forbidden,
-        Signing::Unsigned | Signing::Invalid(_) => Access::Unauthorized,
+        Signing::Verified(_) => Access::Allow,
+        Signing::Unsigned | Signing::Invalid(_) if required => Access::Unauthorized,
+        Signing::Unsigned | Signing::Invalid(_) => Access::Allow,
     })
 }
 
@@ -878,13 +871,11 @@ impl Vary {
             } else {
                 "Accept, Accept-Language, Cookie"
             }),
-            Self::Actor => Some(
-                if crate::settings::actors_require_signature(ctx.data()).await {
-                    "Accept, Accept-Language, Cookie, Signature"
-                } else {
-                    "Accept, Accept-Language, Cookie"
-                },
-            ),
+            Self::Actor => Some(if crate::settings::actors_require_signature(ctx.data()) {
+                "Accept, Accept-Language, Cookie, Signature"
+            } else {
+                "Accept, Accept-Language, Cookie"
+            }),
             Self::Outbox => (authorized || outbox_page_requested(ctx)).then_some("Signature"),
         }
     }
@@ -892,7 +883,7 @@ impl Vary {
 
 /// `public_fetch_mode?`: not authorized fetch mode.
 async fn public_fetch_mode(ctx: &Ctx) -> bool {
-    !crate::settings::authorized_fetch_mode(ctx.data()).await
+    !crate::settings::authorized_fetch_mode(ctx.data())
 }
 
 /// `vary_by`, and `ApplicationController#set_cache_control_defaults`:
@@ -1845,15 +1836,15 @@ fn featured(scheme: Scheme) -> Collection<AppState> {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
-            // `expires_in 3.minutes, public: public_fetch_mode?`.
-            let public = public_fetch_mode(&ctx).await;
+            // `expires_in 3.minutes, public: public_fetch_mode?`, and public
+            // only when unsigned: what a signer is shown may be emptied for
+            // them below, and a shared cache must not hand that to others.
+            let public = public_fetch_mode(&ctx).await && ctx.signer().await.is_none();
             expires_in(&ctx, Vary::Signature, 180, public).await;
-            // `ActivityPub::CollectionsController#check_authorization`: in
-            // authorized fetch mode, a signer the account blocks is shown it
-            // empty.
-            if crate::settings::authorized_fetch_mode(ctx.data()).await
-                && signer_blocked(&ctx, account.id).await?
-            {
+            // `ActivityPub::CollectionsController#check_authorization`: a
+            // signer the account blocks is shown it empty, in any mode (the
+            // `no-authorized-fetch` divergence).
+            if signer_blocked(&ctx, account.id).await? {
                 return Ok(Some(Page::default()));
             }
             let rows = sqlx::query!(
@@ -1910,12 +1901,11 @@ fn featured_tags(scheme: Scheme) -> Collection<AppState> {
             let Some(account) = scheme.account(&ctx, &identifier).await? else {
                 return Ok::<_, AppError>(None);
             };
-            let public = public_fetch_mode(&ctx).await;
+            // Public only when unsigned, as for the featured posts.
+            let public = public_fetch_mode(&ctx).await && ctx.signer().await.is_none();
             expires_in(&ctx, Vary::Signature, 180, public).await;
             // `check_authorization`, as for the featured posts.
-            if crate::settings::authorized_fetch_mode(ctx.data()).await
-                && signer_blocked(&ctx, account.id).await?
-            {
+            if signer_blocked(&ctx, account.id).await? {
                 return Ok(Some(Page::default()));
             }
             let items = super::featured_tags::hashtags(

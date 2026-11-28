@@ -21,8 +21,7 @@ export interface SiteUpload {
 }
 
 /**
- * `Form::AdminSettings`: every key, as saved or as defaulted. The keys the
- * instance configuration decides whatever is saved are in `overridden`.
+ * `Form::AdminSettings`: every key, as saved or as defaulted.
  */
 export interface AdminSettings {
   site_contact_username: string
@@ -55,7 +54,6 @@ export interface AdminSettings {
   backups_retention_period: number | null
   status_page_url: string
   captcha_enabled: boolean
-  authorized_fetch: 'none' | 'actors' | 'all'
   opt_in_server_directory: boolean
   opt_in_server_recommendation: boolean
   postpone_confirmation_emails: boolean
@@ -73,7 +71,6 @@ export interface AdminSettings {
   landing_page: string
   wrapstodon: boolean
   email_footer_text: string
-  overridden: string[]
 }
 
 export function getAdminSettings(token: string) {

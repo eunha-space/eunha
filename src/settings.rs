@@ -156,83 +156,18 @@ pub async fn set_in<'e>(
     Ok(())
 }
 
-/// `AuthorizedFetchHelper#authorized_fetch_mode`: which ActivityPub fetches
-/// must be signed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthorizedFetch {
-    /// None of them.
-    None,
-    /// Those of an actor. What `Setting.authorized_fetch` having no default
-    /// comes to, since 5.0.
-    Actors,
-    /// All of them.
-    All,
-}
-
-impl AuthorizedFetch {
-    /// The `case` over `AUTHORIZED_FETCH` or `Setting.authorized_fetch`.
-    pub fn parse(value: &Value) -> Self {
-        match value {
-            Value::Bool(value) => Self::parse_text(&value.to_string()),
-            Value::String(value) => Self::parse_text(value),
-            _ => Self::Actors,
-        }
-    }
-
-    /// As the instance configuration gives it.
-    fn parse_configured(value: &serde_json::Value) -> Self {
-        match value {
-            serde_json::Value::Bool(value) => Self::parse_text(&value.to_string()),
-            serde_json::Value::String(value) => Self::parse_text(value),
-            _ => Self::Actors,
-        }
-    }
-
-    fn parse_text(value: &str) -> Self {
-        match value {
-            "true" | "all" => Self::All,
-            "false" | "none" => Self::None,
-            _ => Self::Actors,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Actors => "actors",
-            Self::All => "all",
-        }
-    }
-}
-
-/// `authorized_fetch_mode`: the instance configuration's `authorized_fetch`
-/// stands where Mastodon reads `AUTHORIZED_FETCH` from its environment.
-pub fn authorized_fetch_setting(instance: &InstanceConfig, saved: &Value) -> AuthorizedFetch {
-    match &instance.authorized_fetch {
-        Some(forced) => AuthorizedFetch::parse_configured(forced),
-        None => AuthorizedFetch::parse(saved),
-    }
-}
-
 /// `AuthorizedFetchHelper#authorized_fetch_mode?`: whether ActivityPub fetches
-/// other than an actor's must be signed. Limited federation mode forces it.
-pub async fn authorized_fetch_mode(state: &AppState) -> bool {
+/// must be signed. eunha has no authorized fetch mode of its own (the
+/// `no-authorized-fetch` divergence): only limited federation mode, which
+/// already hides everything from anyone not signed in, asks for signatures.
+pub fn authorized_fetch_mode(state: &AppState) -> bool {
     state.instance.limited_federation_mode
-        || authorized_fetch_setting(&state.instance, &get(state, "authorized_fetch").await)
-            == AuthorizedFetch::All
 }
 
-/// `AuthorizedFetchHelper#actors_require_signature?`.
-pub async fn actors_require_signature(state: &AppState) -> bool {
-    state.instance.limited_federation_mode
-        || authorized_fetch_setting(&state.instance, &get(state, "authorized_fetch").await)
-            != AuthorizedFetch::None
-}
-
-/// `authorized_fetch_overridden?`: the instance configuration decides whatever
-/// the setting says, and Mastodon's form shows the setting disabled.
-pub fn authorized_fetch_overridden(instance: &InstanceConfig) -> bool {
-    instance.limited_federation_mode || instance.authorized_fetch.is_some()
+/// `AuthorizedFetchHelper#actors_require_signature?`: as
+/// [`authorized_fetch_mode`].
+pub fn actors_require_signature(state: &AppState) -> bool {
+    authorized_fetch_mode(state)
 }
 
 /// [`get`] as a boolean, Ruby-truthy: nil and false are false.

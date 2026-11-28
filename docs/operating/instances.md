@@ -231,8 +231,8 @@ be read then is imported by the next `eunha migrate` that can read it. Run
 describes, then delete the keys. Starting the server never does it.
 
 
-Authorized fetch and limited federation
----------------------------------------
+Signed fetches and limited federation
+-------------------------------------
 
 Mastodon reads these deployment modes from its environment. Instances sharing
 a process share its environment too, so eunha reads them from each instance's
@@ -241,10 +241,6 @@ a process share its environment too, so eunha reads them from each instance's
 ~~~~ toml
 [instance]
 domain = "garden.eunha.space"
-# Mastodon's AUTHORIZED_FETCH: "none", "actors", "all", or true for "all" and
-# false for "none". Unset, the `authorized_fetch` site setting decides, and it
-# is `actors` until an administrator changes it.
-authorized_fetch = true
 # Mastodon's LIMITED_FEDERATION_MODE.
 limited_federation_mode = false
 # Mastodon's DISALLOW_UNAUTHENTICATED_API_ACCESS.
@@ -292,14 +288,22 @@ locale names another, as `Localized` does.
 `EXPERIMENTAL_FEATURES`; the one eunha knows, `fasp`, is described under
 [auxiliary service providers](./fasp).
 
-Authorized fetch, Mastodon's secure mode, refuses an ActivityPub fetch that
-is not signed: actors, statuses and every collection answer 401 to an unsigned
-request, and 403 to one signed with a key on a domain this instance does not
-federate with, whose key is never fetched. The instance actor and WebFinger stay
-open, because a peer has to fetch the instance actor's key before it can sign
-anything. A status is not there (404) for a signer its author blocks, or whose
-domain the author blocks, and an account's outbox shows such a signer nothing;
-in authorized fetch mode its pinned statuses do not either.
+eunha has no authorized fetch, Mastodon's secure mode (`AUTHORIZED_FETCH`):
+anything public is served to an unsigned fetch, as a public page would show it
+to anyone. Signatures are used where they enforce something:
+
+ -  a fetch signed with a key on a domain this instance does not federate with
+    is refused, 403, and its key is never fetched;
+ -  a status is not there (404) for a signer its author blocks, or whose domain
+    the author blocks, and an account's outbox, featured posts and featured
+    hashtags show such a signer nothing;
+ -  followers-only and direct posts, and collections an account hides, are
+    served only to a signer allowed to see them.
+
+A peer that requires signatures can still fetch from eunha, which signs every
+fetch it makes itself. An `authorized_fetch` key left in `[instance]` is ignored
+with a warning, and so is an `authorized_fetch` setting saved by Mastodon; see
+the `no-authorized-fetch` divergence.
 
 Limited federation mode federates only with the domains on the allow list
 (`/api/v1/admin/domain_allows`):
@@ -308,7 +312,10 @@ Limited federation mode federates only with the domains on the allow list
     on one is refused, without fetching its key;
  -  accounts and statuses on other domains are never fetched or resolved, and
     no account here can follow one;
- -  authorized fetch is on, whatever `authorized_fetch` and the setting say;
+ -  every fetch needs a signature, except the instance actor's and WebFinger,
+    because a peer has to fetch the instance actor's key before it can sign
+    anything: an unsigned fetch is 401, as in Mastodon's authorized fetch mode,
+    and posts go without their Linked Data signatures;
  -  the API needs a signed-in user, as with
     `disallow_unauthenticated_api_access`, and one whose login is unconfirmed,
     pending, disabled or moved is refused everywhere, `/api/v2/instance`
